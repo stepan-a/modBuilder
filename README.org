@@ -1,0 +1,1 @@
+*A MATLAB class to create and modify Dynare's mod files*
