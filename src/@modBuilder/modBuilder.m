@@ -162,30 +162,6 @@ classdef modBuilder<handle
             o.symbols = setdiff(o.symbols, keys(o.var));
         end
 
-        function o = addeq(o, in1, in2)
-        % Add an equation to the model without associating an endogenous variable
-        %
-        % INPUTS:
-        % - o          [modBuilder]
-        % - in1        [char]         1×n array, name of an equation, if in2 is defined, or expression
-        % - in2        [char]         1×m array, expression
-        %
-        % OUTPUTS:
-        % - o           [modBuilder]   updated object (with new equation)
-            if nargin<3
-                % Set a default name for the equation
-                name = sprintf('Eq. #%u', numEntries(model.equations)+1);
-                o.equations(name, in1);
-            else
-                % User defined name for the equation
-                name = in1;
-                o.equations(in1, in2);
-            end
-            o.equations(name) = equation;
-            o.T.equations.(name) = getsymbols(o, equation);
-            o.symbols = horzcat(o.symbols,o.T.equations.(name));
-        end
-
         function o = parameters(o, pname, pvalue)
         % Declare or calibrate a parameter
         %
