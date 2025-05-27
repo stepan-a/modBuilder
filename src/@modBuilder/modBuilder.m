@@ -18,11 +18,11 @@ classdef modBuilder<handle
 % along with Dynare.  If not, see <https://www.gnu.org/licenses/>.
 
     properties
-        params = dictionary();             % List of parameters
-        varexo = dictionary();             % List of exogenous variables.
-        var = dictionary();                % List of endogenous variables.
-        symbols = {};                      % List of untyped symbols
-        equations = dictionary();          % List of equations.
+        params = cell(0,2);             % List of parameters
+        varexo = cell(0,2);             % List of exogenous variables.
+        var = cell(0,2);                % List of endogenous variables.
+        symbols = {};                   % List of untyped symbols
+        equations = cell(0,2);          % List of equations.
         T = struct('params', struct(), 'varexo', struct(), 'var', struct(), 'equations', struct());
     end
 
@@ -54,7 +54,7 @@ classdef modBuilder<handle
             tokens(cellfun(@(x) all(isempty(x)), tokens)) = [];
             % Remove duplicates
             tokens = unique(tokens);
-        end
+        end % function
 
         function o = updatesymboltable(o, type)
         % Update fields under o.T. These fields map symbols (parameter, endogenous and exogenous variables) with equations.
@@ -72,52 +72,46 @@ classdef modBuilder<handle
         % - o.T.var.<NAME> same as o.T.params.<NAME> for endogenous variables.
             switch type
               case 'parameters'
-                names = keys(o.params);
-                for i=1:length(names)
-                    k = keys(o.equations);
-                    for j=1:numEntries(o.equations)
-                        if any(matches(o.T.equations.(k(j)), names(i)))
-                            if isfield(o.T.params, names(i))
-                                o.T.params.(names(i)) = horzcat(o.T.params.(names(i)), {k(j)});
+                for i=1:o.size(type)
+                    for j=1:o.size('endogenous') % The number of endogenous variables is equal to the number of equations by construction.
+                        if any(matches(o.T.equations.(o.equations{j,1}), o.params{i,1}))
+                            if isfield(o.T.params, o.params{i,1})
+                                o.T.params.(o.params{i,1}) = horzcat(o.T.params.(o.params{i,1}), o.equations(j,1));
                             else
-                                o.T.params.(names(i)) = {k(j)};
+                                o.T.params.(o.params{i,1}) = o.equations(j,1);
                             end
                         end
                     end
                 end
               case 'exogenous'
-                names = keys(o.varexo);
-                for i=1:length(names)
-                    k = keys(o.equations);
-                    for j=1:numEntries(o.equations)
-                        if any(matches(o.T.equations.(k(j)), names(i)))
-                            if isfield(o.T.params, names(i))
-                                o.T.varexo.(names(i)) = horzcat(o.T.varexo.(names(i)), {k(j)});
+                for i=1:o.size(type)
+                    for j=1:o.size('endogenous')
+                        if any(matches(o.T.equations.(o.equations{j,1}), o.varexo{i,1}))
+                            if isfield(o.T.varexo, o.varexo{i,1})
+                                o.T.varexo.(o.varexo{i,1}) = horzcat(o.T.varexo.(o.varexo{i,1}), o.equations(j,1));
                             else
-                                o.T.varexo.(names(i)) = {k(j)};
+                                o.T.varexo.(o.varexo{i,1}) = o.equations(j,1);
                             end
                         end
                     end
                 end
               case 'endogenous'
-                names = keys(o.var);
-                eqidx = keys(o.equations);
-                for i=1:length(names)
-                    o.T.var.(names(i)) = {names(i)};
+                for i=1:o.size(type)
+                    o.T.var.(o.var{i,1}) = o.var(i,1);
                 end
-                for i=1:length(names)
-                    for j=1:length(eqidx)
-                        if any(matches(o.T.equations.(eqidx(j)), names(i)))
-                            o.T.var.(names(i)) = horzcat(o.T.var.(names(i)), {eqidx(j)});
+                for i=1:o.size(type)
+                    for j=1:o.size(type)
+                        if any(matches (o.T.equations.(o.var{j,1}), o.var{i,1}))
+                            o.T.var.(o.var{i,1}) = horzcat(o.T.var.(o.var{i,1}), o.var(j,1));
                         end
                     end
                 end
               otherwise
                 error('Unknown type (%)', type)
-            end
-        end
+            end % switch
+        end % function
 
-    end
+    end % methods
 
 
     methods(Static, Access = private)
@@ -127,7 +121,7 @@ classdef modBuilder<handle
             str = sprintf('%s;', str);
         end
 
-    end
+    end % methods
 
 
     methods
@@ -144,6 +138,25 @@ classdef modBuilder<handle
             end
         end
 
+        function  n = size(o, type)
+        % Return the number of parameters, endogenous or exogenous variables.
+        %
+        % INPUTS:
+        %  - o      [modBuilder]
+        % - type    [char]           1×n array, type of symbol ('parameters', 'exogenous' or 'endogenous')
+        %
+        % OUTPUTS:
+        % - n    [integer]    scalar, number of symbols.
+            switch type
+              case 'parameters'
+                n = size(o.params, 1);
+              case 'exogenous'
+                n = size(o.varexo, 1);
+              case 'endogenous'
+                n = size(o.var, 1);
+            end
+        end
+
         function o = add(o, varname, equation)
         % Add an equation to the model and associate an endogenous variable
         %
@@ -154,13 +167,16 @@ classdef modBuilder<handle
         %
         % OUTPUTS:
         % - o           [modBuilder]   updated object (with new equation)
-            o.equations(varname) = equation;
-            o.var(varname) = NaN;
+            id = size(o.equations, 1)+1;
+            o.equations{id,1} = varname;
+            o.equations{id,2} = equation;
+            o.var{id,1} = varname;
+            o.var{id,2} = NaN;
             o.T.equations.(varname) = getsymbols(o, equation);
             o.symbols = horzcat(o.symbols, o.T.equations.(varname));
             o.T.equations.(varname) = setdiff(o.T.equations.(varname), varname);
-            o.symbols = setdiff(o.symbols, keys(o.var));
-        end
+            o.symbols = setdiff(o.symbols, o.var(:,1));
+        end % function
 
         function o = parameters(o, pname, pvalue)
         % Declare or calibrate a parameter
@@ -176,10 +192,16 @@ classdef modBuilder<handle
                 % Set default value
                 pvalue = NaN;
             end
-            o.params(pname) = pvalue;
+            idp = ismember(o.params(:,1), pname);
+            if any(idp) % The parameter is already defined
+                o.params{idp, 2} = pvalue;
+            else
+                o.params{length(idp)+1, 1} = pname;
+                o.params{length(idp)+1, 2} = pvalue;
+            end
             % Remove pname from the list of untyped symbols
             o.symbols = setdiff(o.symbols, pname);
-        end
+        end % function
 
         function o = exogenous(o, xname, xvalue)
         % Declare or set default value for an exogenous variables
@@ -195,10 +217,16 @@ classdef modBuilder<handle
                 % Set default value
                 xvalue = NaN;
             end
-            o.varexo(xname) = xvalue;
+            idx = ismember(o.varexo(:,1), xname);
+            if any(idx) % The parameter is already defined
+                o.varexo{idx, 2} = xvalue;
+            else
+                o.varexo{length(idx)+1, 1} = xname;
+                o.varexo{length(idx)+1, 2} = xvalue;
+            end
             % Remove xname from the list of untyped symbols
             o.symbols = setdiff(o.symbols, xname);
-        end
+        end % function
 
         function o = endogenous(o, ename, evalue)
         % Declare or set default value for endogenous variables
@@ -214,10 +242,16 @@ classdef modBuilder<handle
                 % Set default value
                 evalue = NaN;
             end
-            o.varexo(ename) = evalue;
+            ide = ismember(o.var(:,1), ename);
+            if any(ide) % The parameter is already defined
+                o.var{ide, 2} = evalue;
+            else
+                o.var{length(ide)+1, 1} = ename;
+                o.var{length(ide)+1, 2} = evalue;
+            end
             % Remove ename from the list of untyped symbols
             o.symbols = setdiff(o.symbols, ename);
-        end
+        end % function
 
         function o = remove(o, eqname)
         % Remove an equation from the model, remove one endogenous variable, remove unecessary parameters and exogenous variables
@@ -231,7 +265,7 @@ classdef modBuilder<handle
             equation = o.equations(eqname);
             o.equations(eqname) = [];
             % TODO Update lists of objects
-        end
+        end % function
 
         function write(o, basename)
         % Write model in a mod file.
@@ -246,39 +280,35 @@ classdef modBuilder<handle
             %
             % Print list of endogenous variables
             %
-            names = keys(o.var, 'cell');
-            fprintf(fid, 'var%s\n\n', modBuilder.printlist(names));
+            fprintf(fid, 'var%s\n\n', modBuilder.printlist(o.var(:,1)));
             %
             % Print list of exogenous variables
             %
-            names = keys(o.varexo, 'cell');
-            fprintf(fid, 'varexo%s\n\n', modBuilder.printlist(names));
+            fprintf(fid, 'varexo%s\n\n', modBuilder.printlist(o.varexo(:,1)));
             %
-            % Print list of parameters
+            % Print list of fprintf
             %
-            names = keys(o.params, 'cell');
-            fprintf(fid, 'parameters%s\n\n', modBuilder.printlist(names));
+            fprintf(fid, 'parameters%s\n\n', modBuilder.printlist(o.params(:,1)));
             %
             % Print calibration if any
             %
-            for i=1:numEntries(o.params)
-                if not(isnan(o.params(names(i))))
-                    fprintf(fid, '%s = %f;\n', names{i}, o.params(names(i)));
+            for i=1:o.size('parameters')
+                if not(isnan(o.params{i,2}))
+                    fprintf(fid, '%s = %f;\n', o.params{i,1}, o.params{i,2});
                 end
             end
             fprintf(fid, '\n');
             %
             % Print model block
             %
-            names = keys(o.equations, 'cell');
             fprintf(fid, 'model;\n\n');
-            for i=1:length(names)
-                fprintf(fid, '// Eq. #%u -> %s\n', i, names{i});
-                fprintf(fid, '%s;\n\n', o.equations(names{i}));
+            for i=1:o.size('endogenous')
+                fprintf(fid, '// Eq. #%u -> %s\n', i, o.equations{i,1});
+                fprintf(fid, '%s;\n\n', o.equations{i,2});
             end
             fprintf(fid, 'end;\n');
             fclose(fid);
-        end
+        end % function
 
         function o = updatesymboltables(o)
         % Update fields under o.T. These fields map symbols (parameter, endogenous and exogenous variables) with equations.
@@ -286,7 +316,7 @@ classdef modBuilder<handle
             o.updatesymboltable('parameters');
             o.updatesymboltable('exogenous');
             o.updatesymboltable('endogenous');
-        end
+        end % function
 
         function b = isparameter(o, name)
         % Return true iff name is a parameter
@@ -297,8 +327,8 @@ classdef modBuilder<handle
         %
         % OUTPUTS:
         % - b         [logical]      scalar
-            b = isKey(o.params, name);
-        end
+            b = any(ismember(o.params(:,1), name));
+        end % function
 
         function b = isexogenous(o, name)
         % Return true iff name is an exogenous variable
@@ -309,8 +339,8 @@ classdef modBuilder<handle
         %
         % OUTPUTS:
         % - b         [logical]      scalar
-            b = isKey(o.varexo, name);
-        end
+            b = any(ismember(o.varexo(:,1), name));
+        end % function
 
         function b = isendogenous(o, name)
         % Return true iff name is an endogenous variable
@@ -321,8 +351,8 @@ classdef modBuilder<handle
         %
         % OUTPUTS:
         % - b         [logical]      scalar
-            b = isKey(o.var, name);
-        end
+            b = any(ismember(o.var(:,1), name));
+        end % function
 
         function b = appear_in_more_than_one_equation(o, name)
         % Return true iff a symbol appears in more than one equation.
@@ -342,7 +372,7 @@ classdef modBuilder<handle
             else
                 error('Unknown symbol type.')
             end
-        end
+        end % function
 
         function o = flip_type_endogenous_exogenous(o, varname, varexoname)
         % Flip types of varname (initially an endogenous variable)
@@ -357,19 +387,30 @@ classdef modBuilder<handle
         %
         % OUTPUTS:
         % - o           [modBuilder]    updated object
-            o.var(varexoname) = o.varexo(varexoname);
-            o.varexo(varname) = o.var(varname);
-            o.var(varname) = [];
-            o.varexo(varexoname) = [];
+            ie = ismember(o.var(:,1), varname);
+            if not(any(ie))
+                error('%s is not a known endogenous variable.', varname)
+            end
+            ix = ismember(o.varexo(:,1), varexoname);
+            if not(any(ix))
+                error('%s is not a known exogenous variable.', varexoname)
+            end
+            % Copy variables
+            o.var = [o.var; {varexoname o.varexo{ix,2}}];
+            o.varexo = [o.varexo; {varname o.var{ie,2}}];
+            % Remove variables
+            o.var(ie,:) = [];
+            o.varexo(ix,:) = [];
+            % Update stmbol tables
             o.T.var.(varexoname) = o.T.varexo.(varexoname);
             o.T.varexo.(varname) = o.T.var.(varname);
             o.T.varexo = rmfield(o.T.varexo, varexoname);
             o.T.var = rmfield(o.T.var, varname);
-            o.equations(varexoname) = o.equations(varname);
-            o.equations(varname) = [];
-        end
+            % Associate new endogenous variable to an equation (the one previously associated with varname)
+            o.equations{ie,1} = varexoname;
+        end % function
 
-    end
+    end % methods
 
 
-end
+end % classdef
