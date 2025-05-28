@@ -33,26 +33,6 @@ classdef modBuilder<handle
 
     methods (Access = private)
 
-        function tokens = getsymbols(o, expr)
-        % Extract symbols from an expression
-        %
-        % INPUTS:
-        % - o       [modBuilder]
-        % - expr    [char]          1×n array, expression
-        %
-        % OUTPUTS:
-        % - tokens  [cell]          1×m array of row char arrays, list of symbols
-            tokens = strsplit(expr, {'=', '+','-','*','/','^', '(', ')', ',', '\n', '\t', ' '});
-            % Filter out the numbers, punctuation.
-            tokens(cellfun(@(x) all(isstrprop(x, 'digit')+isstrprop(x, 'punct')), tokens)) = [];
-            % Filter out functions
-            tokens(cellfun(@(x) ismember(x, {'log', 'log10', 'ln', 'exp', 'sqrt', 'abs', 'sign', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'min', 'max', 'normcdf', 'normpdf', 'erf', 'diff', 'adl'}), tokens)) = [];
-            % Filter out empty elements.
-            tokens(cellfun(@(x) all(isempty(x)), tokens)) = [];
-            % Remove duplicates
-            tokens = unique(tokens);
-        end % function
-
         function o = updatesymboltable(o, type)
         % Update fields under o.T. These fields map symbols (parameter, endogenous and exogenous variables) with equations.
         %
@@ -118,6 +98,25 @@ classdef modBuilder<handle
             str = sprintf('%s;', str);
         end
 
+        function tokens = getsymbols(expr)
+        % Extract symbols from an expression
+        %
+        % INPUTS:
+        % - expr    [char]          1×n array, expression
+        %
+        % OUTPUTS:
+        % - tokens  [cell]          1×m array of row char arrays, list of symbols
+            tokens = strsplit(expr, {'=', '+','-','*','/','^', '(', ')', ',', '\n', '\t', ' '});
+            % Filter out the numbers, punctuation.
+            tokens(cellfun(@(x) all(isstrprop(x, 'digit')+isstrprop(x, 'punct')), tokens)) = [];
+            % Filter out functions
+            tokens(cellfun(@(x) ismember(x, {'log', 'log10', 'ln', 'exp', 'sqrt', 'abs', 'sign', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'min', 'max', 'normcdf', 'normpdf', 'erf', 'diff', 'adl'}), tokens)) = [];
+            % Filter out empty elements.
+            tokens(cellfun(@(x) all(isempty(x)), tokens)) = [];
+            % Remove duplicates
+            tokens = unique(tokens);
+        end % function
+
     end % methods
 
 
@@ -162,7 +161,7 @@ classdef modBuilder<handle
             o.equations{id,2} = equation;
             o.var{id,1} = varname;
             o.var{id,2} = NaN;
-            o.T.equations.(varname) = getsymbols(o, equation);
+            o.T.equations.(varname) = getsymbols(equation);
             o.symbols = horzcat(o.symbols, o.T.equations.(varname));
             o.T.equations.(varname) = setdiff(o.T.equations.(varname), varname);
             o.symbols = setdiff(o.symbols, o.var(:,1));
