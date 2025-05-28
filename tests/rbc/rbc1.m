@@ -43,8 +43,6 @@ clear all
 
 load('rbc1.mat')
 
-if isa(model, 'modBuilder')
-    model
-else
+if not(isa(model, 'modBuilder'))
     error('Error in save/load routines.')
 end
