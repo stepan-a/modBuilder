@@ -119,12 +119,47 @@ classdef modBuilder<handle
 
     end % methods
 
+    methods(Static)
+
+        function o = loadobj(s)
+        % Deserialize a modBuilder object reprsented by structure s.
+        %
+        % INPUTS:
+        % s    [struct]
+        %
+        % OUTPUTS:
+        % - o  [modBuilder]
+            if isstruct(s)
+                if isfield(s, 'params') && isfield(s, 'varexo') && isfield(s, 'var') ...
+                        && isfield(s, 'symbols') && isfield(s, 'equations') && isfield(s, 'T') ...
+                        && isfield(s, 'date')
+                    o = modBuilder(s.date);
+                    o.T = s.T;
+                    o.var = s.var;
+                    o.params = s.params;
+                    o.varexo = s.varexo;
+                    o.symbols = s.symbols;
+                    o.equations = o.equations;
+                else
+                    error('Cannot instantiate a modBuilder object (missing fields).')
+                end
+            else
+                o = s;
+            end
+        end
+
+    end % methods
+
 
     methods
 
-        function o = modBuilder()
+        function o = modBuilder(date)
         % Return an empty modBuilder object
-            o.date = datetime;
+            if nargin && isdatetime(date)
+                o.date = date;
+            else
+                o.date = datetime;
+            end
         end
 
         function  n = size(o, type)
@@ -136,14 +171,14 @@ classdef modBuilder<handle
         %
         % OUTPUTS:
         % - n    [integer]    scalar, number of symbols.
-            switch type
-              case 'parameters'
-                n = size(o.params, 1);
-              case 'exogenous'
-                n = size(o.varexo, 1);
-              case 'endogenous'
-                n = size(o.var, 1);
-            end
+                switch type
+                  case 'parameters'
+                    n = size(o.params, 1);
+                  case 'exogenous'
+                    n = size(o.varexo, 1);
+                  case 'endogenous'
+                    n = size(o.var, 1);
+                end
         end
 
         function o = add(o, varname, equation)
@@ -161,7 +196,7 @@ classdef modBuilder<handle
             o.equations{id,2} = equation;
             o.var{id,1} = varname;
             o.var{id,2} = NaN;
-            o.T.equations.(varname) = getsymbols(equation);
+            o.T.equations.(varname) = modBuilder.getsymbols(equation);
             o.symbols = horzcat(o.symbols, o.T.equations.(varname));
             o.T.equations.(varname) = setdiff(o.T.equations.(varname), varname);
             o.symbols = setdiff(o.symbols, o.var(:,1));
@@ -298,6 +333,23 @@ classdef modBuilder<handle
             fprintf(fid, 'end;\n');
             fclose(fid);
         end % function
+
+        function s = saveobj(o)
+        % Serialize a modBuilder object, used when saving object to mat file.
+        %
+        % INPUTS:
+        % - o      [modBuilder]
+        %
+        % OUTPUTS:
+        % - s      [struct]        One field for each member of the modBuilder class.
+            s.params = o.params;
+            s.varexo = o.varexo;
+            s.var = o.var;
+            s.symbols = o.symbols;
+            s.equations = o.equations;
+            s.T = o.T;
+            s.date = o.date;
+        end
 
         function o = updatesymboltables(o)
         % Update fields under o.T. These fields map symbols (parameter, endogenous and exogenous variables) with equations.

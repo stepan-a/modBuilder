@@ -36,3 +36,15 @@ end
 model.write('rbc1')
 
 model.updatesymboltables();
+
+save('rbc1.mat', 'model')
+
+clear all
+
+load('rbc1.mat')
+
+if isa(model, 'modBuilder')
+    model
+else
+    error('Error in save/load routines.')
+end
