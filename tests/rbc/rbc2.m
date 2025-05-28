@@ -37,22 +37,14 @@ end
 
 model.updatesymboltables();
 
-model.write('rbc1')
+model.flip_type_endogenous_exogenous('a', 'e');
 
-b = modiff('rbc1.mod', 'rbc1.true.mod');
+model.write('rbc2');
+
+b = modiff('rbc2.mod', 'rbc2.true.mod');
 
 if not(b)
     error('Generated mod file might be wrong.')
 end
 
-save('rbc1.mat', 'model')
-
-clear all
-
-load('rbc1.mat')
-
-if not(isa(model, 'modBuilder'))
-    error('Error in save/load routines.')
-end
-
-delete rbc1.mod rbc1.mat
+delete rbc2.mod
