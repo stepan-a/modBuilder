@@ -30,9 +30,6 @@ classdef modBuilder<handle
         date                               % Creation date.
     end
 
-    properties (SetAccess = immutable, Hidden)
-        usepipes = false;                  % Not sure we will keep that...
-    end
 
     methods (Access = private)
 
@@ -126,16 +123,9 @@ classdef modBuilder<handle
 
     methods
 
-        function o = modBuilder(ontheflydeclarationoftypes)
+        function o = modBuilder()
         % Return an empty modBuilder object
             o.date = datetime;
-            if nargin && not(isempty(ontheflydeclarationoftypes)) ...
-                    && islogical(ontheflydeclarationoftypes) ...
-                    && isscalar(ontheflydeclarationoftypes) ...
-                    && ontheflydeclarationoftypes
-                o.usepipes = true;
-                error('On the fly type declaration is not yet implemented.')
-            end
         end
 
         function  n = size(o, type)
