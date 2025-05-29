@@ -442,7 +442,7 @@ classdef modBuilder<handle
             % Remove variables
             o.var(ie,:) = [];
             o.varexo(ix,:) = [];
-            % Update stmbol tables
+            % Update symbol tables
             o.T.var.(varexoname) = o.T.varexo.(varexoname);
             o.T.varexo.(varname) = o.T.var.(varname);
             o.T.varexo = rmfield(o.T.varexo, varexoname);
