@@ -139,7 +139,7 @@ classdef modBuilder<handle
                     o.params = s.params;
                     o.varexo = s.varexo;
                     o.symbols = s.symbols;
-                    o.equations = o.equations;
+                    o.equations = s.equations;
                 else
                     error('Cannot instantiate a modBuilder object (missing fields).')
                 end

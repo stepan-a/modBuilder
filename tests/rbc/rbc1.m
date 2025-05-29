@@ -43,6 +43,8 @@ b = modiff('rbc1.mod', 'rbc1.true.mod');
 
 if not(b)
     error('Generated mod file might be wrong.')
+else
+    delete rbc1.mod
 end
 
 save('rbc1.mat', 'model')
@@ -53,6 +55,16 @@ load('rbc1.mat')
 
 if not(isa(model, 'modBuilder'))
     error('Error in save/load routines.')
+else
+    delete rbc1.mat
 end
 
-delete rbc1.mod rbc1.mat
+model.write('rbc1')
+
+b = modiff('rbc1.mod', 'rbc1.true.mod');
+
+if not(b)
+    error('Generated mod file might be wrong.')
+else
+    delete rbc1.mod
+end
