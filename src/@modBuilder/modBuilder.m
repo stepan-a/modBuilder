@@ -193,6 +193,9 @@ classdef modBuilder<handle
         %
         % OUTPUTS:
         % - o           [modBuilder]   updated object (with new equation)
+            if any(ismember(o.equations(:,1), varname))
+                error('Variable %s already has an equation. Use the change method if you really want to redefine the equation for %s. ', varname, varname)
+            end
             id = size(o.equations, 1)+1;
             o.equations{id,1} = varname;
             o.equations{id,2} = equation;
