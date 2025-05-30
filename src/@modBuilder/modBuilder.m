@@ -167,7 +167,7 @@ classdef modBuilder<handle
         %
         % INPUTS:
         %  - o      [modBuilder]
-        % - type    [char]           1×n array, type of symbol ('parameters', 'exogenous' or 'endogenous')
+        % - type    [char]           1×n array, type of symbol ('equations', 'parameters', 'exogenous' or 'endogenous')
         %
         % OUTPUTS:
         % - n    [integer]    scalar, number of symbols.
@@ -178,6 +178,8 @@ classdef modBuilder<handle
                     n = size(o.varexo, 1);
                   case 'endogenous'
                     n = size(o.var, 1);
+                  case 'equations'
+                    n = size(o.equations, 1);
                 end
         end
 
@@ -286,9 +288,36 @@ classdef modBuilder<handle
         %
         % OUTPUTS:
         % - o          [char]            updated object
-            equation = o.equations(eqname);
-            o.equations(eqname) = [];
-            % TODO Update lists of objects
+            ide = ismember(o.equations(:,1), eqname);
+            if not(any(ide))
+                error('Unknown equation (%s).', eqname)
+            end
+            o.equations(ide,:) = [];
+            for i=1:length(o.T.equations.(eqname))
+                [type, id] = o.typeof(o.T.equations.(eqname){i});
+                if not(o.appear_in_more_than_one_equation(o.T.equations.(eqname){i}))
+                    % The symbol does not appear in other equations, we can safely remove it
+                    switch type
+                      case 'parameter'
+                        o.params(id,:) = [];
+                      case 'exogenous'
+                        o.varexo(id,:) = [];
+                      case 'endogenous'
+                        o.var(id,:) = [];
+                      otherwise
+                        % We should not attain this part of the code.
+                    end % switch
+                end % if
+            end
+            o.T.equations = rmfield(o.T.equations, eqname);
+            o.T.var.(eqname) = setdiff(o.T.var.(eqname), eqname); % Remove reference to the equation defining eqname.
+            % If the variable eqname is referenced in another equation, it must be converted to an exogenous variable.
+            if not(isempty(o.T.var.(eqname)))
+                o.varexo = [o.varexo; o.var(ismember(o.var(:,1), eqname),:)];
+                o.T.varexo.(eqname) = o.T.var.(eqname);
+                o.T.var = rmfield(o.T.var, eqname);
+            end
+            o.var(ismember(o.var(:,1), eqname),:) = [];
         end % function
 
         function write(o, basename)
@@ -394,6 +423,34 @@ classdef modBuilder<handle
         % - b         [logical]      scalar
             b = any(ismember(o.var(:,1), name));
         end % function
+
+        function [type, id] = typeof(o, name)
+        % Return the type of a symbol.
+        %
+        % INPUTS:
+        % - o
+        % - name
+        %
+        % OUTPUTS:
+        % - type
+        % - id
+            id = ismember(o.params(:,1), name);
+            if any(id)
+                type = 'parameter';
+                return
+            end
+            id = ismember(o.varexo(:,1), name);
+            if any(id)
+                type = 'exogenous';
+                return
+            end
+            id = ismember(o.var(:,1), name);
+            if any(id)
+                type = 'endogenous';
+                return
+            end
+            error('Unknown type for symbol %s.', name);
+        end
 
         function b = appear_in_more_than_one_equation(o, name)
         % Return true iff a symbol appears in more than one equation.
