@@ -4,7 +4,8 @@ listoftests = [
   'rbc/rbc1',
   'rbc/rbc2',
   'rbc/rbc3',
-  'rbc/rbc3',
+  'rbc/rbc4',
+  'rbc/rbc5',
 ]
 
 foreach t : listoftests

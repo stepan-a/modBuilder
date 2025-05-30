@@ -320,6 +320,26 @@ classdef modBuilder<handle
             o.var(ismember(o.var(:,1), eqname),:) = [];
         end % function
 
+        function o = rm(o, varargin)
+        % Remove equations from the model.
+        %
+        % INPUTS:
+        % - o          [modBuilder]
+        % - eqname1    [char]            1×n array, name of an equation (or endogenous variable associated to an equation)
+        % - eqname2    [char]            1×m array, name of an equation (or endogenous variable associated to an equation)
+        % - …
+        %
+        % OUTPUTS:
+        % - o          [char]            updated object
+            if not(all(cellfun(@(x) ischar(x) && isrow(x), varargin)))
+                error('All input arguments must be row char arrays (equation names).')
+            end
+            eqnames = unique(varargin);
+            for i=1:length(eqnames)
+                o.remove(eqnames{i});
+            end
+        end
+
         function write(o, basename)
         % Write model in a mod file.
         %
