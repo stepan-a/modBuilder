@@ -6,6 +6,7 @@ listoftests = [
   'rbc/rbc3',
   'rbc/rbc4',
   'rbc/rbc5',
+  'ar/ar1',
 ]
 
 foreach t : listoftests

@@ -528,6 +528,62 @@ classdef modBuilder<handle
             o.equations{ie,1} = varexoname;
         end % function
 
+        function p = copy(o)
+        % Deep copy of an object
+        %
+        % INPUTS:
+        % - o   [modBuilder]
+        %
+        % OUTPUTS:
+        % - p   [modBuilder]
+            p = modBuilder(o.date);
+            p.params = o.params;
+            p.varexo = o.varexo;
+            p.var = o.var;
+            p.symbols = o.symbols;
+            p.equations = o.equations;
+            p.T = o.T;
+        end
+
+        function b = eq(o, p)
+            % Overload eq method.
+            %
+            % INPUTS:
+            % - o   [modBuilder]
+            % - p   [modBuilder]
+            %
+            % OUTPUTS:
+            % - b   [logical]      scalar, true iff objects o and p are identical.
+            if ~isa(o, 'modBuilder') || ~isa(o, 'modBuilder')
+                error('Cannot compare modBuilder object with an object from another class.')
+            end
+            b = true;
+            if not(isequal(o.params, p.params))
+                b = false;
+                return
+            end
+            if not(isequal(o.varexo, p.varexo))
+                b = false;
+                return
+            end
+            if not(isequal(o.var, p.var))
+                b = false;
+                return
+            end
+            if not(isequal(o.symbols, p.symbols))
+                b = false;
+                return
+            end
+            if not(isequal(o.equations, p.equations))
+                b = false;
+                return
+            end
+            if not(isequal(o.T, p.T))
+                b = false;
+                return
+            end
+        end
+
     end % methods
 
 
