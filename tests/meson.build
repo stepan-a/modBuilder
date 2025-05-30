@@ -3,6 +3,8 @@ matlab = find_program('matlab', required: true)
 listoftests = [
   'rbc/rbc1',
   'rbc/rbc2',
+  'rbc/rbc3',
+  'rbc/rbc3',
 ]
 
 foreach t : listoftests
