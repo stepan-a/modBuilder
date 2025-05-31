@@ -6,6 +6,7 @@ listoftests = [
   'rbc/rbc3',
   'rbc/rbc4',
   'rbc/rbc5',
+  'rbc/rbc7',
   'ar/ar1',
 ]
 

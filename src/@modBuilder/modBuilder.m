@@ -217,6 +217,10 @@ classdef modBuilder<handle
         %
         % OUTPUTS:
         % - o         [modBuilder]   updated object
+        %
+        % REMARKS:
+        % If symbol pname is known as an exogenous variable, it is converted to a parameter. If pvalue is not NaN, pname is set
+        % equal to pvalue, otherwise the parameter is calibrated with the value of the exogeous variable.
             if nargin<3
                 % Set default value
                 pvalue = NaN;
@@ -225,8 +229,19 @@ classdef modBuilder<handle
             if any(idp) % The parameter is already defined
                 o.params{idp, 2} = pvalue;
             else
-                o.params{length(idp)+1, 1} = pname;
-                o.params{length(idp)+1, 2} = pvalue;
+                idx = ismember(o.varexo(:,1), pname);
+                if any(idx)
+                    % pname is an exogenous variable, we change its type to parameter.
+                    o.params(length(idp)+1,:) = o.varexo(idx,:);
+                    o.varexo(idx,:) = [];
+                    if not(isnan(pvalue))
+                        o.params{length(idp)+1,2} = pvalue;
+                    end
+                else
+                % Symbol pname has no predefined type.
+                    o.params{length(idp)+1, 1} = pname;
+                    o.params{length(idp)+1, 2} = pvalue;
+                end
             end
             % Remove pname from the list of untyped symbols
             o.symbols = setdiff(o.symbols, pname);
@@ -242,6 +257,10 @@ classdef modBuilder<handle
         %
         % OUTPUTS:
         % - o         [modBuilder]   updated object
+        %
+        % REMARKS:
+        % If symbol xname is known as a parameter, it is converted to an exogenous variable. If xvalue is not NaN, xname is set
+        % equal to xvalue, otherwise the exogenous variable is calibrated with the value of the parameter.
             if nargin<3
                 % Set default value
                 xvalue = NaN;
@@ -250,8 +269,18 @@ classdef modBuilder<handle
             if any(idx) % The parameter is already defined
                 o.varexo{idx, 2} = xvalue;
             else
-                o.varexo{length(idx)+1, 1} = xname;
-                o.varexo{length(idx)+1, 2} = xvalue;
+                idp = ismember(o.params(:,1), xname);
+                if any(idp)
+                    % pname is a parameter, we change its type to exogenous variable.
+                    o.varexo(length(idx)+1,:) = o.params(idp,:);
+                    o.params(idp,:) = [];
+                    if not(isnan(xvalue))
+                        o.varexo{length(idx)+1,2} = xvalue;
+                    end
+                else
+                    o.varexo{length(idx)+1, 1} = xname;
+                    o.varexo{length(idx)+1, 2} = xvalue;
+                end
             end
             % Remove xname from the list of untyped symbols
             o.symbols = setdiff(o.symbols, xname);
