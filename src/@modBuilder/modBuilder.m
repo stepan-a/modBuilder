@@ -406,6 +406,9 @@ classdef modBuilder<handle
         function o = updatesymboltables(o)
         % Update fields under o.T. These fields map symbols (parameter, endogenous and exogenous variables) with equations.
         % See private method updatesymboltable
+            o.T.params = struct();
+            o.T.varexo = struct();
+            o.T.var = struct();
             o.updatesymboltable('parameters');
             o.updatesymboltable('exogenous');
             o.updatesymboltable('endogenous');
