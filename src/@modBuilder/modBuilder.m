@@ -484,12 +484,12 @@ classdef modBuilder<handle
         % Return the type of a symbol.
         %
         % INPUTS:
-        % - o
-        % - name
+        % - o        [modBuilder]
+        % - name     [char]            1×n array, name of a symbol
         %
         % OUTPUTS:
-        % - type
-        % - id
+        % - type     [char]            1×m array, type of the symbol
+        % - id       [logical]         p×1 array with only one true element, targeting the symbol in o.{params,varexo,var}
             id = ismember(o.params(:,1), name);
             if any(id)
                 type = 'parameter';
