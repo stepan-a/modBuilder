@@ -667,6 +667,26 @@ classdef modBuilder<handle
             o.T.equations.(varname) = ntokens;
         end
 
+        function p = extract(o, varargin)
+        % Extract equations from a model a return a new modBuilder object.
+        %
+        % INPUTS:
+        % - o      [modBuilder]
+        % - ...    [char]          row arrays, equation names to be extracted from o
+        %
+        % OUTPUTS:
+        % - p      [modBuilder]
+        %
+        % REMARKS:
+        % The number of equations in p is equal to the number of arguments passed to the extract method.
+            p = copy(o);
+            if not(all(ismember(varargin, p.equations(:,1))))
+                error('Equation(s) missing for:%s.', printlist(varargin(~ismember(varargin, p.equations(:,1)))))
+            end
+            eqnames = setdiff(p.equations(:,1), varargin);
+            p.rm(eqnames{:});
+        end
+
     end % methods
 
 
