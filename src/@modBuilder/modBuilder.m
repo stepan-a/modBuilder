@@ -619,6 +619,53 @@ classdef modBuilder<handle
             end
         end
 
+        function o = change(o, varname, equation)
+        % Change an equation in the model
+        %
+        % INPUTS:
+        % - o           [modBuilder]
+        % - varname     [char]         1×n array, name of an endogenous variable
+        % - equation    [char]         1×m array, expression (new equation)
+        %
+        % OUTPUTS:
+        % - o           [modBuilder]   updated object (with new equation)
+            warning('off','backtrace')
+            ide = ismember(o.equations(:,1), varname);
+            if not(any(ide))
+                error('There is no equation for %s.', varname)
+            end
+            o.equations{ide,2} = equation;
+            otokens = o.T.equations.(varname);
+            ntokens = setdiff(modBuilder.getsymbols(equation), varname);
+            o.symbols = [o.symbols, ntokens];
+            % Remove symbols that are already known. If o.symbols is empty, it indicates that the updated equation introduces no
+            % new symbols. Otherwise, a warning is issued, and the user is expected to provide types for the new symbols.
+            o.symbols = setdiff(o.symbols, [o.params(:,1); o.varexo(:,1); o.var(:,1)]);
+            if not(isempty(o.symbols))
+                % TODO: should remaining symbols be declared as exogenous variables by default?
+                warning('Untyped symbol(s):%s.', sprintf(' %s', o.symbols{:}))
+            end
+            % Do we need to remove some symbols (parameters or exogenous variables)?
+            list_of_symbols_potentially_to_be_removed = setdiff(otokens, ntokens);
+            for i=1:length(list_of_symbols_potentially_to_be_removed)
+                if not(o.appear_in_more_than_one_equation(list_of_symbols_potentially_to_be_removed{i}))
+                    % Remove parameter/variable if it does not appear in another equation.
+                    [type, id] = o.typeof(list_of_symbols_potentially_to_be_removed{i});
+                    switch type
+                      case 'parameter'
+                        o.params(id,:) = [];
+                        o.T.params = rmfield(o.T.params, list_of_symbols_potentially_to_be_removed{i});
+                      case 'exogenous'
+                        o.varexo(id,:) = [];
+                        o.T.varexo = rmfield(o.T.varexo, list_of_symbols_potentially_to_be_removed{i});
+                      otherwise
+                        % Nothing to be done here.
+                    end
+                end
+            end
+            o.T.equations.(varname) = ntokens;
+        end
+
     end % methods
 
 
