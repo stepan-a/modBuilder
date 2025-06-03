@@ -343,13 +343,14 @@ classdef modBuilder<handle
             end
             o.T.equations = rmfield(o.T.equations, eqname);
             o.T.var.(eqname) = setdiff(o.T.var.(eqname), eqname); % Remove reference to the equation defining eqname.
-            % If the variable eqname is referenced in another equation, it must be converted to an exogenous variable.
             if not(isempty(o.T.var.(eqname)))
+                % If the variable eqname is referenced in another equation, it must be converted to an exogenous variable.
                 o.varexo = [o.varexo; o.var(ismember(o.var(:,1), eqname),:)];
                 o.T.varexo.(eqname) = o.T.var.(eqname);
                 o.T.var = rmfield(o.T.var, eqname);
             end
             o.var(ismember(o.var(:,1), eqname),:) = [];
+            o.updatesymboltables();
         end % function
 
         function o = rm(o, varargin)
