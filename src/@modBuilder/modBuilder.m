@@ -582,14 +582,14 @@ classdef modBuilder<handle
         end
 
         function b = eq(o, p)
-            % Overload eq method.
-            %
-            % INPUTS:
-            % - o   [modBuilder]
-            % - p   [modBuilder]
-            %
-            % OUTPUTS:
-            % - b   [logical]      scalar, true iff objects o and p are identical.
+        % Overload eq method.
+        %
+        % INPUTS:
+        % - o   [modBuilder]
+        % - p   [modBuilder]
+        %
+        % OUTPUTS:
+        % - b   [logical]      scalar, true iff objects o and p are identical.
             if ~isa(o, 'modBuilder') || ~isa(p, 'modBuilder')
                 error('Cannot compare modBuilder object with an object from another class.')
             end
