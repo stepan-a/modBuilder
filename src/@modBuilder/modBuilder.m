@@ -373,7 +373,7 @@ classdef modBuilder<handle
             end
         end
 
-        function write(o, basename)
+        function o = write(o, basename)
         % Write model in a mod file.
         %
         % INPUTS:

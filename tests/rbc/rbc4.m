@@ -41,7 +41,7 @@ model.updatesymboltables();
 
 model.remove('a');
 
-model.write('rbc4')
+model.write('rbc4');
 
 b = modiff('rbc4.mod', 'rbc4.true.mod');
 

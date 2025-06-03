@@ -35,7 +35,7 @@ model.updatesymboltables();
 
 MODEL = model.extract('y', 'c', 'h', 'k');
 
-MODEL.write('rbc8')
+MODEL.write('rbc8');
 
 b = modiff('rbc8.mod', 'rbc8.true.mod');
 

@@ -37,7 +37,7 @@ end
 
 model.updatesymboltables();
 
-model.write('rbc1')
+model.write('rbc1');
 
 b = modiff('rbc1.mod', 'rbc1.true.mod');
 
@@ -59,7 +59,7 @@ else
     delete rbc1.mat
 end
 
-model.write('rbc1')
+model.write('rbc1');
 
 b = modiff('rbc1.mod', 'rbc1.true.mod');
 
