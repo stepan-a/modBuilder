@@ -98,6 +98,15 @@ classdef modBuilder<handle
             str = sprintf('%s;', str);
         end
 
+        function S = shiftS(S,n)
+        % Removes the first n elements of a one dimensional cell array.
+            if length(S) >= n+1
+                S = S(n+1:end);
+            else
+                S = {};
+            end
+        end
+
         function tokens = getsymbols(expr)
         % Extract symbols from an expression
         %
@@ -686,6 +695,34 @@ classdef modBuilder<handle
             eqnames = setdiff(p.equations(:,1), varargin);
             p.rm(eqnames{:});
         end
+
+        function p = subsref(o, S)
+        % Overlaod subsref method
+            if length(S)>1
+                if isequal(S(1).type, '()')
+                    % Extract a subset of equations and apply methods to the extracted model or display properties.
+                    if isequal(S(2).type, '.') && length(S)==2
+                        p = o.extract(S(1).subs{:});
+                        p = p.(S(2).subs);
+                    else
+                        p = o.extract(S(1).subs{:});
+                        S = modBuilder.shiftS(S, 1);
+                        if length(S)>1
+                            p = builtin('subsref', p, S);
+                        end
+                    end
+                else
+                    p = builtin('subsref', o, S);
+                end
+            else
+                if isequal(S(1).type, '()')
+                    % Extract subset of equations.
+                    p = o.extract(S(1).subs{:});
+                else
+                    p = builtin('subsref', o, S);
+                end
+            end
+        end % function
 
     end % methods
 

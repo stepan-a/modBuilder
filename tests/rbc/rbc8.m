@@ -33,7 +33,7 @@ model.exogenous('u', 0);
 
 model.updatesymboltables();
 
-MODEL = model.extract('y', 'c', 'h', 'k');
+MODEL = model('y', 'c', 'h', 'k');
 
 MODEL.write('rbc8');
 
