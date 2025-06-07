@@ -690,7 +690,7 @@ classdef modBuilder<handle
         % The number of equations in p is equal to the number of arguments passed to the extract method.
             p = copy(o);
             if not(all(ismember(varargin, p.equations(:,1))))
-                error('Equation(s) missing for:%s.', printlist(varargin(~ismember(varargin, p.equations(:,1)))))
+                error('Equation(s) missing for:%s.', modBuilder.printlist(varargin(~ismember(varargin, p.equations(:,1)))))
             end
             eqnames = setdiff(p.equations(:,1), varargin);
             p.rm(eqnames{:});
