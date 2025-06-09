@@ -12,6 +12,7 @@ listoftests = [
   'ar/ar2',
   'ar/ar3',
   'ar/ar4',
+  'ar/ar5',
 ]
 
 listoffailingtests = [

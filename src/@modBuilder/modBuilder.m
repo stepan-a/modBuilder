@@ -724,6 +724,58 @@ classdef modBuilder<handle
             end
         end % function
 
+        function o = subsasgn(o,S,B)
+        % Overload subsasgn method
+            if length(S)>1
+                error('Wrong assignment.')
+            end
+            if isequal(S(1).type, '()')
+                if ischar(S(1).subs{1})
+                    try
+                        [type, id] = typeof(o, S(1).subs{1});
+                    catch
+                        % Character array S(1).subs{1} is neither a parameter name, endogenous or
+                        % exogenous variable name.
+                        error('Wrong index (unknwow symbol).')
+                    end
+                    switch type
+                      case 'parameter'
+                        if isnumeric(B) && isscalar(B) && isreal(B)
+                            % Change parameter value.
+                            o.params{id,2} = B;
+                        else
+                            error('Can only assign a real scalar number to a parameter.')
+                        end
+                      case 'exogenous'
+                        if isnumeric(B) && isscalar(B) && isreal(B)
+                            % Change exogenous variable value.
+                            o.varexo{id,2} = B;
+                        else
+                            error('Can only assign a real scalar number to an exogenous variable.')
+                        end
+                      case 'endogenous'
+                        if ischar(B)
+                            % Change equation.
+                            o.change(S(1).subs{1}, B);
+                        else
+                            % Assign a value to an endogenous variable.
+                            if isnumeric(B) && isscalar(B) && isreal(B)
+                                o.var{id,2} = B;
+                            else
+                                error('Can only assign a real scalar number to an endogenous variable.')
+                            end
+                        end
+                      otherwise
+                        error('Wrong assignment.')
+                    end
+                else
+                    error('Wrong assignment (index must be a character array, a known symbol).')
+                end
+            else
+                error('Wrong assignment (cannot index with . or {}).')
+            end
+        end % function
+
     end % methods
 
 
