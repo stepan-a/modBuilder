@@ -696,6 +696,93 @@ classdef modBuilder<handle
             p.rm(eqnames{:});
         end
 
+        function q = merge(o, p)
+        % Merge two models.
+        %
+        % INPUTS:
+        % - o    [modBuilder]
+        % - p    [modBuilder]
+        %
+        % OUTPUTS:
+        % - q    [modBuilder]
+            q = modBuilder();
+            %
+            % Set parameters of the new model.
+            %
+            o_params_list = o.params(:,1);
+            p_params_list = p.params(:,1);
+            common_params = intersect(o_params_list, p_params_list);
+            o_only_params_list = setdiff(o_params_list, p_params_list);
+            p_only_params_list = setdiff(p_params_list, o_params_list);
+            q_params = cell(length(o_only_params_list)+length(p_only_params_list)+length(common_params), 2);
+            i = 1;
+            for j=1:length(o_only_params_list)
+                q_params{i,1} = o_only_params_list{j};
+                q_params{i,2} = o.params{ismember(o.params(:,1), o_only_params_list{j}),2};
+                i = i+1;
+            end
+            for j=1:length(common_params)
+                q_params{i,1} = common_params{j};
+                tmp = p.params{ismember(p.params(:,1), common_params{j}),2};
+                if not(isnan(tmp))
+                    q_params{i,2} = tmp;
+                else
+                    q_params{i,2} = o.params{ismember(o.params(:,1), o_only_params_list{j}),2};
+                end
+                i = i+1;
+            end
+            for j=1:length(p_only_params_list)
+                q_params{i,1} = p_only_params_list{j};
+                q_params{i,2} = p.params{ismember(p.params(:,1), p_only_params_list{j}),2};
+                i = i+1;
+            end
+            q.params = q_params;
+            %
+            % Set list of endogenous variables in the new model.
+            %
+            o_var_list = o.var(:,1);
+            p_var_list = p.var(:,1);
+            common_var = intersect(o_var_list, p_var_list);
+            o_only_var_list = setdiff(o_var_list, p_var_list);
+            p_only_var_list = setdiff(p_var_list, o_var_list);
+            o_varexo_list = o.varexo(:,1);
+            p_varexo_list = p.varexo(:,1);
+            o_varexo2var = intersect(o_varexo_list, p_var_list); % List of exogenous variables, in model o, that will become endogenous when model o is merged with model p.
+            p_varexo2var = intersect(p_varexo_list, o_var_list); % List of exogenous variables, in model p, that will become endogenous when model p is merged with model o.
+            q_var = cell(length(o_only_var_list)+length(common_var)+length(p_only_var_list), 2);
+            q_var(:,1) = [o_only_var_list; common_var; p_only_var_list];
+            i = 1;
+            for j=1:length(o_only_var_list)
+                q_var{i,2} = o.var{ismember(o.var(:,1), o_only_var_list{j}),2};
+                i = i+1;
+            end
+            for j=1:length(common_var)
+                tmp = p.var{ismember(p.var(:,1), common_var{j}),2};
+                if not(isnan(tmp))
+                    q_var{i,2} = tmp;
+                else
+                    q_var{i,2} = o.var{ismember(o.var(:,1), o_only_var_list{j}),2};
+                end
+                i = i+1;
+            end
+            for j=1:length(p_only_var_list)
+                q_var{i,2} = p.var{ismember(p.var(:,1), p_only_var_list{j}),2};
+                i = i+1;
+            end
+            q.var = q_var;
+            %
+            % Set list of exogenous variables
+            %
+            ose = ~ismember(o_varexo2var, o_varexo_list); % Select exogenous variables from model o, excluding those that will be endogeneised when merging with model p.
+            pse = ~ismember(p_varexo2var, p_varexo_list); % Select exogenous variables from model p, excluding those that will be endogeneised when merging with model o.
+            tmp = [o_varexo_list(ose); p_varexo_list(pse)];
+            q_varexo = {tmp, NaN(length(tmp), 1)};
+            ido = ismember(o_varexo_list, q_varexo);
+            if any(ido)
+
+            end
+        end
+
         function p = subsref(o, S)
         % Overlaod subsref method
             if length(S)>1
