@@ -247,7 +247,7 @@ classdef modBuilder<handle
                         o.params{length(idp)+1,2} = pvalue;
                     end
                 else
-                % Symbol pname has no predefined type.
+                    % Symbol pname has no predefined type.
                     o.params{length(idp)+1, 1} = pname;
                     o.params{length(idp)+1, 2} = pvalue;
                 end
