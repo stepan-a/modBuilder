@@ -130,21 +130,102 @@ classdef modBuilder<handle
         % Return true iff n×2 cell arrays are identical (without taking care the ordering of the rowscA and cB are interpreted as sets of rows).
         %
         % INPUTS;
-        % - cA    [cell]       n×p array
-        % - cB    [cell]       n×p array
+        % - cA    [cell]       n×2 array
+        % - cB    [cell]       n×2 array
         %
         % OUTPUTS:
         % - b     [logical]    scalar
         %
         % REMARKS:
-        % - Both ojects must have the same diemnsions.
-        % - It is assumed that arrays are made of characters or numbers.
+        % - Both ojects must have the same number of rows.
+        % - It is assumed that the second columns are made only of characters or only of numbers.
         % - Since cA and cB are interpreted as sets of rows, ordering of the rows does not matter.
             b = false;
             if not(isequal(size(cA), size(cB)))
                 return
             end
-            b = isequal(sortrows(cA), sortrows(cB));
+            cA = sortrows(cA);
+            cB = sortrows(cB);
+            if all(cellfun(@isnumeric, cA(:,2))) && all(cellfun(@isnumeric, cB(:,2)))
+                isnanA = cellfun(@isnan, cA(:,2));
+                isnanB = cellfun(@isnan, cB(:,2));
+                if not(isequal(isnanA, isnanB))
+                    return
+                end
+                b = isequal(cA(~isnanA,2), cB(~isnanB,2));
+            elseif all(cellfun(@ischar, cA(:,2))) && all(cellfun(@ischar, cB(:,2)))
+                b = isequal(cA(:,2), cB(:,2));
+            else
+                error('Second columns of cell arays must contain only numerics or only characters.')
+            end
+        end
+
+        function b = isequalsymboltable(o, p, type)
+        % Test if two tables of symbols are identical.
+        %
+        % INPUTS:
+        % - o      [modBuilder]     model object
+        % - p      [modBuilder]     model object
+        % - type   [char]           row char array equal to 'params', 'var', 'varexo' or 'equations'
+        %
+        % OUTPUTS:
+        % - b      [logical]        scalar, true iff the symbol tables are identical.
+            b = false;
+            S1 = o.T.(type);
+            S2 = p.T.(type);
+            f1 = fields(S1);
+            f2 = fields(S2);
+            if not(isequal(length(f1), length(f2)))
+                return
+            end
+            if not(isequal(sort(f1), sort(f2)))
+                return
+            end
+            for i=1:length(f1)
+                b = isequal(sort(S1.(f1{i})), sort(S2.(f1{i})));
+                if not(b)
+                    return
+                end
+            end
+        end
+
+        function S = mergeStructs(S1, S2)
+        % Merge two structures.
+        %
+        % INPUTS:
+        % - S1   [struct]
+        % - S2   [struct]
+        %
+        % OUTPUTS:
+        % - S     [struct]
+        %
+        % REMARKS:
+        % Each field of S1 or S2 holds row cell arrays or row character arrays (of endogenous variable names).
+            f1 = fields(S1);
+            f2 = fields(S2);
+            f3 = intersect(f1, f2);
+            S = struct();
+            if isempty(f3)
+                for i=1:length(f1)
+                    S.(f1{i}) = S1.(f1{i});
+                end
+                for i=1:length(f2)
+                    S.(f2{i}) = S2.(f2{i});
+                end
+            else
+                for i=1:length(f1)
+                    if ismember(f1{i}, f3)
+                        S.(f1{i}) = union(S1.(f1{i}), S2.(f1{i}));
+                    else
+                        S.(f1{i}) = S1.(f1{i});
+                    end
+                end
+                for i=1:length(f2)
+                    if not(ismember(f2{i}, f3))
+                        S.(f2{i}) = S2.(f2{i});
+                    end
+                end
+            end
         end
 
     end % methods
@@ -624,27 +705,39 @@ classdef modBuilder<handle
                 error('Cannot compare modBuilder object with an object from another class.')
             end
             b = true;
-            if not(isequal(o.params, p.params))
+            if not(modBuilder.isequalcell(o.params, p.params))
                 b = false;
                 return
             end
-            if not(isequal(o.varexo, p.varexo))
+            if not(modBuilder.isequalcell(o.varexo, p.varexo))
                 b = false;
                 return
             end
-            if not(isequal(o.var, p.var))
+            if not(modBuilder.isequalcell(o.var, p.var))
                 b = false;
                 return
             end
-            if not(isequal(o.symbols, p.symbols))
+            if not(isequal(sort(o.symbols), sort(p.symbols)))
                 b = false;
                 return
             end
-            if not(isequal(o.equations, p.equations))
+            if not(modBuilder.isequalcell(o.equations, p.equations))
                 b = false;
                 return
             end
-            if not(isequal(o.T, p.T))
+            if not(modBuilder.isequalsymboltable(o, p, 'params'))
+                b = false;
+                return
+            end
+            if not(modBuilder.isequalsymboltable(o, p, 'varexo'))
+                b = false;
+                return
+            end
+            if not(modBuilder.isequalsymboltable(o, p, 'var'))
+                b = false;
+                return
+            end
+            if not(modBuilder.isequalsymboltable(o, p, 'equations'))
                 b = false;
                 return
             end
@@ -715,6 +808,122 @@ classdef modBuilder<handle
             end
             eqnames = setdiff(p.equations(:,1), varargin);
             p.rm(eqnames{:});
+        end
+
+        function q = merge(o, p)
+        % Merge two models.
+        %
+        % INPUTS:
+        % - o    [modBuilder]
+        % - p    [modBuilder]
+        %
+        % OUTPUTS:
+        % - q    [modBuilder]
+        %
+        % REMARKS:
+        % Endogenous variables in models o and p must be different, i.e. intersect(o.var, p.var) must be empty. If this is not the case, the user must remove
+        % the common endogenous variables (and associated equations) in one of the model.
+            commonvariables = intersect(o.var(:,1), p.var(:,1));
+            if ~isempty(commonvariables)
+                error('Models to be merged cannot contain common endogenous variables. Check variable(s)%s.', sprintf(' %s', commonvariables{:}))
+            end
+            q = modBuilder();
+            %
+            % Set parameters of the new model.
+            %
+            o_params_list = o.params(:,1);
+            p_params_list = p.params(:,1);
+            common_params = intersect(o_params_list, p_params_list);
+            o_only_params_list = setdiff(o_params_list, p_params_list);
+            p_only_params_list = setdiff(p_params_list, o_params_list);
+            q_params = cell(length(o_only_params_list)+length(p_only_params_list)+length(common_params), 2);
+            i = 1;
+            for j=1:length(o_only_params_list)
+                q_params{i,1} = o_only_params_list{j};
+                q_params{i,2} = o.params{ismember(o.params(:,1), o_only_params_list{j}),2};
+                i = i+1;
+            end
+            for j=1:length(common_params)
+                q_params{i,1} = common_params{j};
+                tmp = p.params{ismember(p.params(:,1), common_params{j}),2};
+                if not(isnan(tmp))
+                    q_params{i,2} = tmp;
+                else
+                    q_params{i,2} = o.params{ismember(o.params(:,1), o_only_params_list{j}),2};
+                end
+                i = i+1;
+            end
+            for j=1:length(p_only_params_list)
+                q_params{i,1} = p_only_params_list{j};
+                q_params{i,2} = p.params{ismember(p.params(:,1), p_only_params_list{j}),2};
+                i = i+1;
+            end
+            q.params = q_params;
+            %
+            % Set list of endogenous variables in the new model and change type of some exogenous variables.
+            %
+            o_varexo_list = o.varexo(:,1);
+            p_varexo_list = p.varexo(:,1);
+            % Set list of exogenous variables, in model o, that will become endogenous when model o is merged with model p.
+            o_varexo2var = intersect(o_varexo_list, p.var(:,1));
+            % Set list of exogenous variables, in model p, that will become endogenous when model p is merged with model o.
+            p_varexo2var = intersect(p_varexo_list, o.var(:,1));
+            % Set list of endogenous variables (with calibration)
+            q.var = [o.var; p.var];
+            %
+            % Set list of exogenous variables
+            %
+            if ~isempty(o_varexo2var)
+                ose = ~ismember(o_varexo2var, o_varexo_list); % Select exogenous variables from model o, excluding those that will be endogeneised when merging with model p.
+            else
+                ose = true(length(o_varexo_list), 1);
+            end
+            if ~isempty(p_varexo2var)
+                pse = ~ismember(p_varexo2var, p_varexo_list); % Select exogenous variables from model p, excluding those that will be endogeneised when merging with model o.
+            else
+                pse = true(length(p_varexo_list), 1);
+            end
+            tmp = [o_varexo_list(ose); p_varexo_list(pse)];
+            q_varexo = cell(length(tmp), 2);
+            q_varexo(:,1) = tmp;
+            q_varexo(:,2) = {NaN};
+            [ido, io] = ismember(q_varexo(:,1), o_varexo_list);
+            [idp, ip] = ismember(q_varexo(:,1), p_varexo_list);
+            if any(ido)
+                for i=1:length(o_varexo_list(ose))
+                    if ido(i)
+                        q_varexo{i,2} = o.varexo{io(i),2};
+                    end
+                end
+            end
+            if any(idp)
+                for i=length(o_varexo_list(ose))+1:length(p_varexo_list(pse))
+                    if idp(i)
+                        q_varexo{i,2} = p.varexo{ip(i),2};
+                    end
+                end
+            end
+            q.varexo = q_varexo;
+            %
+            % Set list of equations
+            %
+            q.equations = [o.equations; p.equations];
+            %
+            % Set symbol tables
+            %
+            q.T.params = modBuilder.mergeStructs(o.T.params, p.T.params)
+            q.T.varexo = modBuilder.mergeStructs(o.T.varexo, p.T.varexo)
+            fnames = fields(q.T.varexo);
+            remvarexo = not(ismember(fnames, q.varexo(:,1)));
+            for i=1:length(remvarexo)
+                if remvarexo(i)
+                    rmfield(q.T.varexo, fnames{i});
+                end
+            end
+            clear('fnames', 'remvarexo');
+            q.T.var = modBuilder.mergeStructs(o.T.var, p.T.var);
+            q.T.equations = modBuilder.mergeStructs(o.T.equations, p.T.equations);
+            q.updatesymboltables();
         end
 
         function p = subsref(o, S)
@@ -798,6 +1007,5 @@ classdef modBuilder<handle
         end % function
 
     end % methods
-
 
 end % classdef
