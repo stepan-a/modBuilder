@@ -696,6 +696,39 @@ classdef modBuilder<handle
             p.rm(eqnames{:});
         end
 
+        function staticdepgraph(o)
+        % Plot a dependency graph based on the static model.
+        %
+        % INPUTS:
+        % - o    [modBuilder]
+        %
+        % OUTPUTS:
+        % None.
+            vars = o.var(:,1); % List of nodes (endogenous variables)
+            % Build edge lists based on symbol usage
+            src = {};
+            tgt = {};
+            for i = 1:o.size('endogenous');
+                eqVar = vars{i};
+                tokens = o.T.equations.(eqVar);  % symbols used in equation eqVar
+                for s = reshape(tokens,1,[])
+                    if o.isendogenous(s{1})
+                        src{end+1} = s{1};
+                        tgt{end+1} = eqVar;
+                    end
+                end
+            end
+            % Create directed graph
+            if isempty(src)
+                warning('No endogenous dependencies to plot');
+                return;
+            end
+            G = digraph(src, tgt, [], vars);  % use full list of vars as nodes
+            % Plot with force-directed layout
+            h = plot(G, 'Layout', 'force', 'NodeLabel', vars);
+            title('Endogenous variable dependency graph');
+        end
+
         function p = subsref(o, S)
         % Overlaod subsref method
             if length(S)>1
