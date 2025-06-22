@@ -320,6 +320,21 @@ classdef modBuilder<handle
             o.symbols = setdiff(o.symbols, ename);
         end % function
 
+        function o = check(o)
+        % Performs various checks on the model and update the symbol table.
+        %
+        % INPUTS:
+        % - o      [modBuilder]
+        %
+        % OUTPUTS:
+        % - o      [modBuilder]
+            warning('off','backtrace')
+            o.updatesymboltables;
+            if not(isempty(o.symbols))
+                warning('Some symbols are still untyped:%s', modBuilder.printlist(o.symbols))
+            end
+        end
+
         function o = remove(o, eqname)
         % Remove an equation from the model, remove one endogenous variable, remove unecessary parameters and exogenous variables
         %
