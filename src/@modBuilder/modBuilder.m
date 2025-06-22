@@ -537,7 +537,7 @@ classdef modBuilder<handle
             end
         end % function
 
-        function o = flip_type_endogenous_exogenous(o, varname, varexoname)
+        function o = flip(o, varname, varexoname)
         % Flip types of varname (initially an endogenous variable)
         % and varexoname (initially an exogenous variable). After the
         % change, the number of endogenous variables is the same, we

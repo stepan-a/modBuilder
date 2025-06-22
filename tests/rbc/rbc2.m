@@ -37,7 +37,7 @@ end
 
 model.updatesymboltables();
 
-model.flip_type_endogenous_exogenous('a', 'e');
+model.flip('a', 'e');
 
 model.write('rbc2');
 
