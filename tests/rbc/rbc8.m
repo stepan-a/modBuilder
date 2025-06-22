@@ -12,15 +12,15 @@ model.add('h', 'c*theta*h^(1+psi)=(1-alpha)*y');
 model.add('k', '1/beta = ((exp(b)*c)/(exp(b(+1))*c(+1)))*(exp(b(+1))*alpha*y(+1)/k+(1-delta))');
 
 % Define parameters and provide calibration
-model.parameters('alpha', 0.36);
-model.parameters('rhoa', 0.95);
-model.parameters('taua', 0.025);
-model.parameters('rhob', 0.95);
-model.parameters('taub', 0.025);
-model.parameters('beta', 0.99);
-model.parameters('delta', 0.025);
-model.parameters('psi', 0);
-model.parameters('theta', 2.95);
+model.parameter('alpha', 0.36);
+model.parameter('rhoa', 0.95);
+model.parameter('taua', 0.025);
+model.parameter('rhob', 0.95);
+model.parameter('taub', 0.025);
+model.parameter('beta', 0.99);
+model.parameter('delta', 0.025);
+model.parameter('psi', 0);
+model.parameter('theta', 2.95);
 
 % Check that the remaining symbols are the exogenous variables (structural innovations)
 if ~isequal(model.symbols, {'e', 'u'})

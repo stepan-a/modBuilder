@@ -16,9 +16,9 @@ model.add('x', 'y = rho2*y(-1) + rho3*x(-1) + ex');
 model.exogenous('ey', 0);
 model.exogenous('ex', 0);
 
-model.parameters('rho1', .3);
-model.parameters('rho2', .8);
-model.parameters('rho3', .1);
+model.parameter('rho1', .3);
+model.parameter('rho2', .8);
+model.parameter('rho3', .1);
 
 model.updatesymboltables();
 

@@ -10,19 +10,19 @@ model.add('h', 'c*theta*h^(1+psi)=(1-alpha)*y');
 model.add('k', '1/beta = ((exp(b)*c)/(exp(b(+1))*c(+1)))*(exp(b(+1))*alpha*y(+1)/k+(1-delta))');
 
 % Define parameters and provide calibration
-model.parameters('alpha', 0.36);
-model.parameters('beta', 0.99);
-model.parameters('delta', 0.025);
-model.parameters('psi', 0);
-model.parameters('theta', 2.95);
-model.parameters('phi', 0.1);
+model.parameter('alpha', 0.36);
+model.parameter('beta', 0.99);
+model.parameter('delta', 0.025);
+model.parameter('psi', 0);
+model.parameter('theta', 2.95);
+model.parameter('phi', 0.1);
 
 % Set default values for the exogenous variables
 model.exogenous('a', 0);
 model.exogenous('b', 0);
 
 % Redefine a as a parameter
-model.parameters('a', .1);
+model.parameter('a', .1);
 
 model.updatesymboltables();
 

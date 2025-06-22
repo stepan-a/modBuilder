@@ -18,7 +18,7 @@ eqarp = sprintf('%s e', eqarp);
 model.add('y', eqarp);
 
 for lag = 1:5
-    model.parameters(sprintf('rho%u', lag), 2*rand-1);
+    model.parameter(sprintf('rho%u', lag), 2*rand-1);
 end
 
 % Check that the remaining symbols are the exogenous variables (structural innovations)

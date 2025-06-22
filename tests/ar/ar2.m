@@ -17,7 +17,7 @@ eqarp = sprintf('%s e', eqarp);
 model.add('y', eqarp);
 
 for lag = 1:5
-    model.parameters(sprintf('rho%u', lag), 2*rand-1);
+    model.parameter(sprintf('rho%u', lag), 2*rand-1);
 end
 
 % Check that the remaining symbols are the exogenous variables (structural innovations)
@@ -47,7 +47,7 @@ if not(isequal(model.T.equations.y, {'e'  'rho1'  'rho2'  'rho3'  'rho4'  'rho5'
     error('Wrong list of symbols in equation.')
 end
 
-model.parameters('rho6', .1);
+model.parameter('rho6', .1);
 
 if not(isempty(model.symbols))
     error('The list of untyped symbols should be empty.')

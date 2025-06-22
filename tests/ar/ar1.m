@@ -15,7 +15,7 @@ eqarp = sprintf('%s e', eqarp);
 model1.add('y', eqarp);
 
 for lag = 1:10
-    model1.parameters(sprintf('rho%u', lag), 2*rand-1);
+    model1.parameter(sprintf('rho%u', lag), 2*rand-1);
 end
 
 % Check that the remaining symbols are the exogenous variables (structural innovations)
@@ -29,7 +29,7 @@ model1.updatesymboltables();
 
 model2 = copy(model1);
 
-model2.parameters('rho10', 0);
+model2.parameter('rho10', 0);
 
 if model1==model2
     error('Deep copy is not working as expected.')

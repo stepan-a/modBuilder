@@ -216,7 +216,7 @@ classdef modBuilder<handle
             o.symbols = setdiff(o.symbols, o.var(:,1));
         end % function
 
-        function o = parameters(o, pname, pvalue)
+        function o = parameter(o, pname, pvalue)
         % Declare or calibrate a parameter
         %
         % INPUTS:
