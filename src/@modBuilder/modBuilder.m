@@ -18,11 +18,11 @@ classdef modBuilder<handle
 % along with Dynare.  If not, see <https://www.gnu.org/licenses/>.
 
     properties
-        params = cell(0,2);             % List of parameters
-        varexo = cell(0,2);             % List of exogenous variables.
-        var = cell(0,2);                % List of endogenous variables.
-        symbols = {};                   % List of untyped symbols
-        equations = cell(0,2);          % List of equations.
+        params = cell(0, 2);             % List of parameters
+        varexo = cell(0, 2);             % List of exogenous variables.
+        var = cell(0, 2);                % List of endogenous variables.
+        symbols = cell(1, 0);            % List of untyped symbols
+        equations = cell(0, 2);          % List of equations.
         T = struct('params', struct(), 'varexo', struct(), 'var', struct(), 'equations', struct());
     end
 
