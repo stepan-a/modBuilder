@@ -126,6 +126,27 @@ classdef modBuilder<handle
             tokens = unique(tokens);
         end % function
 
+        function b = isequalcell(cA, cB)
+        % Return true iff n×2 cell arrays are identical (without taking care the ordering of the rowscA and cB are interpreted as sets of rows).
+        %
+        % INPUTS;
+        % - cA    [cell]       n×p array
+        % - cB    [cell]       n×p array
+        %
+        % OUTPUTS:
+        % - b     [logical]    scalar
+        %
+        % REMARKS:
+        % - Both ojects must have the same diemnsions.
+        % - It is assumed that arrays are made of characters or numbers.
+        % - Since cA and cB are interpreted as sets of rows, ordering of the rows does not matter.
+            b = false;
+            if not(isequal(size(cA), size(cB)))
+                return
+            end
+            b = isequal(sortrows(cA), sortrows(cB));
+        end
+
     end % methods
 
     methods(Static)
