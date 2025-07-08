@@ -291,7 +291,59 @@ classdef autoDiff1
             % Overload the erf function.
             q = autoDiff1(erfc(o.x), -(2.0/sqrt(pi))*exp(-o.x^2)*o.dx);
         end
-        
+
+        function b = lt(o, p)
+        % Overload the < operator.
+            if isa(o, 'autoDiff1') && isa(p, 'autoDiff1')
+                b = o.x<p.x
+            elseif isa(o, 'autoDiff1') && isnumeric(p)
+                b = o.x<p;
+            elseif isnumeric(o) && isa(p, 'autoDiff1')
+                b = o<p.x;
+            else
+                error('Type error.')
+            end
+        end
+
+        function b = le(o, p)
+        % Overload the <= operator.
+            if isa(o, 'autoDiff1') && isa(p, 'autoDiff1')
+                b = o.x<=p.x
+            elseif isa(o, 'autoDiff1') && isnumeric(p)
+                b = o.x<=p;
+            elseif isnumeric(o) && isa(p, 'autoDiff1')
+                b = o<=p.x;
+            else
+                error('Type error.')
+            end
+        end
+
+        function b = gt(o, p)
+        % Overload the > operator.
+            if isa(o, 'autoDiff1') && isa(p, 'autoDiff1')
+                b = o.x>p.x
+            elseif isa(o, 'autoDiff1') && isnumeric(p)
+                b = o.x>p;
+            elseif isnumeric(o) && isa(p, 'autoDiff1')
+                b = o>p.x;
+            else
+                error('Type error.')
+            end
+        end
+
+        function b = ge(o, p)
+        % Overload the >= operator.
+            if isa(o, 'autoDiff1') && isa(p, 'autoDiff1')
+                b = o.x>=p.x
+            elseif isa(o, 'autoDiff1') && isnumeric(p)
+                b = o.x>=p;
+            elseif isnumeric(o) && isa(p, 'autoDiff1')
+                b = o>=p.x;
+            else
+                error('Type error.')
+            end
+        end
+
     end
 
     methods (Static)
