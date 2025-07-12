@@ -17,10 +17,10 @@ classdef autoDiff1
             o.dx = dx;
         end
 
-        % 
+        %
         % Arithmetics
         %
-        
+
         function q = plus(o, p)
         % Overload the + binary operator.
             [o, p] = autoDiff1.convert(o, p);
@@ -50,7 +50,7 @@ classdef autoDiff1
             if isa(o, 'autoDiff1') && isnumeric(p)
                 q = autoDiff1(o.x^p, p*o.dx*o.x^(p-1));
             elseif isnumeric(o) && isa(p, 'autoDiff1')
-                if o.x>0
+                if o>0
                     tmp = o^p.x;
                     q = autoDiff1(tmp, log(o)*tmp);
                 else
@@ -59,17 +59,17 @@ classdef autoDiff1
             elseif isa(o, 'autoDiff1') && isa(p, 'autoDiff1')
                 if o.x>0
                     tmp = o.x^p.x;
-                    q = autoDiff1(tmp, tmp*(p.dx*log(o.x)+p.x*o.dx/o.x ));    
+                    q = autoDiff1(tmp, tmp*(p.dx*log(o.x)+p.x*o.dx/o.x ));
                 else
                     error('Domain error: base must be positive.')
                 end
             end
         end
-            
+
         %
         % Special mathematical functions
         %
-        
+
         function q = exp(o)
         % Overload the exponential function.
             tmp = exp(o.x);
@@ -367,5 +367,5 @@ classdef autoDiff1
         end
 
     end % methods
-    
+
 end % classdef
