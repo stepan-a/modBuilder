@@ -926,6 +926,90 @@ classdef modBuilder<handle
             q.updatesymboltables();
         end
 
+        function evaleq = evaluate(o, eqname, printflag)
+        % Evaluate an equation.
+        %
+        % INPUTS:
+        % - o            [modBuilder]
+        % - eqname       [char]         1×n array, name of an equation (endogenous variable)
+        % - printflag    [logical]      scalar, print results if true (default is false)
+        %
+        % OUTPUTS:
+        % - lhs          [double]       scalar, evaluation of the LHS member of the equation
+        % - rhs          [double]       scalar, evaluation of the RHS member of the equation
+        % - resid        [double]       scalar, evaluation of LHS-RHS
+        %
+        % REMARKS:
+        % If the equation does not contain an ‘=’ symbol — and thus no LHS or RHS — the expression is evaluated as the left-hand
+        % side (lhs) and its residual (resid), while the right-hand side (rhs) is set to 0.
+                if nargin<3
+                    printflag = false;
+                end
+                %
+                % Initialise outputs
+                %
+                evaleq.lhs = NaN;
+                evaleq.rhs = NaN;
+                evaleq.resid = NaN;
+                %
+                % Get static version of the equation
+                %
+                eq = @(x) isequal(x, eqname);
+                eqID = cellfun(eq, o.equations(:,1));
+                equation = regexprep(o.equations{eqID, 2}, '(\w+)\([+-]?\d+\)', '$1');
+                %
+                % Is there an equal symbol? If not we just evaluate the expression and return resid.
+                %
+                LHSRHS = strsplit(equation, '=');
+                if length(LHSRHS)==1
+                    LHS = LHSRHS{1};
+                    RHS = '0';
+                elseif length(LHSRHS)==2
+                    LHS = LHSRHS{1};
+                    RHS = LHSRHS{2};
+                else
+                    error('An equation cannot have more than one equal (=) symbol.')
+                end
+                %
+                % Evaluate the equation
+                %
+                symbols = o.T.equations.(eqname);
+                symbols = [symbols, eqname];
+                for i=1:length(symbols)
+                    symbol = symbols{i};
+                    [type, id] = o.typeof(symbol);
+                    switch type
+                      case 'parameter'
+                        LHS = regexprep(LHS, ['\<', symbol, '\>'], num2str(o.params{id,2}, 15));
+                        RHS = regexprep(RHS, ['\<', symbol, '\>'], num2str(o.params{id,2}, 15));
+                      case 'exogenous'
+                        LHS = regexprep(LHS, ['\<', symbol, '\>'], num2str(o.varexo{id,2}, 15));
+                        RHS = regexprep(RHS, ['\<', symbol, '\>'], num2str(o.varexo{id,2}, 15));
+                      case 'endogenous'
+                        LHS = regexprep(LHS, ['\<', symbol, '\>'], num2str(o.var{id,2}, 15));
+                        RHS = regexprep(RHS, ['\<', symbol, '\>'], num2str(o.var{id,2}, 15));
+                      otherwise
+                        error('Unknown symbol type.')
+                    end
+                end
+                evaleq.lhs = eval(LHS);
+                evaleq.rhs = eval(RHS);
+                evaleq.resid = evaleq.lhs-evaleq.rhs;
+                if printflag
+                    disp(' ')
+                    disp(sprintf('Static equation: %s', equation));
+                    disp(' ')
+                    disp(sprintf('LHS:             %f', evaleq.lhs));
+                    disp(sprintf('RHS:             %f', evaleq.rhs));
+                    if evaleq.resid<0
+                        disp(sprintf('residual:       %f', evaleq.resid));
+                    else
+                        disp(sprintf('residual:        %f', evaleq.resid));
+                    end
+                    disp(' ')
+                end
+        end
+
         function p = subsref(o, S)
         % Overlaod subsref method
             if length(S)>1
