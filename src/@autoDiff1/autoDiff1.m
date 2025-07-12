@@ -295,7 +295,7 @@ classdef autoDiff1
         function b = lt(o, p)
         % Overload the < operator.
             if isa(o, 'autoDiff1') && isa(p, 'autoDiff1')
-                b = o.x<p.x
+                b = o.x<p.x;
             elseif isa(o, 'autoDiff1') && isnumeric(p)
                 b = o.x<p;
             elseif isnumeric(o) && isa(p, 'autoDiff1')
@@ -308,7 +308,7 @@ classdef autoDiff1
         function b = le(o, p)
         % Overload the <= operator.
             if isa(o, 'autoDiff1') && isa(p, 'autoDiff1')
-                b = o.x<=p.x
+                b = o.x<=p.x;
             elseif isa(o, 'autoDiff1') && isnumeric(p)
                 b = o.x<=p;
             elseif isnumeric(o) && isa(p, 'autoDiff1')
@@ -321,7 +321,7 @@ classdef autoDiff1
         function b = gt(o, p)
         % Overload the > operator.
             if isa(o, 'autoDiff1') && isa(p, 'autoDiff1')
-                b = o.x>p.x
+                b = o.x>p.x;
             elseif isa(o, 'autoDiff1') && isnumeric(p)
                 b = o.x>p;
             elseif isnumeric(o) && isa(p, 'autoDiff1')
@@ -334,7 +334,7 @@ classdef autoDiff1
         function b = ge(o, p)
         % Overload the >= operator.
             if isa(o, 'autoDiff1') && isa(p, 'autoDiff1')
-                b = o.x>=p.x
+                b = o.x>=p.x;
             elseif isa(o, 'autoDiff1') && isnumeric(p)
                 b = o.x>=p;
             elseif isnumeric(o) && isa(p, 'autoDiff1')
