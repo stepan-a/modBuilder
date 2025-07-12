@@ -45,7 +45,11 @@ listoftests = [
   'ad/t29',
   'ad/t30',
   'ad/t31',
-  'ad/t32'
+  'ad/t32',
+  'solvers/t00.m',
+  'solvers/t01.m',
+  'solvers/t02.m',
+  'solvers/t03.m'
 ]
 
 listoffailingtests = [
