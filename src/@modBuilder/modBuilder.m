@@ -332,7 +332,7 @@ classdef modBuilder<handle
         % REMARKS:
         % If symbol pname is known as an exogenous variable, it is converted to a parameter. If pvalue is not NaN, pname is set
         % equal to pvalue, otherwise the parameter is calibrated with the value of the exogeous variable.
-            if nargin<3
+            if nargin<3 || isempty(pvalue)
                 % Set default value
                 pvalue = NaN;
             end
@@ -372,7 +372,7 @@ classdef modBuilder<handle
         % REMARKS:
         % If symbol xname is known as a parameter, it is converted to an exogenous variable. If xvalue is not NaN, xname is set
         % equal to xvalue, otherwise the exogenous variable is calibrated with the value of the parameter.
-            if nargin<3
+            if nargin<3 || isempty(xvalue)
                 % Set default value
                 xvalue = NaN;
             end
@@ -407,7 +407,7 @@ classdef modBuilder<handle
         %
         % OUTPUTS:
         % - o         [modBuilder]   updated object
-            if nargin<3
+            if nargin<3 || isempty(evalue)
                 % Set default value
                 evalue = NaN;
             end
