@@ -34,11 +34,25 @@ model.exogenous('u', 0);
 
 model.updatesymboltables();
 
+%
+% Create two models. The first one for output, consumption, hours and physical capital stock, where a and b are treated
+% -----------------  as exogenous variables. The second model for a and b considering a VAR(1) model. Both models are
+%                    obtained by extracting equations from model.
+%
+
 model1 = model('y', 'c', 'h', 'k');
 
 model2 = model('a', 'b');
 
+%
+% Merge the two models
+%
+
 MODEL = merge(model1, model2);
+
+%
+% Test that MOODEL and model are identical
+%
 
 if not(model==MODEL)
     error('merge method is not working as expected.')
