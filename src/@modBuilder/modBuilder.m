@@ -18,9 +18,9 @@ classdef modBuilder<handle
 % along with Dynare.  If not, see <https://www.gnu.org/licenses/>.
 
     properties
-        params = cell(0, 2);             % List of parameters
-        varexo = cell(0, 2);             % List of exogenous variables.
-        var = cell(0, 2);                % List of endogenous variables.
+        params = cell(0, 4);             % List of parameters
+        varexo = cell(0, 4);             % List of exogenous variables.
+        var = cell(0, 4);                % List of endogenous variables.
         symbols = cell(1, 0);            % List of untyped symbols
         equations = cell(0, 2);          % List of equations.
         T = struct('params', struct(), 'varexo', struct(), 'var', struct(), 'equations', struct());
@@ -144,8 +144,8 @@ classdef modBuilder<handle
             if not(isequal(size(cA), size(cB)))
                 return
             end
-            cA = sortrows(cA);
-            cB = sortrows(cB);
+            cA = sortrows(cA, 1);
+            cB = sortrows(cB, 1);
             if all(cellfun(@isnumeric, cA(:,2))) && all(cellfun(@isnumeric, cB(:,2)))
                 isnanA = cellfun(@isnan, cA(:,2));
                 isnanB = cellfun(@isnan, cB(:,2));
@@ -661,8 +661,8 @@ classdef modBuilder<handle
                 error('%s is not a known exogenous variable.', varexoname)
             end
             % Copy variables
-            o.var = [o.var; {varexoname o.varexo{ix,2}}];
-            o.varexo = [o.varexo; {varname o.var{ie,2}}];
+            o.var = [o.var; {varexoname o.varexo{ix,2} o.varexo{ix,3} o.varexo{ix,4}}];
+            o.varexo = [o.varexo; {varname o.var{ie,2} o.var{ie,3} o.var{ie,4}}];
             % Remove variables
             o.var(ie,:) = [];
             o.varexo(ix,:) = [];
@@ -836,7 +836,7 @@ classdef modBuilder<handle
             common_params = intersect(o_params_list, p_params_list);
             o_only_params_list = setdiff(o_params_list, p_params_list);
             p_only_params_list = setdiff(p_params_list, o_params_list);
-            q_params = cell(length(o_only_params_list)+length(p_only_params_list)+length(common_params), 2);
+            q_params = cell(length(o_only_params_list)+length(p_only_params_list)+length(common_params), 4);
             i = 1;
             for j=1:length(o_only_params_list)
                 q_params{i,1} = o_only_params_list{j};
@@ -884,7 +884,7 @@ classdef modBuilder<handle
                 pse = true(length(p_varexo_list), 1);
             end
             tmp = [o_varexo_list(ose); p_varexo_list(pse)];
-            q_varexo = cell(length(tmp), 2);
+            q_varexo = cell(length(tmp), 4);
             q_varexo(:,1) = tmp;
             q_varexo(:,2) = {NaN};
             [ido, io] = ismember(q_varexo(:,1), o_varexo_list);
