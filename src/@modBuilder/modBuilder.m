@@ -118,8 +118,8 @@ classdef modBuilder<handle
             tokens = strsplit(expr, {'=', '+','-','*','/','^', '(', ')', ',', '\n', '\t', ' '});
             % Filter out the numbers, punctuation.
             tokens(cellfun(@(x) all(isstrprop(x, 'digit')+isstrprop(x, 'punct')), tokens)) = [];
-            % Filter out functions
-            tokens(cellfun(@(x) ismember(x, {'log', 'log10', 'ln', 'exp', 'sqrt', 'abs', 'sign', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'min', 'max', 'normcdf', 'normpdf', 'erf', 'diff', 'adl'}), tokens)) = [];
+            % Filter out functions and operators
+            tokens(cellfun(@(x) ismember(x, {'log', 'log10', 'ln', 'exp', 'sqrt', 'cbrt', 'abs', 'sign', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh', 'min', 'max', 'normcdf', 'normpdf', 'erf', 'diff', 'adl', 'EXPECTATIONS', 'STEADY_STATE'}), tokens)) = [];
             % Filter out empty elements.
             tokens(cellfun(@(x) all(isempty(x)), tokens)) = [];
             % Remove duplicates
