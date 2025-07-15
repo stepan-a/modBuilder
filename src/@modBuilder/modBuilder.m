@@ -318,11 +318,95 @@ classdef modBuilder<handle
 
     methods
 
-        function o = modBuilder(date)
-        % Return an empty modBuilder object
-            if nargin && isdatetime(date)
-                o.date = date;
-            else
+        function o = modBuilder(varargin)
+            % Return an empty modBuilder object
+            if nargin==1 && isdatetime(varargin{1})
+                o.date = varargin{1};
+            elseif nargin==0
+                o.date = datetime;
+            elseif nargin==3 && isstruct(varargin{1}) && isstruct(varargin{2}) && ischar(varargin{3}) && isfile(varargin{3})
+                M_ = varargin{1};
+                oo_ = varargin{2};
+                %
+                % Load parameters
+                %
+                n = length(M_.param_names);
+                o.params = cell(n, 4);
+                o.params(:,1) = M_.param_names;
+                o.params(:,2) = num2cell(M_.params);
+                for i=1:n
+                    if isequal(M_.param_names{i}, M_.param_names_long{i})
+                        o.params{i,3} = '';
+                    else
+                        o.params{i,3} = M_.param_names_long{i};
+                    end
+                    if isequal(M_.param_names{i}, M_.param_names_tex{i})
+                        o.params{i,4} = '';
+                    else
+                        o.params{i,4} = M_.param_names_tex{i};
+                    end
+                end
+                %
+                % Load exogenous variables
+                %
+                n = length(M_.exo_names);
+                o.varexo = cell(n, 4);
+                o.varexo(:,1) = M_.exo_names;
+                o.varexo(:,2) = num2cell(oo_.exo_steady_state);
+                for i=1:n
+                    if isequal(M_.exo_names{i}, M_.exo_names_long{i})
+                        o.varexo{i,3} = '';
+                    else
+                        o.varexo{i,3} = M_.exo_names_long{i};
+                    end
+                    if isequal(M_.exo_names{i}, M_.exo_names_tex{i})
+                        o.varexo{i,4} = '';
+                    else
+                        o.varexo{i,4} = M_.exo_names_tex{i};
+                    end
+                end
+                %
+                % Read equations, set list of equations and endogenous variables.
+                %
+                JSON = readstruct(varargin{3});
+                n = length(JSON.model);
+                o.equations = cell(n, 2);
+                o.var = cell(n, 4);
+                for i=1:n
+                    equation = JSON.model(i);
+                    o.equations{i,2} = sprintf('%s = %s', equation.lhs, equation.rhs);
+                    if ismember(equation.tags.name, M_.endo_names)
+                        o.var{i,1} = equation.tags.name;
+                        o.equations{i,1} = equation.tags.name;
+                        id = strcmp(equation.tags.name, M_.endo_names);
+                        o.var{i,2} = oo_.steady_state(id);
+                        if isequal(o.var{i,1}, M_.endo_names_long{id})
+                            o.var{i,3} = '';
+                        else
+                            o.var{i,3} = M_.endo_names_long{id};
+                        end
+                        if isequal(o.var{i,1}, M_.endo_names_tex{id})
+                            o.var{i,4} = '';
+                        else
+                            o.var{i,4} = M_.endo_names_tex{id};
+                        end
+                        o.T.equations.(equation.tags.name) = modBuilder.getsymbols(o.equations{i,2});
+                        o.symbols = unique(horzcat(o.symbols, o.T.equations.(equation.tags.name)));
+                        o.T.equations.(equation.tags.name) = setdiff(o.T.equations.(equation.tags.name), equation.tags.name);
+                    else
+                        error('The name (equation tag) of an equation should be an endogenous variable.')
+                    end
+                end
+                o.updatesymboltables();
+                o.symbols = setdiff(o.symbols, fields(o.T.params));
+                o.symbols = setdiff(o.symbols, fields(o.T.varexo));
+                o.symbols = setdiff(o.symbols, fields(o.T.var));
+                if not(isempty(o.symbols))
+                    warning('unknown symbols:%s.', modBuilder.printlist(o.symbols))
+                end
+                %
+                % Set date
+                %
                 o.date = datetime;
             end
         end
@@ -336,16 +420,16 @@ classdef modBuilder<handle
         %
         % OUTPUTS:
         % - n    [integer]    scalar, number of symbols.
-                switch type
-                  case 'parameters'
-                    n = size(o.params, 1);
-                  case 'exogenous'
-                    n = size(o.varexo, 1);
-                  case 'endogenous'
-                    n = size(o.var, 1);
-                  case 'equations'
-                    n = size(o.equations, 1);
-                end
+            switch type
+              case 'parameters'
+                n = size(o.params, 1);
+              case 'exogenous'
+                n = size(o.varexo, 1);
+              case 'endogenous'
+                n = size(o.var, 1);
+              case 'equations'
+                n = size(o.equations, 1);
+            end
         end
 
         function o = add(o, varname, equation)

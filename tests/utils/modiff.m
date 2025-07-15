@@ -1,12 +1,13 @@
-function b = modiff(f1, f2)
+function [b, differences] = modiff(f1, f2)
 % Compare two text files.
 %
 % INPUTS:
-% - f1      [char]     1×n   name of the first text file
-% - f2      [char]     1×m   name of the second text file
+% - f1            [char]     1×n   name of the first text file
+% - f2            [char]     1×m   name of the second text file
 %
 % OUTPUTS:
-% - b       [logical]  scalar, true iff the two files are identical
+% - b             [logical]  scalar, true iff the two files are identical
+% - differences   [cell]     stores the differences betwen f1 and f2
 %
 % REMARKS:
 % The routine displays the differences if any.
