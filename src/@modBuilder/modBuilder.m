@@ -98,6 +98,38 @@ classdef modBuilder<handle
             str = sprintf('%s;', str);
         end
 
+        function printlist2(fid, type, Table)
+            switch type
+              case 'endogenous'
+                keyword = 'var';
+              case 'parameters'
+                keyword = 'parameters';
+              case 'exogenous'
+                keyword = 'varexo';
+            end
+            if not(isempty(Table{1,4})) && not(isempty(Table{1,3}))
+                fprintf(fid, '%s %s $%s$ (long_name=''%s'')\n\t', keyword, Table{1,1}, Table{1,4}, Table{1,3});
+            elseif isempty(Table{1,4}) && not(isempty(Table{1,3}))
+                fprintf(fid, '%s %s (long_name=''%s'')\n\t', keyword, Table{1,1}, Table{1,3});
+            elseif not(isempty(Table{1,4})) && isempty(Table{1,3})
+                fprintf(fid, '%s %s $%s$\n\t', keyword, Table{1,1}, Table{1,4});
+            else
+                fprintf(fid, '%s %s\n\t', keyword, Table{1,1});
+            end
+            for i=2:size(Table,1)
+                if not(isempty(Table{i,4})) && not(isempty(Table{i,3}))
+                    fprintf(fid, '%s $%s$ (long_name=''%s'')\n\t', Table{i,1}, Table{i,4}, Table{i,3});
+                elseif isempty(Table{i,4}) && not(isempty(Table{i,3}))
+                    fprintf(fid, '%s (long_name=''%s'')\n\t', Table{i,1}, Table{i,3});
+                elseif not(isempty(Table{i,4})) && isempty(Table{i,3})
+                    fprintf(fid, '%s $%s$\n\t', Table{i,1}, Table{i,4});
+                else
+                    fprintf(fid, '%s\n\t', Table{i,1});
+                end
+            end
+            fprintf(fid, ';\n\n');
+        end
+
         function S = shiftS(S,n)
         % Removes the first n elements of a one dimensional cell array.
             if length(S) >= n+1
@@ -228,6 +260,28 @@ classdef modBuilder<handle
             end
         end
 
+        function [long_name, texname] = set_optional_fields(type, sname, varargin)
+            long_name = '';
+            texname='';
+            if ~isempty(varargin)
+                if ismember(type, {'endogenous', 'exogenous'})
+                    type = sprintf('%s variable', type);
+                end
+                n = length(varargin);
+                assert(mod(n, 2)==0, 'Wrong number of arguments.')
+                for i=1:2:n
+                    switch varargin{i}
+                      case 'long_name'
+                        long_name = varargin{i+1};
+                      case 'texname'
+                        texname = varargin{i+1};
+                      otherwise
+                        error('Unknown property for %s %s.', type, sname)
+                    end
+                end
+            end
+        end
+
     end % methods
 
     methods(Static)
@@ -318,27 +372,36 @@ classdef modBuilder<handle
             o.symbols = setdiff(o.symbols, o.var(:,1));
         end % function
 
-        function o = parameter(o, pname, pvalue)
+        function o = parameter(o, pname, pvalue, varargin)
         % Declare or calibrate a parameter
         %
         % INPUTS:
         % - o         [modBuilder]
         % - pname     [char]         1×n array, name of a parameter
         % - pvalue    [double]       scalar, value of the parameter (default is NaN)
+        % - ...
         %
         % OUTPUTS:
         % - o         [modBuilder]   updated object
         %
         % REMARKS:
-        % If symbol pname is known as an exogenous variable, it is converted to a parameter. If pvalue is not NaN, pname is set
+        % - If symbol pname is known as an exogenous variable, it is converted to a parameter. If pvalue is not NaN, pname is set
         % equal to pvalue, otherwise the parameter is calibrated with the value of the exogeous variable.
+        % - Optional arguments in varargin must come by key/value pairs. Allowed keys are 'long_name' and 'texname'.
             if nargin<3 || isempty(pvalue)
                 % Set default value
                 pvalue = NaN;
             end
+            [long_name, texname] = modBuilder.set_optional_fields('parameter', pname, varargin{:});
             idp = ismember(o.params(:,1), pname);
             if any(idp) % The parameter is already defined
                 o.params{idp, 2} = pvalue;
+                if not(isempty(long_name))
+                    o.params{idp,3} = long_name;
+                end
+                if not(isempty(texname))
+                    o.params{idp,4} = texname;
+                end
             else
                 idx = ismember(o.varexo(:,1), pname);
                 if any(idx)
@@ -348,37 +411,54 @@ classdef modBuilder<handle
                     if not(isnan(pvalue))
                         o.params{length(idp)+1,2} = pvalue;
                     end
+                    if not(isempty(long_name))
+                        o.params{length(idp)+1,3} = long_name;
+                    end
+                    if not(isempty(texname))
+                        o.params{length(idp)+1,4} = texname;
+                    end
                 else
                     % Symbol pname has no predefined type.
-                    o.params{length(idp)+1, 1} = pname;
-                    o.params{length(idp)+1, 2} = pvalue;
+                    o.params{length(idp)+1,1} = pname;
+                    o.params{length(idp)+1,2} = pvalue;
+                    o.params{length(idp)+1,3} = long_name;
+                    o.params{length(idp)+1,4} = texname;
                 end
             end
             % Remove pname from the list of untyped symbols
             o.symbols = setdiff(o.symbols, pname);
         end % function
 
-        function o = exogenous(o, xname, xvalue)
+        function o = exogenous(o, xname, xvalue, varargin)
         % Declare or set default value for an exogenous variables
         %
         % INPUTS:
         % - o         [modBuilder]
         % - xname     [char]         1×n array, name of an exogenous variable
         % - xvalue    [double]       scalar, value of the exogenous variable (default is NaN)
+        % - ...
         %
         % OUTPUTS:
         % - o         [modBuilder]   updated object
         %
         % REMARKS:
-        % If symbol xname is known as a parameter, it is converted to an exogenous variable. If xvalue is not NaN, xname is set
+        % - If symbol xname is known as a parameter, it is converted to an exogenous variable. If xvalue is not NaN, xname is set
         % equal to xvalue, otherwise the exogenous variable is calibrated with the value of the parameter.
+        % - Optional arguments in varargin must come by key/value pairs. Allowed keys are 'long_name' and 'texname'.
             if nargin<3 || isempty(xvalue)
                 % Set default value
                 xvalue = NaN;
             end
+            [long_name, texname] = modBuilder.set_optional_fields('exogenous', xname, varargin{:});
             idx = ismember(o.varexo(:,1), xname);
-            if any(idx) % The parameter is already defined
-                o.varexo{idx, 2} = xvalue;
+            if any(idx) % The exogenous variable is already defined
+                o.varexo{idx,2} = xvalue;
+                if not(isempty(long_name))
+                    o.varexo{idx,3} = long_name;
+                end
+                if not(isempty(texname))
+                    o.varexo{idx,4} = texname;
+                end
             else
                 idp = ismember(o.params(:,1), xname);
                 if any(idp)
@@ -388,35 +468,56 @@ classdef modBuilder<handle
                     if not(isnan(xvalue))
                         o.varexo{length(idx)+1,2} = xvalue;
                     end
+                    if not(isempty(long_name))
+                        o.varexo{length(idx)+1,3} = long_name;
+                    end
+                    if not(isempty(texname))
+                        o.varexo{length(idx)+1,4} = texname;
+                    end
                 else
-                    o.varexo{length(idx)+1, 1} = xname;
-                    o.varexo{length(idx)+1, 2} = xvalue;
+                    o.varexo{length(idx)+1,1} = xname;
+                    o.varexo{length(idx)+1,2} = xvalue;
+                    o.varexo{length(idx)+1,3} = long_name;
+                    o.varexo{length(idx)+1,4} = texname;
                 end
             end
             % Remove xname from the list of untyped symbols
             o.symbols = setdiff(o.symbols, xname);
         end % function
 
-        function o = endogenous(o, ename, evalue)
+        function o = endogenous(o, ename, evalue, varargin)
         % Declare or set default value for endogenous variables
         %
         % INPUTS:
         % - o         [modBuilder]
         % - ename     [char]         1×n array, name of an endogenous variable
         % - evalue    [double]       scalar, value of the endogenous variable (default is NaN)
+        % - ...
         %
         % OUTPUTS:
         % - o         [modBuilder]   updated object
+        %
+        % REMARKS:
+        % - Optional arguments in varargin must come by key/value pairs. Allowed keys are 'long_name' and 'texname'.
             if nargin<3 || isempty(evalue)
                 % Set default value
                 evalue = NaN;
             end
+            [long_name, texname] = modBuilder.set_optional_fields('endogenous', ename, varargin{:});
             ide = ismember(o.var(:,1), ename);
-            if any(ide) % The parameter is already defined
-                o.var{ide, 2} = evalue;
+            if any(ide) % The endogenous variable is already defined
+                o.var{ide,2} = evalue;
+                if not(isempty(long_name))
+                    o.var{ide,3} = long_name;
+                end
+                if not(isempty(texname))
+                    o.var{ide,4} = texname;
+                end
             else
-                o.var{length(ide)+1, 1} = ename;
-                o.var{length(ide)+1, 2} = evalue;
+                o.var{length(ide)+1,1} = ename;
+                o.var{length(ide)+1,2} = evalue;
+                o.var{length(ide)+1,3} = long_name;
+                o.var{length(ide)+1,4} = texname;
             end
             % Remove ename from the list of untyped symbols
             o.symbols = setdiff(o.symbols, ename);
@@ -497,15 +598,27 @@ classdef modBuilder<handle
             %
             % Print list of endogenous variables
             %
-            fprintf(fid, 'var%s\n\n', modBuilder.printlist(o.var(:,1)));
+            if all(cellfun(@(x) isempty(x), o.var(:,3))) && all(cellfun(@(x) isempty(x), o.var(:,4)))
+                fprintf(fid, 'var%s\n\n', modBuilder.printlist(o.var(:,1)));
+            else
+                modBuilder.printlist2(fid, 'endogenous', o.var);
+            end
             %
             % Print list of exogenous variables
             %
-            fprintf(fid, 'varexo%s\n\n', modBuilder.printlist(o.varexo(:,1)));
+            if all(cellfun(@(x) isempty(x), o.varexo(:,3))) && all(cellfun(@(x) isempty(x), o.varexo(:,4)))
+                fprintf(fid, 'varexo%s\n\n', modBuilder.printlist(o.varexo(:,1)));
+            else
+                modBuilder.printlist2(fid, 'exogenous', o.varexo);
+            end
             %
             % Print list of fprintf
             %
-            fprintf(fid, 'parameters%s\n\n', modBuilder.printlist(o.params(:,1)));
+            if all(cellfun(@(x) isempty(x), o.params(:,3))) && all(cellfun(@(x) isempty(x), o.params(:,4)))
+                fprintf(fid, 'parameters%s\n\n', modBuilder.printlist(o.params(:,1)));
+            else
+                modBuilder.printlist2(fid, 'parameters', o.params);
+            end
             %
             % Print calibration if any
             %
@@ -841,6 +954,8 @@ classdef modBuilder<handle
             for j=1:length(o_only_params_list)
                 q_params{i,1} = o_only_params_list{j};
                 q_params{i,2} = o.params{ismember(o.params(:,1), o_only_params_list{j}),2};
+                q_params{i,3} = o.params{ismember(o.params(:,1), o_only_params_list{j}),3};
+                q_params{i,4} = o.params{ismember(o.params(:,1), o_only_params_list{j}),4};
                 i = i+1;
             end
             for j=1:length(common_params)
@@ -848,14 +963,20 @@ classdef modBuilder<handle
                 tmp = p.params{ismember(p.params(:,1), common_params{j}),2};
                 if not(isnan(tmp))
                     q_params{i,2} = tmp;
+                    q_params{i,3} = p.params{ismember(p.params(:,1), common_params{j}),3};
+                    q_params{i,4} = p.params{ismember(p.params(:,1), common_params{j}),4};
                 else
                     q_params{i,2} = o.params{ismember(o.params(:,1), o_only_params_list{j}),2};
+                    q_params{i,3} = o.params{ismember(o.params(:,1), o_only_params_list{j}),3};
+                    q_params{i,4} = o.params{ismember(o.params(:,1), o_only_params_list{j}),4};
                 end
                 i = i+1;
             end
             for j=1:length(p_only_params_list)
                 q_params{i,1} = p_only_params_list{j};
                 q_params{i,2} = p.params{ismember(p.params(:,1), p_only_params_list{j}),2};
+                q_params{i,3} = p.params{ismember(p.params(:,1), p_only_params_list{j}),3};
+                q_params{i,4} = p.params{ismember(p.params(:,1), p_only_params_list{j}),4};
                 i = i+1;
             end
             q.params = q_params;
@@ -893,6 +1014,8 @@ classdef modBuilder<handle
                 for i=1:length(o_varexo_list(ose))
                     if ido(i)
                         q_varexo{i,2} = o.varexo{io(i),2};
+                        q_varexo{i,3} = o.varexo{io(i),3};
+                        q_varexo{i,4} = o.varexo{io(i),4};
                     end
                 end
             end
@@ -900,6 +1023,8 @@ classdef modBuilder<handle
                 for i=length(o_varexo_list(ose))+1:length(p_varexo_list(pse))
                     if idp(i)
                         q_varexo{i,2} = p.varexo{ip(i),2};
+                        q_varexo{i,3} = p.varexo{ip(i),3};
+                        q_varexo{i,4} = p.varexo{ip(i),4};
                     end
                 end
             end
