@@ -15,19 +15,19 @@ phi = 0.100000;
 
 model;
 
-// Eq. #1 -> b
+[name = 'b']
 b = taub*a(-1)+rhob*b(-1) + u;
 
-// Eq. #2 -> y
+[name = 'y']
 y = exp(a)*(k(-1)^alpha)*(h^(1-alpha));
 
-// Eq. #3 -> c
+[name = 'c']
 k = exp(b)*(y-c)+(1-delta)*k(-1);
 
-// Eq. #4 -> h
+[name = 'h']
 c*theta*h^(1+psi)=(1-alpha)*y;
 
-// Eq. #5 -> k
+[name = 'k']
 1/beta = ((exp(b)*c)/(exp(b(+1))*c(+1)))*(exp(b(+1))*alpha*y(+1)/k+(1-delta));
 
 end;
