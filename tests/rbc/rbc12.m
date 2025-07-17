@@ -14,10 +14,7 @@ model.write('rbc12');
 [b, diff] = modiff('rbc12.mod', 'rbc12.true.mod');
 
 if not(b)
-    load('rbc12.expected-diff.mat')
-    if ~isequal(diff, differences)
-        error('Generated mod file might be wrong.')
-    end
+    error('Generated mod file might be wrong.')
 else
     delete rbc12.mod
 end
