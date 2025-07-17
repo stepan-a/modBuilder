@@ -717,9 +717,9 @@ classdef modBuilder<handle
             %
             fprintf(fid, 'model;\n\n');
             for i=1:o.size('endogenous')
-                fprintf(fid, '// Eq. #%u -> %s\n', i, o.equations{i,1});
+                fprintf(fid, '[name = ''%s'']\n', o.equations{i,1});
                 fprintf(fid, '%s;\n\n', o.equations{i,2});
-            end
+                end
             fprintf(fid, 'end;\n');
             fclose(fid);
         end % function
