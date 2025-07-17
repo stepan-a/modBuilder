@@ -374,6 +374,9 @@ classdef modBuilder<handle
                 o.var = cell(n, 4);
                 for i=1:n
                     equation = JSON.model(i);
+                    if not(isfield(equation, 'tags'))
+                        error('Each equation must have a tag name (to associate an endogenous variable).')
+                    end
                     o.equations{i,2} = sprintf('%s = %s', equation.lhs, equation.rhs);
                     if ismember(equation.tags.name, M_.endo_names)
                         o.var{i,1} = equation.tags.name;
