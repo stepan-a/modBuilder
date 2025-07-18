@@ -25,8 +25,11 @@ function [x, fval, iter] = newton(f, x0, tol, maxit)
     x0 = autoDiff1(x0);
 
     alpha = 1.0;
-    for iter = 1:maxit
-        r = f(x0); % ad
+
+    iter = 1;
+
+    while iter<=maxit
+        r = f(x0);
         dx = -r.x / r.dx;
         while abs(f(x0 + alpha*dx))>abs(r)
             alpha = alpha/2.0;
@@ -38,6 +41,7 @@ function [x, fval, iter] = newton(f, x0, tol, maxit)
         if abs(dx)<tol
             break
         end
+        iter = iter+1;
     end
     x = x0.x;
     r = f(x0);
