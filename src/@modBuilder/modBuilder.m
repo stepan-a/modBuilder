@@ -1154,72 +1154,150 @@ classdef modBuilder<handle
         % REMARKS:
         % If the equation does not contain an ‘=’ symbol — and thus no LHS or RHS — the expression is evaluated as the left-hand
         % side (lhs) and its residual (resid), while the right-hand side (rhs) is set to 0.
-                if nargin<3
-                    printflag = false;
+            if nargin<3
+                printflag = false;
+            end
+            %
+            % Initialise outputs
+            %
+            evaleq.lhs = NaN;
+            evaleq.rhs = NaN;
+            evaleq.resid = NaN;
+            %
+            % Get static version of the equation
+            %
+            eq = @(x) isequal(x, eqname);
+            eqID = cellfun(eq, o.equations(:,1));
+            equation = regexprep(o.equations{eqID, 2}, '(\w+)\([+-]?\d+\)', '$1');
+            %
+            % Is there an equal symbol? If not we just evaluate the expression and return resid.
+            %
+            LHSRHS = strsplit(equation, '=');
+            if length(LHSRHS)==1
+                LHS = LHSRHS{1};
+                RHS = '0';
+            elseif length(LHSRHS)==2
+                LHS = LHSRHS{1};
+                RHS = LHSRHS{2};
+            else
+                error('An equation cannot have more than one equal (=) symbol.')
+            end
+            %
+            % Evaluate the equation
+            %
+            symbols = o.T.equations.(eqname);
+            symbols = [symbols, eqname];
+            for i=1:length(symbols)
+                symbol = symbols{i};
+                [type, id] = o.typeof(symbol);
+                switch type
+                  case 'parameter'
+                    LHS = regexprep(LHS, ['\<', symbol, '\>'], num2str(o.params{id,2}, 15));
+                    RHS = regexprep(RHS, ['\<', symbol, '\>'], num2str(o.params{id,2}, 15));
+                  case 'exogenous'
+                    LHS = regexprep(LHS, ['\<', symbol, '\>'], num2str(o.varexo{id,2}, 15));
+                    RHS = regexprep(RHS, ['\<', symbol, '\>'], num2str(o.varexo{id,2}, 15));
+                  case 'endogenous'
+                    LHS = regexprep(LHS, ['\<', symbol, '\>'], num2str(o.var{id,2}, 15));
+                    RHS = regexprep(RHS, ['\<', symbol, '\>'], num2str(o.var{id,2}, 15));
+                  otherwise
+                    error('Unknown symbol type.')
                 end
-                %
-                % Initialise outputs
-                %
-                evaleq.lhs = NaN;
-                evaleq.rhs = NaN;
-                evaleq.resid = NaN;
-                %
-                % Get static version of the equation
-                %
-                eq = @(x) isequal(x, eqname);
-                eqID = cellfun(eq, o.equations(:,1));
-                equation = regexprep(o.equations{eqID, 2}, '(\w+)\([+-]?\d+\)', '$1');
-                %
-                % Is there an equal symbol? If not we just evaluate the expression and return resid.
-                %
-                LHSRHS = strsplit(equation, '=');
-                if length(LHSRHS)==1
-                    LHS = LHSRHS{1};
-                    RHS = '0';
-                elseif length(LHSRHS)==2
-                    LHS = LHSRHS{1};
-                    RHS = LHSRHS{2};
+            end
+            evaleq.lhs = eval(LHS);
+            evaleq.rhs = eval(RHS);
+            evaleq.resid = evaleq.lhs-evaleq.rhs;
+            if printflag
+                disp(' ')
+                disp(sprintf('Static equation: %s', equation));
+                disp(' ')
+                disp(sprintf('LHS:             %f', evaleq.lhs));
+                disp(sprintf('RHS:             %f', evaleq.rhs));
+                if evaleq.resid<0
+                    disp(sprintf('residual:       %f', evaleq.resid));
                 else
-                    error('An equation cannot have more than one equal (=) symbol.')
+                    disp(sprintf('residual:        %f', evaleq.resid));
                 end
-                %
-                % Evaluate the equation
-                %
-                symbols = o.T.equations.(eqname);
-                symbols = [symbols, eqname];
-                for i=1:length(symbols)
-                    symbol = symbols{i};
-                    [type, id] = o.typeof(symbol);
-                    switch type
-                      case 'parameter'
-                        LHS = regexprep(LHS, ['\<', symbol, '\>'], num2str(o.params{id,2}, 15));
-                        RHS = regexprep(RHS, ['\<', symbol, '\>'], num2str(o.params{id,2}, 15));
-                      case 'exogenous'
-                        LHS = regexprep(LHS, ['\<', symbol, '\>'], num2str(o.varexo{id,2}, 15));
-                        RHS = regexprep(RHS, ['\<', symbol, '\>'], num2str(o.varexo{id,2}, 15));
-                      case 'endogenous'
-                        LHS = regexprep(LHS, ['\<', symbol, '\>'], num2str(o.var{id,2}, 15));
-                        RHS = regexprep(RHS, ['\<', symbol, '\>'], num2str(o.var{id,2}, 15));
-                      otherwise
-                        error('Unknown symbol type.')
+                disp(' ')
+            end
+        end
+
+        function o = solve(o, eqname, sname, sinit)
+        % Solve static equation eqname for symbol sname.
+        %
+        % INPUTS:
+        % - o            [modBuilder]
+        % - eqname       [char]         1×n array, name of an equation (endogenous variable)
+        % - sname        [char]         1×m array, name of a symbol
+        % - sinit        [double]       scalar, initial guess
+        %
+        % OUTPUTS:
+        % - o            [modBuilder]
+            if not(ismember(sname, o.T.equations.(eqname)))
+                if o.isendogenous(sname)
+                    if not(ismember(eqname, o.T.var.(sname)))
+                        error('Symbol %s does not appear in equation %s', sname, eqname)
                     end
+                else
+                    error('Symbol %s does not appear in equation %s', sname, eqname)
                 end
-                evaleq.lhs = eval(LHS);
-                evaleq.rhs = eval(RHS);
-                evaleq.resid = evaleq.lhs-evaleq.rhs;
-                if printflag
-                    disp(' ')
-                    disp(sprintf('Static equation: %s', equation));
-                    disp(' ')
-                    disp(sprintf('LHS:             %f', evaleq.lhs));
-                    disp(sprintf('RHS:             %f', evaleq.rhs));
-                    if evaleq.resid<0
-                        disp(sprintf('residual:       %f', evaleq.resid));
-                    else
-                        disp(sprintf('residual:        %f', evaleq.resid));
-                    end
-                    disp(' ')
+            end
+            %
+            % Get static version of the equation
+            %
+            eq = @(x) isequal(x, eqname);
+            eqID = cellfun(eq, o.equations(:,1));
+            equation = regexprep(o.equations{eqID, 2}, '(\w+)\([+-]?\d+\)', '$1');
+            %
+            % List of known symbols
+            %
+            knownsymbols = o.T.equations.(eqname);
+            knownsymbols = setdiff([knownsymbols, eqname], sname);
+            %
+            % Replace the known symbols with their respective values.
+            %
+            for i=1:length(knownsymbols)
+                symbol = knownsymbols{i};
+                [type, id] = o.typeof(symbol);
+                switch type
+                  case 'parameter'
+                    equation = regexprep(equation, ['\<', symbol, '\>'], num2str(o.params{id,2}, 15));
+                  case 'exogenous'
+                    equation = regexprep(equation, ['\<', symbol, '\>'], num2str(o.varexo{id,2}, 15));
+                  case 'endogenous'
+                    equation = regexprep(equation, ['\<', symbol, '\>'], num2str(o.var{id,2}, 15));
+                  otherwise
+                    error('Unknown symbol type.')
                 end
+            end
+            %
+            % Set anonymous function
+            %
+            equation = regexprep(equation, ['\<', sname, '\>'], 'x');
+            LHSRHS = strsplit(equation, '=');
+            if length(LHSRHS)==1
+                equation = sprintf('@(x) %s', LHSRHS{1});
+            elseif length(LHSRHS)==2
+                equation = sprintf('@(x) %s-(%s)', LHSRHS{1}, LHSRHS{2});
+            else
+                error('An equation cannot have more than one equal (=) symbol.')
+            end
+            f = str2func(equation);
+            %
+            % Set initial guess for the unknown symbol
+            %
+            [x, fval, iter] = solvers.newton(f, sinit, 1e-6, 100);
+            [type, id] = o.typeof(sname);
+            switch type
+              case 'parameter'
+                o.params{id,2} = x;
+              case 'exogenous'
+                o.varexo{id,2} = x;
+              case 'endogenous'
+                o.var{id,2} = x;
+              otherwise
+                error('Unknown symbol type.')
+            end
         end
 
         function p = subsref(o, S)
