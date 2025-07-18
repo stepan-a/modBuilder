@@ -1,0 +1,1 @@
+option('matlab_path', type: 'string', value: '', description: 'Path to the MATLAB executable')

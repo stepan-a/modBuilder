@@ -1,0 +1,10 @@
+variables:
+  MATLAB_VERSION: R2024b
+  TERM: linux
+  GIT_STRATEGY: clone
+
+test:
+  stage: build
+  script:
+    - meson setup -Dmatlab_path=/opt/MATLAB/$MATLAB_VERSION/bin/matlab build
+    - meson test -C build

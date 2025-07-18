@@ -1,4 +1,4 @@
-matlab = find_program('matlab', required: true)
+matlab = find_program(matlab_path, required: true)
 
 listoftests = [
   'rbc/rbc1',
