@@ -1300,30 +1300,34 @@ classdef modBuilder<handle
             end
         end
 
-        function p = subsref(o, S)
+        function varargout = subsref(o, S)
         % Overlaod subsref method
             if length(S)>1
                 if isequal(S(1).type, '()')
                     % Extract a subset of equations and apply methods to the extracted model or display properties.
                     if isequal(S(2).type, '.') && length(S)==2
-                        p = o.extract(S(1).subs{:});
-                        p = p.(S(2).subs);
+                        [varargout{1:nargout}] = o.extract(S(1).subs{:});
+                        [varargout{1:nargout}] = p.(S(2).subs);
                     else
-                        p = o.extract(S(1).subs{:});
+                        [varargout{1:nargout}] = o.extract(S(1).subs{:});
                         S = modBuilder.shiftS(S, 1);
                         if length(S)>1
-                            p = builtin('subsref', p, S);
+                            [varargout{1:nargout}] = builtin('subsref', p, S);
                         end
                     end
                 else
-                    p = builtin('subsref', o, S);
+                    [varargout{1:nargout}] = builtin('subsref', o, S);
                 end
             else
                 if isequal(S(1).type, '()')
                     % Extract subset of equations.
-                    p = o.extract(S(1).subs{:});
+                    [varargout{1:nargout}] = o.extract(S(1).subs{:});
                 else
-                    p = builtin('subsref', o, S);
+                    if nargout
+                        [varargout{1:nargout}] = builtin('subsref', o, S);
+                    else
+                        builtin('subsref', o, S);
+                    end
                 end
             end
         end % function
