@@ -93,6 +93,13 @@ classdef modBuilder<handle
 
     methods(Static, Access = private)
 
+        function skipline(n)
+            if ~nargin || isempty(n)
+                n = 1;
+            end
+            for i=1:n, fprintf('\n'), end
+        end
+
         function str = printlist(names)
             str = sprintf(' %s', names{:});
             str = sprintf('%s;', str);
@@ -838,6 +845,49 @@ classdef modBuilder<handle
                 error('Unknown symbol type.')
             end
         end % function
+
+        function lookfor(o, name)
+        % Print equations where symbol 'name' appears.
+        %
+        % INPUTS:
+        % - o         [modBuilder]
+        % - name      [char]         1×n    name of a symbol.
+        %
+        % OUTPUTS:
+        % - b         [logical]      scalar
+            if o.isparameter(name)
+                symboltype = 'Parameter';
+                eqnames = o.T.params.(name);
+            elseif o.isexogenous(name)
+                symboltype = 'Exogenous variable';
+                eqnames = o.T.varexo.(name);
+            elseif o.isendogenous(name)
+                symboltype = 'Endogenous variable';
+                eqnames = o.T.var.(name);
+            else
+                symboltype = 'Unknown';
+                eqnames = {};
+            end
+            modBuilder.skipline()
+            if strcmp(symboltype, 'Unknown')
+                fprintf('Symbol %s does not appear in any of the equations.\n', name);
+                modBuilder.skipline()
+            else
+                n = length(eqnames);
+                if n>1;
+                    fprintf('%s %s appears in %u equations:\n', symboltype, name, n);
+                else
+                    fprintf('%s %s appears in one equation:\n', symboltype, name);
+                end
+                for i=1:n
+                    equation = o.equations(strcmp(eqnames{i}, o.equations(:,1)),2);
+                    modBuilder.skipline()
+                    fprintf('%s\n', equation{1});
+                end
+                modBuilder.skipline()
+            end
+        end % function
+
 
         function o = flip(o, varname, varexoname)
         % Flip types of varname (initially an endogenous variable)
