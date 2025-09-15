@@ -1376,7 +1376,11 @@ classdef modBuilder<handle
                     if nargout
                         [varargout{1:nargout}] = builtin('subsref', o, S);
                     else
-                        builtin('subsref', o, S);
+                        if ~ismember(S.subs, {metaclass(o).PropertyList.Name})
+                            builtin('subsref', o, S);
+                        else
+                            o.(S.subs)
+                        end
                     end
                 end
             end
