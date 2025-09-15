@@ -55,7 +55,14 @@ listoftests = [
   'solvers/t01.m',
   'solvers/t02.m',
   'solvers/t03.m',
-  'subsref/rbc1.m'
+  'subsref/rbc1.m',
+  'subs/rbc1.m',
+  'subs/rbc2.m',
+  'substitute/rbc1.m',
+  'substitute/rbc2.m',
+  'substitute/rbc3.m',
+  'rename/rbc1.m',
+  'rename/rbc2.m',
 ]
 
 listoffailingtests = [

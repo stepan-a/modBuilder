@@ -82,6 +82,7 @@ classdef modBuilder<handle
                             o.T.var.(o.var{i,1}) = horzcat(o.T.var.(o.var{i,1}), o.var(j,1));
                         end
                     end
+                    o.T.var.(o.var{i,1}) = unique(o.T.var.(o.var{i,1}));
                 end
               otherwise
                 error('Unknown type (%)', type)
@@ -289,6 +290,13 @@ classdef modBuilder<handle
             end
         end
 
+        function C = replaceincell(C, oldword, newword);
+            s = strcmp(oldword, C);
+            if any(s)
+                C{strcmp(oldword, C)} = newword;
+            end
+        end
+
     end % methods
 
     methods(Static)
@@ -386,8 +394,8 @@ classdef modBuilder<handle
                     end
                     o.equations{i,2} = sprintf('%s = %s', equation.lhs, equation.rhs);
                     if ismember(equation.tags.name, M_.endo_names)
-                        o.var{i,1} = equation.tags.name;
-                        o.equations{i,1} = equation.tags.name;
+                        o.var{i,1} = char(equation.tags.name);
+                        o.equations{i,1} = o.var{i,1};
                         id = strcmp(equation.tags.name, M_.endo_names);
                         o.var{i,2} = oo_.steady_state(id);
                         if isequal(o.var{i,1}, M_.endo_names_long{id})
@@ -418,6 +426,20 @@ classdef modBuilder<handle
                 % Set date
                 %
                 o.date = datetime;
+            end
+        end
+
+        function listofsymbols = getallsymbols(o)
+        % Return a cell array with all the symbols in a model.
+        %
+        % INPUTS:
+        %  - o              [modBuilder]
+        %
+        % OUTPUTS:
+        % - listofsymbols   [cell]          n×1, each element is a row character array (name of a symbol).
+            listofsymbols = {};
+            for i=1:o.size('equations')
+                listofsymbols = union(listofsymbols, o.getsymbols(o.equations{i,2}));
             end
         end
 
@@ -679,6 +701,49 @@ classdef modBuilder<handle
             end
         end
 
+        function o = rename(o, oldsymbol, newsymbol)
+        % Rename a symbol.
+        %
+        % INPUTS:
+        % - o            [modBuilder]
+        % - oldsymbol    [char]            1×n array, name of a symbol (parameter, endogenous or exogenous variable)
+        % - newsymbol    [char]            1×m array, name of a symbol (parameter, endogenous or exogenous variable)
+        %
+        % OUTPUTS:
+        % - o            [char]            updated object
+            [type, id] = o.typeof(oldsymbol);
+            switch type
+              case 'parameter'
+                o.params{id,1} = newsymbol;
+                o.T.params.(newsymbol) = o.T.params.(oldsymbol);
+                o.T.params = rmfield(o.T.params, oldsymbol);
+              case 'exogenous'
+                o.varexo{id,1} = newsymbol;
+                o.T.varexo.(newsymbol) = o.T.varexo.(oldsymbol);
+                o.T.varexo = rmfield(o.T.varexo, oldsymbol);
+              case 'endogenous'
+                o.var{id,1} = newsymbol;
+                o.equations{strcmp(oldsymbol, o.equations(:,1)),1} = newsymbol;
+                o.T.var.(newsymbol) = o.T.var.(oldsymbol);
+                o.T.var = rmfield(o.T.var, oldsymbol);
+                o.T.equations.(newsymbol) = o.T.equations.(oldsymbol);
+                o.T.equations = rmfield(o.T.equations, oldsymbol);
+                for i=1:o.size('parameters')
+                    o.T.params.(o.params{i,1}) = modBuilder.replaceincell(o.T.params.(o.params{i,1}), oldsymbol, newsymbol);
+                end
+                for i=1:o.size('exogenous')
+                    o.T.varexo.(o.varexo{i,1}) = modBuilder.replaceincell(o.T.varexo.(o.varexo{i,1}), oldsymbol, newsymbol);
+                end
+                for i=1:o.size('endogenous')
+                    o.T.var.(o.var{i,1}) = modBuilder.replaceincell(o.T.var.(o.var{i,1}), oldsymbol, newsymbol);
+                end
+            end
+            for i=1:o.size('equations')
+                o.equations{i,2} = regexprep(o.equations{i,2}, ['(?<!\w)' oldsymbol  '(?!\w)'], newsymbol);
+                o.T.equations.(o.equations{i,1}) = modBuilder.replaceincell(o.T.equations.(o.equations{i,1}), oldsymbol, newsymbol);
+            end
+        end
+
         function o = write(o, basename)
         % Write model in a mod file.
         %
@@ -729,7 +794,7 @@ classdef modBuilder<handle
             for i=1:o.size('endogenous')
                 fprintf(fid, '[name = ''%s'']\n', o.equations{i,1});
                 fprintf(fid, '%s;\n\n', o.equations{i,2});
-                end
+            end
             fprintf(fid, 'end;\n');
             fclose(fid);
         end % function
@@ -796,6 +861,18 @@ classdef modBuilder<handle
         % OUTPUTS:
         % - b         [logical]      scalar
             b = any(ismember(o.var(:,1), name));
+        end % function
+
+        function b = issymbol(o, name)
+        % Return true iff name is an endogenous variabl, an exogenous variable or a parameter.
+        %
+        % INPUTS:
+        % - o         [modBuilder]
+        % - name      [char]         1×n    name of a symbol.
+        %
+        % OUTPUTS:
+        % - b         [logical]      scalar
+            b = o.isexogenous(name) || o.isendogenous(name) || o.isparameter(name);
         end % function
 
         function [type, id] = typeof(o, name)
@@ -874,7 +951,7 @@ classdef modBuilder<handle
                 modBuilder.skipline()
             else
                 n = length(eqnames);
-                if n>1;
+                if n>1
                     fprintf('%s %s appears in %u equations:\n', symboltype, name, n);
                 else
                     fprintf('%s %s appears in one equation:\n', symboltype, name);
@@ -1040,6 +1117,175 @@ classdef modBuilder<handle
             o.T.equations.(varname) = ntokens;
         end
 
+        function o = subs(o, expr1, expr2, eqname)
+        % Substitute expr1 by expr2 in equation eqname (use strrep).
+        %
+        % INPUTS:
+        % - o           [modBuilder]
+        % - expr1       [char]         1×n array, expression
+        % - expr2       [char]         1×m array, expression
+        % - eqname      [char]         1×p array, name of an equation
+        %
+        % OUTPUTS:
+        % - o           [modBuilder]   updated object (with new equation)
+        %
+        % REMARKS:
+        % If last argument is not provided, expr1 is substituted by expr2 in all the model.
+            if nargin<4
+                eqname = [];
+            end
+            o = substitution(o, expr1, expr2, eqname, true);
+        end % function
+
+        function o = substitute(o, expr1, expr2, eqname)
+        % Substitute expr1 by expr2 in equation eqname (use regexprep).
+        %
+        % INPUTS:
+        % - o           [modBuilder]
+        % - expr1       [char]         1×n array, expression
+        % - expr2       [char]         1×m array, expression
+        % - eqname      [char]         1×p array, name of an equation
+        %
+        % OUTPUTS:
+        % - o           [modBuilder]   updated object (with new equation)
+        %
+        % REMARKS:
+        % If last argument is not provided, expr1 is substituted by expr2 in all the model.
+            if nargin<4
+                eqname = [];
+            end
+            o = substitution(o, expr1, expr2, eqname, false);
+        end % function
+
+        function o = substitution(o, expr1, expr2, eqname, usestrrep)
+        % Substitute expr1 by expr2 in equation eqname (use strrep or ).
+        %
+        % INPUTS:
+        % - o           [modBuilder]
+        % - expr1       [char]         1×n array, expression
+        % - expr2       [char]         1×m array, expression
+        % - eqname      [char]         1×p array, name of an equation
+        % - usestrrep   [logicdal]      scalar, use strrep if true, use regexprep otherwise.
+        %
+        % OUTPUTS:
+        % - o           [modBuilder]   updated object (with new equation)
+        %
+        % REMARKS:
+        % If last argument is not provided, expr1 is substituted by expr2 in all the model.
+            if usestrrep
+                % Is it safe to use the subs method?
+                if o.issymbol(expr1)
+                    warning('It is not safe to use the subs method to change a symbol. I switch to the substitute method with a regular expression. If the change applies to all the equations you could also use the rename method.')
+                    o.substitute(['(?<!\w)' expr1  '(?!\w)'], expr2, eqname);
+                    return
+                end
+            else
+                % Test if expr1 is a valid regular expression
+                try
+                    regexp('', expr1);
+                catch
+                    error('You did not provide a valid regular expression.')
+                end
+            end
+            % Where does the substitution should be done?
+            if isempty(eqname)
+                % Apply the change to all the equations
+                eqnames = o.equations(:,1);
+            else
+                if ischar(eqname)
+                    eqnames = {eqname};
+                else
+                    if iscellstr(eqname)
+                        eqnames = eqname(:);
+                    else
+                        error('Unexpected input type. Last input must be a row character array (designating an equation) or a univariate cell array of row char arrays.')
+                    end
+                end
+            end
+            if ~usestrrep
+                % Test that the regular expression matches only one expression in all the selected equations.
+                matches = {};
+                for i=1:numel(eqnames)
+                    id = strcmp(eqnames{i}, o.equations(:,1));
+                    matches = union(matches, unique(regexp(o.equations{id,2}, expr1, 'match')));
+                end
+                if length(matches)>1
+                    error('The provided regular expression matches more than one expression in the equation(s).')
+                else
+                    expr0 = matches{1};
+                end
+            end
+            % Can we use the rename method (is the substitution for a symbol in all the equations where it appears)?
+            userename = false;
+            if ~usestrrep && o.issymbol(expr0)
+                if isequal(numel(eqnames), o.size('equations'))
+                    userename = true;
+                else
+                    % Does the matched symbol appear in other equations?
+                    eqnames_ = setdiff(o.equations(:,1), eqnames);
+                    matches = {};
+                    for i=1:numel(eqnames_)
+                        id = strcmp(eqnames_{i}, o.equations(:,1));
+                        matches = union(matches, unique(regexp(o.equations{id,2}, expr1, 'match')));
+                    end
+                    if isempty(matches)
+                        % expr1 does not appear in any other equation, we can safely use the rename method
+                        userename = true;
+                    end
+                end
+            end
+            if userename
+                % We can safely use the rename method.
+                o.rename(expr0, expr2);
+                return
+            end
+            list_of_unknown_symbols = {};
+            for i=1:numel(eqnames)
+                eqname = eqnames{i};
+                select = strcmp(eqname, o.equations(:,1));
+                if usestrrep
+                    o.equations(select,2) = strrep(o.equations(select,2), expr1, expr2);
+                else
+                    o.equations(select,2) = regexprep(o.equations(select,2), expr1, expr2);
+                end
+                Symbols = modBuilder.getsymbols(o.equations{select,2});
+                newsyms = setdiff(Symbols, o.T.equations.(eqname)); % New symbols in updated equation
+                if ~isempty(newsyms)
+                    for j=1:length(newsyms)
+                        if ~o.issymbol(newsyms{j})
+                            if ~ismember(newsyms{j}, list_of_unknown_symbols)
+                                disp(sprintf('Symbol %s is unknown, you need to provide a type (parameter, endogenous or exogenous variable).', newsyms{j}))
+                                list_of_unknown_symbols{end+1} = newsyms{j};
+                            end
+                        end
+                    end
+                end
+                delsyms = setdiff(o.T.equations.(eqname), Symbols); % Deleted symbols in updated equation
+                if ~isempty(delsyms)
+                    for j=1:length(delsyms)
+                        [type, id] = o.typeof(delsyms{j});
+                        if ~o.appear_in_more_than_one_equation(delsyms{j})
+                            switch type
+                              case 'parameter'
+                                disp(sprintf('Parameter %s will be removed).', delsyms{j}))
+                                o.params(id,:) = [];
+                              case 'exogenoous'
+                                disp(sprintf('Exogenous variable %s will be removed).', delsyms{j}))
+                                o.varexo(id,:) = [];
+                              case 'endogenous'
+                                disp(sprintf('Endogenous variable %s will be removed).', delsyms{j}))
+                                o.var(id,:) = [];
+                            end
+                        else
+                            %
+                        end
+                    end
+                end
+                o.T.equations.(eqname) = Symbols;
+            end
+            o.updatesymboltables;
+        end % function
+
         function p = extract(o, varargin)
         % Extract equations from a model a return a new modBuilder object.
         %
@@ -1173,8 +1419,8 @@ classdef modBuilder<handle
             %
             % Set symbol tables
             %
-            q.T.params = modBuilder.mergeStructs(o.T.params, p.T.params)
-            q.T.varexo = modBuilder.mergeStructs(o.T.varexo, p.T.varexo)
+            q.T.params = modBuilder.mergeStructs(o.T.params, p.T.params);
+            q.T.varexo = modBuilder.mergeStructs(o.T.varexo, p.T.varexo);
             fnames = fields(q.T.varexo);
             remvarexo = not(ismember(fnames, q.varexo(:,1)));
             for i=1:length(remvarexo)
@@ -1223,7 +1469,7 @@ classdef modBuilder<handle
             % Is there an equal symbol? If not we just evaluate the expression and return resid.
             %
             LHSRHS = strsplit(equation, '=');
-            if length(LHSRHS)==1
+            if isscalar(LHSRHS)
                 LHS = LHSRHS{1};
                 RHS = '0';
             elseif length(LHSRHS)==2
@@ -1235,10 +1481,10 @@ classdef modBuilder<handle
             %
             % Evaluate the equation
             %
-            symbols = o.T.equations.(eqname);
-            symbols = [symbols, eqname];
-            for i=1:length(symbols)
-                symbol = symbols{i};
+            Symbols = o.T.equations.(eqname);
+            Symbols = [Symbols, eqname];
+            for i=1:length(Symbols)
+                symbol = Symbols{i};
                 [type, id] = o.typeof(symbol);
                 switch type
                   case 'parameter'
@@ -1325,7 +1571,7 @@ classdef modBuilder<handle
             %
             equation = regexprep(equation, ['\<', sname, '\>'], 'x');
             LHSRHS = strsplit(equation, '=');
-            if length(LHSRHS)==1
+            if isscalar(LHSRHS)
                 equation = sprintf('@(x) %s', LHSRHS{1});
             elseif length(LHSRHS)==2
                 equation = sprintf('@(x) %s-(%s)', LHSRHS{1}, LHSRHS{2});
@@ -1336,7 +1582,7 @@ classdef modBuilder<handle
             %
             % Set initial guess for the unknown symbol
             %
-            [x, fval, iter] = solvers.newton(f, sinit, 1e-6, 100);
+            [x, ~, ~] = solvers.newton(f, sinit, 1e-6, 100);
             [type, id] = o.typeof(sname);
             switch type
               case 'parameter'
@@ -1350,19 +1596,27 @@ classdef modBuilder<handle
             end
         end
 
-
         function p = subsref(o, S)
             if isequal(S(1).type, '()')
                 p = o.extract(S(1).subs{:});
                 S = modBuilder.shiftS(S, 1);
             elseif isequal(S(1).type, '.')
                 if ~ismember(S(1).subs, {metaclass(o).PropertyList.Name})
-                    if length(S)==1
-                        p = feval(S(1).subs, o);
+                    if isscalar(S)
+                        if ismember(S(1).subs, o.equations(:,1))
+                            p = o.extract(S(1).subs);
+                        else
+                            p = feval(S(1).subs, o);
+                        end
                         S = modBuilder.shiftS(S, 1);
                     else
-                        p = feval(S(1).subs, o, S(2).subs{:});
-                        S = modBuilder.shiftS(S, 2);
+                        if ismember(S(1).subs, o.equations(:,1))
+                            p = o.extract(S(1).subs);
+                            S = modBuilder.shiftS(S, 1);
+                        else
+                            p = feval(S(1).subs, o, S(2).subs{:});
+                            S = modBuilder.shiftS(S, 2);
+                        end
                     end
                 else
                     p = o.(S(1).subs);
@@ -1375,7 +1629,6 @@ classdef modBuilder<handle
                 p = subsref(p, S);
             end
         end % function
-
 
         function o = subsasgn(o,S,B)
         % Overload subsasgn method
