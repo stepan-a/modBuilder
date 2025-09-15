@@ -63,6 +63,8 @@ listoftests = [
   'substitute/rbc3.m',
   'rename/rbc1.m',
   'rename/rbc2.m',
+  'tag/rbc1.m',
+  'tag/rbc2.m',
 ]
 
 listoffailingtests = [

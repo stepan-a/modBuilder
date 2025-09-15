@@ -29,37 +29,13 @@ end
 model.exogenous('e', 0);
 model.exogenous('u', 0);
 
-% Check that all symbols have a type
-if not(isempty(model.symbols))
-    error()
-end
-
 model.updatesymboltables();
 
-model.flip('a', 'e');
-
-if ~isfield(model.T.equations, 'e') || isfield(model.T.equations, 'a')
-    error('flip method did not update the fields of o.T.equations correctly.')
-end
-
-if ~isequal(model.T.equations.e, {'b'  'a'  'rho'  'tau'})
-    error('flip method did not write o.T.equations.e correctly.')
-end
-
-model.write('rbc2');
-
-[b, diff] = modiff('rbc2.mod', 'rbc2.true.mod');
-
-expectedhash = '9ea986d0360bc92cf9951ccceaea4855';
-
-if not(b)
-    if isequal(numel(diff), 1)
-        if ~isequal(hashchararray(diff{1}), expectedhash)
-            error('Generated mod file might be wrong.')
-        end
-    else
-        error('Generated mod file might be wrong.')
+try
+    model.tag('a','name','toto'); % Should raise an error because users are not allowed to change the name of an equation.
+    error('Wrong test result. Call to tag should raise an error')
+catch ME
+    if ~isequal(ME.message, 'Method tag cannot be used to change the name of an equation. Instead, use the rename method to change the name of an endogenous variable.')
+        error('Wrong error message')
     end
 end
-
-delete rbc2.mod

@@ -29,37 +29,21 @@ end
 model.exogenous('e', 0);
 model.exogenous('u', 0);
 
-% Check that all symbols have a type
-if not(isempty(model.symbols))
-    error()
-end
-
 model.updatesymboltables();
 
-model.flip('a', 'e');
+model.tag('a', 'toto', 'Exogenous variable');
+model.tag('b', 'toto', 'Exogenous variable');
 
-if ~isfield(model.T.equations, 'e') || isfield(model.T.equations, 'a')
-    error('flip method did not update the fields of o.T.equations correctly.')
-end
-
-if ~isequal(model.T.equations.e, {'b'  'a'  'rho'  'tau'})
-    error('flip method did not write o.T.equations.e correctly.')
-end
+model.tag('y', 'toto', 'Production function');
+model.tag('h', 'toto', 'Labour supply');
+model.tag('k', 'toto', 'Euler equation');
 
 model.write('rbc2');
 
 [b, diff] = modiff('rbc2.mod', 'rbc2.true.mod');
 
-expectedhash = '9ea986d0360bc92cf9951ccceaea4855';
-
 if not(b)
-    if isequal(numel(diff), 1)
-        if ~isequal(hashchararray(diff{1}), expectedhash)
-            error('Generated mod file might be wrong.')
-        end
-    else
-        error('Generated mod file might be wrong.')
-    end
+    error('Generated mod file might be wrong.')
 end
 
 delete rbc2.mod

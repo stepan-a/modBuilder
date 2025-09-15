@@ -21,6 +21,7 @@ classdef modBuilder<handle
         params = cell(0, 4);             % List of parameters
         varexo = cell(0, 4);             % List of exogenous variables.
         var = cell(0, 4);                % List of endogenous variables.
+        tags = struct();                 % struct of dictionaries (one for each equation) for tags.
         symbols = cell(1, 0);            % List of untyped symbols
         equations = cell(0, 2);          % List of equations.
         T = struct('params', struct(), 'varexo', struct(), 'var', struct(), 'equations', struct());
@@ -318,6 +319,7 @@ classdef modBuilder<handle
                     o.var = s.var;
                     o.params = s.params;
                     o.varexo = s.varexo;
+                    o.tags = s.tags;
                     o.symbols = s.symbols;
                     o.equations = s.equations;
                 else
@@ -411,6 +413,7 @@ classdef modBuilder<handle
                         o.T.equations.(equation.tags.name) = modBuilder.getsymbols(o.equations{i,2});
                         o.symbols = unique(horzcat(o.symbols, o.T.equations.(equation.tags.name)));
                         o.T.equations.(equation.tags.name) = setdiff(o.T.equations.(equation.tags.name), equation.tags.name);
+                        o.tags.(o.var{i,1}).name = o.var{i,1};
                     else
                         error('The name (equation tag) of an equation should be an endogenous variable.')
                     end
@@ -486,6 +489,27 @@ classdef modBuilder<handle
             o.symbols = horzcat(o.symbols, o.T.equations.(varname));
             o.T.equations.(varname) = setdiff(o.T.equations.(varname), varname);
             o.symbols = setdiff(o.symbols, o.var(:,1));
+            o.tags.(varname).name = varname;
+        end % function
+
+        function o = tag(o, eqname, tagname, value)
+        % Add or change an equation tag in model o.
+        %
+        % INPUTS:
+        % - o           [modBuilder]
+        % - eqname      [char]         1×n array, name of an equation
+        % - tagname     [char]         1×m array, name of the tag
+        % - value       [char]         1×p array, tag value
+        %
+        % OUTPUTS:
+        % - o           [modBuilder]   updated object
+        %
+        % REMARKS:
+        % This method cannot change the name of an equation, tagname=='name' will raise an error.
+            if strcmp(tagname, 'name')
+                error('Method tag cannot be used to change the name of an equation. Instead, use the rename method to change the name of an endogenous variable.')
+            end
+            o.tags.(eqname).(tagname) = value;
         end % function
 
         function o = parameter(o, pname, pvalue, varargin)
@@ -667,6 +691,7 @@ classdef modBuilder<handle
                 error('Unknown equation (%s).', eqname)
             end
             o.equations(ide,:) = [];
+            o.tags = rmfield(o.tags, eqname);
             for i=1:length(o.T.equations.(eqname))
                 [type, id] = o.typeof(o.T.equations.(eqname){i});
                 if not(o.appear_in_more_than_one_equation(o.T.equations.(eqname){i}))
@@ -742,6 +767,9 @@ classdef modBuilder<handle
                 o.T.var = rmfield(o.T.var, oldsymbol);
                 o.T.equations.(newsymbol) = o.T.equations.(oldsymbol);
                 o.T.equations = rmfield(o.T.equations, oldsymbol);
+                o.tags.(newsymbol) = o.tags.(oldsymbol);
+                o.tags = rmfield(o.tags, oldsymbol);
+                o.tags.(newsymbol).name = newsymbol;
                 for i=1:o.size('parameters')
                     o.T.params.(o.params{i,1}) = modBuilder.replaceincell(o.T.params.(o.params{i,1}), oldsymbol, newsymbol);
                 end
@@ -806,7 +834,19 @@ classdef modBuilder<handle
             %
             fprintf(fid, 'model;\n\n');
             for i=1:o.size('endogenous')
-                fprintf(fid, '[name = ''%s'']\n', o.equations{i,1});
+                Tags = o.tags.(o.equations{i,1});
+                tagnames = fieldnames(Tags);
+                if isequal(numel(tagnames), 1)
+                    fprintf(fid, '[name = ''%s'']\n', Tags.name);
+                else
+                    fprintf(fid, '[name = ''%s''', Tags.name);
+                    tagnames = setdiff(tagnames, 'name');
+                    while ~isempty(tagnames)
+                        fprintf(fid, ', %s = ''%s''', tagnames{1}, Tags.(tagnames{1}));
+                        tagnames = setdiff(tagnames, tagnames{1});
+                    end
+                    fprintf(fid, ']\n');
+                end
                 fprintf(fid, '%s;\n\n', o.equations{i,2});
             end
             fprintf(fid, 'end;\n');
@@ -824,6 +864,7 @@ classdef modBuilder<handle
             s.params = o.params;
             s.varexo = o.varexo;
             s.var = o.var;
+            s.tags = o.tags;
             s.symbols = o.symbols;
             s.equations = o.equations;
             s.T = o.T;
@@ -973,7 +1014,7 @@ classdef modBuilder<handle
                 for i=1:n
                     equation = o.equations(strcmp(eqnames{i}, o.equations(:,1)),2);
                     modBuilder.skipline()
-                    fprintf('%s\n', equation{1});
+                    fprintf('[%s]\t\t%s\n', o.tags.(eqnames{i}).name, equation{1});
                 end
                 modBuilder.skipline()
             end
@@ -1018,6 +1059,9 @@ classdef modBuilder<handle
             o.T.equations.(varexoname){mask} = varname;
             % Associate new endogenous variable to an equation (the one previously associated with varname)
             o.equations{ie,1} = varexoname;
+            % Update tags
+            o.tags.(varexoname) = o.tags.(varname);
+            o.tags = rmfield(o.tags, varname);
         end % function
 
         function p = copy(o)
@@ -1035,6 +1079,7 @@ classdef modBuilder<handle
             p.symbols = o.symbols;
             p.equations = o.equations;
             p.T = o.T;
+            p.tags = o.tags;
         end
 
         function b = eq(o, p)
@@ -1069,6 +1114,12 @@ classdef modBuilder<handle
             if not(modBuilder.isequalcell(o.equations, p.equations))
                 b = false;
                 return
+            end
+            for i=1:o.size('equations')
+                if not(isequal(o.tags.(o.equations{i,1}), p.tags.(o.equations{i,1})))
+                    b = false;
+                    return
+                end
             end
             if not(modBuilder.isequalsymboltable(o, p, 'params'))
                 b = false;
@@ -1449,6 +1500,7 @@ classdef modBuilder<handle
             clear('fnames', 'remvarexo');
             q.T.var = modBuilder.mergeStructs(o.T.var, p.T.var);
             q.T.equations = modBuilder.mergeStructs(o.T.equations, p.T.equations);
+            q.tags = modBuilder.mergeStructs(o.tags, p.tags);
             q.updatesymboltables();
         end
 
@@ -1617,7 +1669,7 @@ classdef modBuilder<handle
         function p = subsref(o, S)
             if isequal(S(1).type, '()')
                 p = o.extract(S(1).subs{:});
-                S = modBuilder.shiftS(S, 1);
+                    S = modBuilder.shiftS(S, 1);
             elseif isequal(S(1).type, '.')
                 if ~ismember(S(1).subs, {metaclass(o).PropertyList.Name})
                     if isscalar(S)
