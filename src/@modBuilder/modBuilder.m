@@ -1356,10 +1356,10 @@ classdef modBuilder<handle
                 if isequal(S(1).type, '()')
                     % Extract a subset of equations and apply methods to the extracted model or display properties.
                     if isequal(S(2).type, '.') && length(S)==2
-                        [varargout{1:nargout}] = o.extract(S(1).subs{:});
+                        p = o.extract(S(1).subs{:});
                         [varargout{1:nargout}] = p.(S(2).subs);
                     else
-                        [varargout{1:nargout}] = o.extract(S(1).subs{:});
+                        p = o.extract(S(1).subs{:});
                         S = modBuilder.shiftS(S, 1);
                         if length(S)>1
                             [varargout{1:nargout}] = builtin('subsref', p, S);
