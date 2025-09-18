@@ -846,7 +846,7 @@ classdef modBuilder<handle
             end
         end % function
 
-        function lookfor(o, name)
+        function o = lookfor(o, name)
         % Print equations where symbol 'name' appears.
         %
         % INPUTS:
@@ -1350,41 +1350,32 @@ classdef modBuilder<handle
             end
         end
 
-        function varargout = subsref(o, S)
-        % Overlaod subsref method
-            if length(S)>1
-                if isequal(S(1).type, '()')
-                    % Extract a subset of equations and apply methods to the extracted model or display properties.
-                    if isequal(S(2).type, '.') && length(S)==2
-                        p = o.extract(S(1).subs{:});
-                        [varargout{1:nargout}] = p.(S(2).subs);
-                    else
-                        p = o.extract(S(1).subs{:});
+
+        function p = subsref(o, S)
+            if isequal(S(1).type, '()')
+                p = o.extract(S(1).subs{:});
+                S = modBuilder.shiftS(S, 1);
+            elseif isequal(S(1).type, '.')
+                if ~ismember(S(1).subs, {metaclass(o).PropertyList.Name})
+                    if length(S)==1
+                        p = feval(S(1).subs, o);
                         S = modBuilder.shiftS(S, 1);
-                        if length(S)>1
-                            [varargout{1:nargout}] = builtin('subsref', p, S);
-                        end
+                    else
+                        p = feval(S(1).subs, o, S(2).subs{:});
+                        S = modBuilder.shiftS(S, 2);
                     end
                 else
-                    [varargout{1:nargout}] = builtin('subsref', o, S);
+                    p = o.(S(1).subs);
+                    S = modBuilder.shiftS(S, 1);
                 end
             else
-                if isequal(S(1).type, '()')
-                    % Extract subset of equations.
-                    [varargout{1:nargout}] = o.extract(S(1).subs{:});
-                else
-                    if nargout
-                        [varargout{1:nargout}] = builtin('subsref', o, S);
-                    else
-                        if ~ismember(S.subs, {metaclass(o).PropertyList.Name})
-                            builtin('subsref', o, S);
-                        else
-                            o.(S.subs)
-                        end
-                    end
-                end
+                error('Indexing a modBuilder object with {} is not allowed.')
+            end
+            if ~isempty(S)
+                p = subsref(p, S);
             end
         end % function
+
 
         function o = subsasgn(o,S,B)
         % Overload subsasgn method
