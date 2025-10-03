@@ -2,7 +2,7 @@ var a b y c h k;
 
 varexo e u;
 
-parameters alpha rho tau beta delta psi theta phi;
+parameters alpha rho tau beta delta psi theta;
 
 alpha = 0.360000;
 rho = 0.950000;
@@ -11,7 +11,6 @@ beta = 0.990000;
 delta = 0.025000;
 psi = 0.000000;
 theta = 2.950000;
-phi = 0.100000;
 
 model;
 

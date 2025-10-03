@@ -19,7 +19,6 @@ model.parameter('beta', 0.99, 'texname', '\beta');
 model.parameter('delta', 0.025, 'texname', '\delta');
 model.parameter('psi', 0, 'texname', '\psi');
 model.parameter('theta', 2.95, 'texname', '\theta');
-model.parameter('phi', 0.1, 'texname', '\phi');
 
 % Check that the remaining symbols are the exogenous variables (structural innovations)
 if ~isequal(model.symbols, {'e', 'u'})

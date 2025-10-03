@@ -2,14 +2,13 @@ var y c h k;
 
 varexo a b;
 
-parameters alpha beta delta psi theta phi;
+parameters alpha beta delta psi theta;
 
 alpha = 0.360000;
 beta = 0.990000;
 delta = 0.025000;
 psi = 0.000000;
 theta = 2.950000;
-phi = 0.100000;
 
 model;
 

@@ -15,7 +15,6 @@ model.parameter('beta', 0.99);
 model.parameter('delta', 0.025);
 model.parameter('psi', 0);
 model.parameter('theta', 2.95);
-model.parameter('phi', 0.1);
 
 % Set default values for the exogenous variables
 model.exogenous('a', 0);
@@ -30,11 +29,11 @@ if not(model.size('exogenous')==1)
     error('Wrong number of exogenous variables.')
 end
 
-if not(model.size('parameters')==7)
-    error('Wrong number of exogenous variables.')
+if not(model.size('parameters')==6)
+    error('Wrong number of parameters.')
 end
 
-if not(model.params{7,1}=='a') || not(model.params{7,2}==0.1)
+if not(model.params{6,1}=='a') || not(model.params{6,2}==0.1)
     error('Conversion from exogenous variable to parameter is not working properly.')
 end
 
@@ -46,8 +45,8 @@ if not(model.size('exogenous')==2)
     error('Wrong number of exogenous variables.')
 end
 
-if not(model.size('parameters')==6)
-    error('Wrong number of exogenous variables.')
+if not(model.size('parameters')==5)
+    error('Wrong number of parameters.')
 end
 
 if not(model.varexo{2,1}=='a') || not(model.varexo{2,2}==0)

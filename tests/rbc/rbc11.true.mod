@@ -11,7 +11,6 @@ parameters alpha $\alpha$
 	delta $\delta$
 	psi $\psi$
 	theta $\theta$
-	phi $\phi$
 	;
 
 alpha = 0.360000;
@@ -21,7 +20,6 @@ beta = 0.990000;
 delta = 0.025000;
 psi = 0.000000;
 theta = 2.950000;
-phi = 0.100000;
 
 model;
 
