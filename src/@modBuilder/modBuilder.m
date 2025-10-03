@@ -568,6 +568,13 @@ classdef modBuilder<handle
         % - If symbol xname is known as a parameter, it is converted to an exogenous variable. If xvalue is not NaN, xname is set
         % equal to xvalue, otherwise the exogenous variable is calibrated with the value of the parameter.
         % - Optional arguments in varargin must come by key/value pairs. Allowed keys are 'long_name' and 'texname'.
+            if ~(ismember(xname, o.symbols) || ismember(xname, o.varexo(:,1)) || ismember(xname, o.params(:,1)))
+                if ismember(xname, o.var(:,1))
+                    error('An endogenous variable cannot be converted into an exogenous variable.\nPlease remove the equation associated to the endogenous variable.')
+                else
+                    error('Symbol %s appears nowhere in the model.', pname)
+                end
+            end
             if nargin<3 || isempty(xvalue)
                 % Set default value
                 xvalue = NaN;
