@@ -8,3 +8,11 @@ test:
   script:
     - meson setup -Dmatlab_path=/opt/MATLAB/$MATLAB_VERSION/bin/matlab build
     - meson test -C build
+
+doc:
+  stage: build
+  script:
+   - make -C doc/tex
+  artifacts:
+    paths:
+      - doc/slides.pdf

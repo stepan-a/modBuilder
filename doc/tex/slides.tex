@@ -1,0 +1,534 @@
+\documentclass[10pt,slidestop]{beamer}
+\synctex=1
+
+\usepackage{etex}
+\usepackage{fourier-orns}
+\usepackage{ccicons}
+\usepackage{amssymb}
+\usepackage{amstext}
+\usepackage{amsbsy}
+\usepackage{amsopn}
+\usepackage{amscd}
+\usepackage{amsxtra}
+\usepackage{amsthm}
+\usepackage{float}
+\usepackage{color}
+\usepackage{mathrsfs}
+\usepackage{bm}
+\usepackage[nice]{nicefrac}
+\usepackage{setspace}
+\usepackage{hyperref}
+\usepackage{ragged2e}
+\usepackage{listings}
+\usepackage{fontawesome}
+\usepackage{environ}
+\usepackage{manfnt}
+
+%\usepackage[utf8x]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{array}
+\usepackage[super]{nth}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\newcolumntype{x}[1]{>{\centering\arraybackslash\hspace{0pt}}m{#1}}
+\setlength{\parindent}{0pt}
+\pdfcompresslevel=9
+
+\usepackage{verbatimbox}
+\usepackage{pgfplots}
+\usepackage{matlab-prettifier}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\lstdefinestyle{MatlabConsole}{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{black!5},
+  frame=single,
+  breaklines=true,
+  numbers=none,
+  showstringspaces=false,
+}
+
+\lstdefinelanguage{Dynare}
+{
+  % list of keywords
+  morekeywords={
+    var_model,
+    trend_component_model,
+    var_expectation_model,
+    var_expectation,
+    pac_model,
+    pac_expectation,
+    model,
+    diff,
+    end,
+    varexo,
+    var,
+    parameters,
+    steady_state_model,
+    steady,
+    shocks,
+    perfect_foresight_setup,
+    perfect_foresight_solver,
+    initval,
+    endval,
+  },
+  sensitive=false, % keywords are not case-sensitive
+  morecomment=[l]{//}, % l is for line comment
+  morecomment=[s]{/*}{*/}, % s is for start and end delimiter
+  morestring=[b]'          % defines that strings are enclosed in double quotes
+}
+
+\definecolor{eclipseBlue}{RGB}{42,0.0,255}
+\definecolor{eclipseGreen}{RGB}{63,127,95}
+\definecolor{eclipsePurple}{RGB}{127,0,85}
+\definecolor{eclipseEmph}{RGB}{0,0,0}
+
+% Set Language
+\lstset{
+  language={Dynare},
+  inputencoding = utf8,
+  basicstyle=\footnotesize\ttfamily, % Global Code Style
+  captionpos=b, % Position of the Caption (t for top, b for bottom)
+  extendedchars=true, % Allows 256 instead of 128 ASCII characters
+  tabsize=2, % number of spaces indented when discovering a tab
+  columns=fixed, % make all characters equal width
+  keepspaces=true, % does not ignore spaces to fit width, convert tabs to spaces
+  showstringspaces=false, % lets spaces in strings appear as real spaces
+  breaklines=true, % wrap lines if they don't fit
+  frame=trbl, % draw a frame at the top, right, left and bottom of the listing
+  frameround=tttt, % make the frame round at all four corners
+  framesep=4pt, % quarter circle size of the round corners
+  numbers=left, % show line numbers at the left
+  numberstyle=\tiny\ttfamily, % style of the line numbers
+  commentstyle=\color{eclipseGreen}, % style of comments
+  keywordstyle=\color{eclipsePurple}\bfseries, %, % style of keywords
+  stringstyle=\color{eclipseBlue}, % style of strings
+  emph={model_name, periods, eqtags, targets, expression, auxiliary_model_name, horizon,discount},emphstyle=\color{eclipseEmph}\bfseries,
+  literate={⟂}{{\ensuremath{\perp}}}{1},
+}
+
+
+
+\newcommand{\trace}{\mathrm{tr}}
+\newcommand{\vect}{\mathrm{vec}}
+\newcommand{\tracarg}[1]{\mathrm{tr}\left\{#1\right\}}
+\newcommand{\vectarg}[1]{\mathrm{vec}\left(#1\right)}
+\newcommand{\vecth}[1]{\mathrm{vech}\left(#1\right)}
+\newcommand{\iid}[2]{\mathrm{iid}\left(#1,#2\right)}
+\newcommand{\normal}[2]{\mathcal N\left(#1,#2\right)}
+\newcommand{\dynare}{\href{http://www.dynare.org}{\color{blue}Dynare}}
+\newcommand{\AllSample}{ \mathcal Y_T }
+\newcommand{\sample}{\mathcal Y_T}
+\newcommand{\samplet}[1]{\mathcal Y_{#1}}
+\newcommand{\slidetitle}[1]{\fancyhead[L]{\textsc{#1}}}
+
+\definecolor{gray}{gray}{0.4}
+
+\theoremstyle{plain}
+
+\makeatletter
+\@ifclassloaded{beamer}{
+\setbeamertemplate{footline}{
+  {\hfill\vspace*{1pt}\href{https://creativecommons.org/publicdomain/zero/1.0/}{\cczero}\hspace{.1cm}
+    \href{https://mnemosyne.ithaca.fr/stephane/ispra-2025}{\faCodeFork}\enspace--\enspace\today\enspace
+  }}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{blocks}[rounded][shadow=true]
+\setbeamertemplate{caption}[numbered]}
+\makeatother
+
+% From https://tex.stackexchange.com/questions/312118/a-note-with-the-dangerous-bend-symbol-how-to-vertically-center-text-and-symbol
+\newcommand{\dnote}[1]{%
+    \noindent % I guess this is intended...
+    \begin{tabular}{@{}m{0.13\textwidth}@{}m{0.87\textwidth}@{}}%
+        \huge\textdbend &#1%
+    \end{tabular}%
+    \par % ... and this too.
+}
+
+\NewEnviron{notes}{\justifying\footnotesize\begin{spacing}{1.0}\BODY\vfill\pagebreak\end{spacing}}
+
+\begin{document}
+
+\title{modBuilder}
+\author[]{\texttt{stephane.adjemian@univ-lemans.fr}}
+%\institute{\texttt{stephane.adjemian@univ-lemans.fr}}
+\date{September,  2025}
+
+\begin{frame}
+  \titlepage{}
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Introduction}
+
+  \bigskip
+
+  \begin{itemize}
+
+  \item \verb+modBuilder+ is a MATLAB class aimed at simplifying the interactive and
+    programmatic creation of Dynare \verb+.mod+ files.\newline
+
+  \item Build incrementally a model directly from the MATLAB.\newline
+
+  \item Facilitates consistency checks, error detection, and modular
+    model development.\newline
+
+  \item Also provides tools for computing the steady state.\newline
+
+  \item Export the model to a \verb+.mod+ file ready to run.\newline
+
+  \item Code available in a public \href{https://git.dynare.org/stepan-a/modbuilder}{Git repository} (not part of Dynare).
+
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Instantiate an empty model}
+
+\begin{lstlisting}[style=MatlabConsole]
+>> model = modBuilder()
+
+model =
+
+  modBuilder with properties:
+
+       params: {0x4 cell}
+       varexo: {0x4 cell}
+          var: {0x4 cell}
+      symbols: {1x0 cell}
+    equations: {0x2 cell}
+            T: [1x1 struct]
+         date: 15-Sep-2025 15:36:06
+   \end{lstlisting}
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Instantiate a model from a \texttt{.mod} file -- I --}
+
+  \lstinputlisting[firstline=1,lastline=19,frame=none,basicstyle=\footnotesize,language=Dynare]{../models/rbc12.mod}
+
+\end{frame}
+
+\begin{frame}[fragile]
+  \frametitle{Instantiate a model from a \texttt{.mod} file -- II --}
+
+  \lstinputlisting[firstline=21,lastline=41,frame=none,basicstyle=\footnotesize,language=Dynare]{../models/rbc12.mod}
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Instantiate a model from a \texttt{.mod} file -- III --}
+
+  \begin{lstlisting}[style=MatlabConsole]
+
+    >> dynare rbc12 json=compute
+    ...
+    >> model = modBuilder(M_, oo_, 'rbc12/model/json/modfile-original.json')
+
+model =
+
+  modBuilder with properties:
+
+       params: {8x4 cell}
+       varexo: {2x4 cell}
+          var: {6x4 cell}
+      symbols: {1x0 cell}
+    equations: {6x2 cell}
+            T: [1x1 struct]
+         date: 15-Sep-2025 16:38:38
+   \end{lstlisting}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Instantiate a model}
+
+  \begin{itemize}
+
+  \item It is also possible to create a new model from a previously defined modBuilder object that has been saved to disk.\newline
+
+  \item Once a \verb+modBuilder+ object is instantiated, the model can be expanded or transformed by utilizing the methods provided by the class.\newline
+
+  \item In the end the model can be saved on disk for later usage (\verb+save+ method) or exported to a \verb+.mod+ file (\verb+write+ method).
+
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Add an equation}
+
+  \begin{lstlisting}[style=MatlabConsole]
+
+    >> model.add('y', 'y = rho*y(-1)-gamma*z+e');
+   \end{lstlisting}
+
+   \bigskip
+
+  \begin{itemize}
+
+  \item Each equation must be associated to an endogenous variable (\verb+y+) that will be used to index the model object.\newline
+
+  \item[$\Rightarrow$] Each new equation adds a new endogenous variable to the model.\newline
+
+  \item All the other symbols (\verb+rho+, \verb+z+, and \verb+e+), unless previously defined, are classified as unresolved.\newline
+
+  \item These symbols need to be typed before completing the model. This can be done by adding an equation for an endogenous variable (\verb+z+) or explictly declaring a symbol as a parameter (\verb+rho+) or an exogenous variable (\verb+e+).
+
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Type symbols}
+
+  \begin{itemize}
+
+  \item \verb+model.symbols+ is the list of unclassified symbols.\newline
+
+  \item This property must be empty to finalize the model.\newline
+
+  \end{itemize}
+
+  \begin{lstlisting}[style=MatlabConsole]
+
+    >> model.parameter('rho', .9, 'texname', '\rho');
+    >> model.exogenous('epsilon', .0);
+   \end{lstlisting}
+
+   \medskip
+
+  \begin{itemize}
+
+  \item Calibration occurs upon declaring a parameter but can be modified subsequently.\newline
+
+  \item The value assigned to an exogenous variable determines its long-run level.
+
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Converting symbols}
+
+  \begin{itemize}
+
+  \item Methods \verb+parameter+ and \verb+exogenous+ can also be used to convert a symbol.\newline
+
+  \item These methods cannot be applied to an endogenous variable.\newline
+
+  \item To exogenize an endogenous variable one can:
+    \begin{itemize}
+    \item[--] Remove an equation (methods \verb+rm+ or \verb+remove+)
+    \item[--] Flip an exogenous variable and and endogenous variable (\verb+flip+ method).
+    \end{itemize}
+
+  \end{itemize}
+
+    \bigskip
+
+    \dnote{The method \texttt{endogenous} does not change the type of a variable, but only serves to provide the steady state level of an endogenous variable.}
+
+    \begin{lstlisting}[style=MatlabConsole]
+
+    >> model.endogenous('y', .0);
+  \end{lstlisting}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Change an equation}
+
+  \begin{itemize}
+  \item \verb+change+ method: change a whole equation.\newline
+  \item \verb+subs+ method: substitute an expression in a set of equations.\newline
+  \end{itemize}
+
+    \medskip
+
+    \dnote{It is recommended to use regular expressions with the \texttt{subs} method; consult the Mathworks documentation for more information: \href{https://fr.mathworks.com/help/matlab/ref/regexprep.html}{regexprep}.}
+
+    \bigskip
+
+    \dnote{If new symbols are introduced with the changes, they must be typed after.}
+
+    \bigskip
+
+    \begin{lstlisting}[style=MatlabConsole]
+
+      >> model.change('y', 'rho*y(-1)+phi*y(-2)+e');
+      >> model.subs('y(-2)', 'y(-3)', 'y');
+  \end{lstlisting}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Search for symbols within a model}
+
+  \begin{itemize}
+
+  \item The \verb+lookfor+ method searches for any symbol, such as a parameter or variable, within a model and displays the equations in which the symbol appears.\newline
+
+  \end{itemize}
+
+    \medskip
+
+    \begin{lstlisting}[style=MatlabConsole]
+
+      >> model.lookfor('k')
+
+      Endogenous variable k appears in 3 equations:
+
+      1/beta = ((exp(b)*c)/(exp(b(+1))*c(+1)))*(exp(b(+1))*alpha*y(+1)/k+(1-delta))
+
+      y = exp(a)*(k(-1)^alpha)*(h^(1-alpha))
+
+      k = exp(b)*(y-c)+(1-delta)*k(-1)
+  \end{lstlisting}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Use matlab to write an equation -- I --}
+
+  \begin{itemize}
+
+  \item The features of the MATLAB language, such as loops and conditional statements, can be employed to programmatically generate equations.\newline
+
+  \item Suppose we want to add the following equation:
+    \[
+      y_t = \rho_1 y_{t-1} + \rho_2 y_{t-2} + \dots + \rho_{12} y_{t-12} + \varepsilon_t
+    \]
+
+    \medskip
+
+  \item Define a general MATLAB routine generating AR equations:\newline
+
+    \lstinputlisting[
+frame=none,
+numbers=left,
+basicstyle=\small,
+style=Matlab-editor
+]{../models/ar.m}
+
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Use matlab to write an equation -- II --}
+
+  \lstinputlisting[
+  firstline=1,
+  lastline =8,
+  basicstyle=\small,
+  frame=none,
+  numbers=left,
+  style=Matlab-editor
+  ]{../models/ar12.m}
+
+  \bigskip
+
+  \begin{lstlisting}[style=MatlabConsole]
+
+      >> m('y').equations{2}
+
+      ans =
+
+      'y = rho1*y(-1) + rho2*y(-2) + rho3*y(-3) + rho4*y(-4) + rho5*y(-5) + rho6*y(-6) + rho7*y(-7) + rho8*y(-8) + rho9*y(-9) + rho10*y(-10) + rho11*y(-11) + rho12*y(-12) + e'
+  \end{lstlisting}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Use matlab to write equations -- III --}
+
+  \lstinputlisting[
+  firstline=1,
+  lastline =10,
+  basicstyle=\tiny,
+  frame=none,
+  numbers=left,
+  style=Matlab-editor
+  ]{../models/ar12panel.m}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Steady state -- 1 --}
+
+  \begin{itemize}
+
+  \item The \verb+evaluate+ method evaluates a static equation and
+    returns a structure with the value of the left hand side (field
+    \verb+lhs+), the value of the right hand side (field \verb+rhs+)
+    and the residual of the static equation defined as
+    \verb+resid=lhs-rhs+.\newline
+
+    \medskip
+
+  \item The \verb+solve+ method solves the static version of an
+    equation for a symbol. This symbol can be an endogenous variable,
+    an exogenous variable or a parameter.\newline
+
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Steady state -- 2 --}
+
+  \scalebox{.6}{
+  \lstinputlisting[
+  firstline=1,
+  lastline =24,
+  basicstyle=\tiny,
+  frame=none,
+  numbers=left,
+  style=Matlab-editor
+  ]{../models/rbc13.m}}
+
+\end{frame}
+
+\begin{frame}[c,fragile]
+  \frametitle{Steady state -- 3 --}
+
+  \scalebox{1}{
+  \lstinputlisting[
+  firstline=28,
+  lastline =37,
+  basicstyle=\tiny,
+  frame=none,
+  numbers=left,
+  style=Matlab-editor
+  ]{../models/rbc13.m}}
+
+\end{frame}
+
+
+\end{document}
+
+
+% Local Variables:
+% ispell-check-comments: exclusive
+% ispell-local-dictionary: "american-insane"
+% TeX-master: t
+% End:
