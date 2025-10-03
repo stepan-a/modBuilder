@@ -369,7 +369,7 @@ model =
 
     \begin{lstlisting}[style=MatlabConsole]
 
-      >> model.change('y', 'rho*y(-1)+phi*y(-2)+e');
+      >> model.change('y', 'y=rho*y(-1)+phi*y(-2)+e');
       >> model.subs('y(-2)', 'y(-3)', 'y');
   \end{lstlisting}
 
