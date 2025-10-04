@@ -38,6 +38,14 @@ model.updatesymboltables();
 
 model.flip('a', 'e');
 
+if ~isfield(model.T.equations, 'e') || isfield(model.T.equations, 'a')
+    error('flip method did not update the fields of o.T.equations correctly.')
+end
+
+if ~isequal(model.T.equations.e, {'b'  'a'  'rho'  'tau'})
+    error('flip method did not write o.T.equations.e correctly.')
+end
+
 model.write('rbc2');
 
 b = modiff('rbc2.mod', 'rbc2.true.mod');

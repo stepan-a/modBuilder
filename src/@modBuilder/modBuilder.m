@@ -1012,6 +1012,10 @@ classdef modBuilder<handle
             o.T.varexo.(varname) = o.T.var.(varname);
             o.T.varexo = rmfield(o.T.varexo, varexoname);
             o.T.var = rmfield(o.T.var, varname);
+            o.T.equations.(varexoname) = o.T.equations.(varname);
+            o.T.equations = rmfield(o.T.equations, varname);
+            mask = strcmp(varexoname, o.T.equations.(varexoname));
+            o.T.equations.(varexoname){mask} = varname;
             % Associate new endogenous variable to an equation (the one previously associated with varname)
             o.equations{ie,1} = varexoname;
         end % function
