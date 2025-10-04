@@ -467,7 +467,79 @@ classdef modBuilder<handle
             end
         end
 
-        function o = add(o, varname, equation)
+        function o = add(o, varname, equation, varargin)
+        % Add an equation to the model and associate an endogenous variable
+        %
+        % INPUTS:
+        % - o           [modBuilder]
+        % - varname     [char]         1×n array, name of an endogenous variable
+        % - equation    [char]         1×m array, expression
+        % - ...         [cell]         1×p array, indices for implicit loops
+        %
+        % OUTPUTS:
+        % - o           [modBuilder]   updated object (with new equation)
+            number_of_loops = length(varargin);
+            if not(number_of_loops)
+                o = addeq(o, varname, equation);
+            else
+                indices = unique(regexp(equation, '\$[0-9]*', 'match'));
+                % Check the number of indices (for loops)
+                if ~isequal(numel(indices), number_of_loops)
+                    error('The expected number of indices in the equation is %u but the equation has %u indices.', number_of_loops, numel(indices))
+                end
+                inames = regexp(varname, '\$[0-9]*', 'match');
+                if not(isequal(numel(indices), numel(inames))) || ~isempty(setdiff(indices, inames)) || ~isempty(setdiff(inames, indices))
+                    error('This case of implicit loops is not covered. Indices must be the same in the equation and in varname.')
+                end
+                % Check that the indices are uniform.
+                isint = @(x) isnumeric(x) && rem(x, 1)==0;
+                allint = false(number_of_loops, 1);
+                allstr = false(number_of_loops, 1);
+                for i=1:number_of_loops
+                    if iscell(varargin{i})
+                        if isvector(varargin{i})
+                            allstr(i) = all(cellfun(@ischar, varargin{i}));
+                            allint(i) = all(cellfun(isint, varargin{i}));
+                            if not(allstr(i) || allint(i))
+                                error('Values for index $%u should be all char or all integer.', i)
+                            end
+                        else
+                            error('Values for index $%u should be pass as a one dimensional cell array.', i)
+                        end
+                    else
+                        error('Values for index $%u should be pass as a cell array.', i)
+                    end
+                end
+                % Compute Cartesian product of set of values
+                mIndex = table2cell(combinations(varargin{:}));
+                % Prepare
+                Name = varname;
+                for i=number_of_loops:-1:1
+                    if allint(i)
+                        Name = strrep(Name, sprintf('$%u',i), '%u');
+                        % Equation = strrep(Equation, sprintf('$%u',i), '%u');
+                    else
+                        Name = strrep(Name, sprintf('$%u',i), '%s');
+                        % Equation = strrep(Equation, sprintf('$%u',i), '%s');
+                    end
+                end
+                for i=1:size(mIndex,1)
+                    id = mIndex(i,:);
+                    NAME = sprintf(Name, id{:});
+                    Equation = equation;
+                    for j=number_of_loops:-1:1
+                        if allstr(j)
+                            Equation = strrep(Equation, sprintf('$%u', j), id{j});
+                        else
+                            Equation = strrep(Equation, sprintf('$%u', j), num2str(id{j}));
+                        end
+                    end
+                    o.add(NAME, Equation);
+                end
+            end
+        end % function
+
+        function o = addeq(o, varname, equation)
         % Add an equation to the model and associate an endogenous variable
         %
         % INPUTS:

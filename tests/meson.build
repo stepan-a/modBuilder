@@ -65,6 +65,7 @@ listoftests = [
   'rename/rbc2.m',
   'tag/rbc1.m',
   'tag/rbc2.m',
+  'implicit-loops/t01.m',
 ]
 
 listoffailingtests = [
