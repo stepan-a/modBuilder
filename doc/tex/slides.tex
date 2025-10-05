@@ -469,7 +469,56 @@ style=Matlab-editor
   frame=none,
   numbers=left,
   style=Matlab-editor
-  ]{../models/ar12panel.m}
+  ]{../models/ar12panel_0.m}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Use matlab to write equations -- IV --}
+
+  Same with an implicit loop:
+
+  \bigskip
+
+  \lstinputlisting[
+  firstline=1,
+  lastline =5,
+  basicstyle=\tiny,
+  frame=none,
+  numbers=left,
+  style=Matlab-editor
+  ]{../models/ar12panel_1.m}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Use matlab to write equations -- V --}
+
+  Implicit loops can be nested:
+
+  \bigskip
+
+  \lstinputlisting[
+  firstline=1,
+  lastline =6,
+  basicstyle=\tiny,
+  frame=none,
+  numbers=left,
+  style=Matlab-editor
+  ]{../models/smc.m}
+
+  $\Rightarrow$ The model now includes 40 additional equations! However, users still need to manually input the symbols introduced in the loops.\newline
+
+  \begin{lstlisting}[style=MatlabConsole]
+
+      >> m.Y_FR_1.equations{2}
+
+      ans =
+
+      'Y_FR_1 = A_FR*K_FR_1^alpha*L_FR_1^(1-alpha)'
+  \end{lstlisting}
 
 \end{frame}
 

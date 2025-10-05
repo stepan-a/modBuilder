@@ -18,6 +18,6 @@ end
 
 m.updatesymboltables();
 
-m('y_FRA')
+m.y_FRA
 
-m('y_FRA').equations
+m.y_FRA.equations
