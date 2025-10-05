@@ -11,7 +11,6 @@ listoftests = [
   'rbc/rbc9',
   'rbc/rbc10',
   'rbc/rbc11',
-  'rbc/rbc12',
   'rbc/rbc13',
   'rbc/rbc14',
   'ar/ar1',
@@ -66,6 +65,8 @@ listoftests = [
   'tag/rbc1.m',
   'tag/rbc2.m',
   'implicit-loops/t01.m',
+  'load-mod-file/rbc1.m',
+  'load-mod-file/rbc2.m',
 ]
 
 listoffailingtests = [

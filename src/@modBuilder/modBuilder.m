@@ -336,12 +336,13 @@ classdef modBuilder<handle
     methods
 
         function o = modBuilder(varargin)
-            % Return an empty modBuilder object
+        % Return an empty modBuilder object
             if nargin==1 && isdatetime(varargin{1})
                 o.date = varargin{1};
             elseif nargin==0
                 o.date = datetime;
-            elseif nargin==3 && isstruct(varargin{1}) && isstruct(varargin{2}) && ischar(varargin{3}) && isfile(varargin{3})
+            elseif (nargin==3 && isstruct(varargin{1}) && isstruct(varargin{2}) && ischar(varargin{3}) && isfile(varargin{3})) || ...
+                    (nargin==4 && isstruct(varargin{1}) && isstruct(varargin{2}) && ischar(varargin{3}) && isfile(varargin{3}) && ischar(varargin{4}))
                 M_ = varargin{1};
                 oo_ = varargin{2};
                 %
@@ -386,19 +387,24 @@ classdef modBuilder<handle
                 % Read equations, set list of equations and endogenous variables.
                 %
                 JSON = readstruct(varargin{3});
+                if nargin==4
+                    equationtagname = varargin{4};
+                else
+                    equationtagname = 'name';
+                end
                 n = length(JSON.model);
                 o.equations = cell(n, 2);
                 o.var = cell(n, 4);
                 for i=1:n
                     equation = JSON.model(i);
                     if not(isfield(equation, 'tags'))
-                        error('Each equation must have a tag name (to associate an endogenous variable).')
+                        error('Each equation must have a tag %s (to associate an endogenous variable).', equationtagname)
                     end
                     o.equations{i,2} = sprintf('%s = %s', equation.lhs, equation.rhs);
-                    if ismember(equation.tags.name, M_.endo_names)
-                        o.var{i,1} = char(equation.tags.name);
+                    if ismember(equation.tags.(equationtagname), M_.endo_names)
+                        o.var{i,1} = char(equation.tags.(equationtagname));
                         o.equations{i,1} = o.var{i,1};
-                        id = strcmp(equation.tags.name, M_.endo_names);
+                        id = strcmp(equation.tags.((equationtagname)), M_.endo_names);
                         o.var{i,2} = oo_.steady_state(id);
                         if isequal(o.var{i,1}, M_.endo_names_long{id})
                             o.var{i,3} = '';
@@ -410,10 +416,16 @@ classdef modBuilder<handle
                         else
                             o.var{i,4} = M_.endo_names_tex{id};
                         end
-                        o.T.equations.(equation.tags.name) = modBuilder.getsymbols(o.equations{i,2});
-                        o.symbols = unique(horzcat(o.symbols, o.T.equations.(equation.tags.name)));
-                        o.T.equations.(equation.tags.name) = setdiff(o.T.equations.(equation.tags.name), equation.tags.name);
+                        o.T.equations.(equation.tags.((equationtagname))) = modBuilder.getsymbols(o.equations{i,2});
+                        o.symbols = unique(horzcat(o.symbols, o.T.equations.(equation.tags.((equationtagname)))));
+                        o.T.equations.(equation.tags.(equationtagname)) = setdiff(o.T.equations.(equation.tags.((equationtagname))), equation.tags.((equationtagname)));
                         o.tags.(o.var{i,1}).name = o.var{i,1};
+                        % Do we need to populate o.tags with other equation tags?
+                        FieldNames = setdiff(fieldnames(o.tags.(o.var{i,1})), {equationtagname, 'name'});
+                        % Equation tag name cannot be used if fourth argument is used.
+                        for j=1:numel(FieldNames)
+                            o.tags.(o.var{i,1}).(FieldNames{j}) = char(equation.tags.(FieldNames{j}));
+                        end
                     else
                         error('The name (equation tag) of an equation should be an endogenous variable.')
                     end
