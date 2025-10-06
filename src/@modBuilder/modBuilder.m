@@ -569,10 +569,16 @@ classdef modBuilder<handle
             o.equations{id,2} = equation;
             o.var{id,1} = varname;
             o.var{id,2} = NaN;
+            id = strcmp(varname, o.varexo(:,1));
+            if any(id)
+                % The new equation is introducing an endogenous variable replacing an exogenous variable.
+                o.varexo(id,:) = [];
+            end
             o.T.equations.(varname) = modBuilder.getsymbols(equation);
             o.symbols = horzcat(o.symbols, o.T.equations.(varname));
             o.T.equations.(varname) = setdiff(o.T.equations.(varname), varname);
             o.symbols = setdiff(o.symbols, o.var(:,1));
+            o.symbols = setdiff(o.symbols, o.symbols(cellfun(@o.issymbol, o.symbols)));
             o.tags.(varname).name = varname;
         end % function
 

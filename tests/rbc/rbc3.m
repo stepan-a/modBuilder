@@ -36,6 +36,8 @@ end
 
 model.updatesymboltables();
 
+m0 = copy(model);
+
 model.remove('a');
 
 model.write('rbc3');
@@ -46,4 +48,33 @@ if not(b)
     error('Generated mod file might be wrong.')
 else
     delete rbc3.mod
+end
+
+m1 = copy(model);
+
+model.add('a', 'a = rho*a(-1)+tau*b(-1) + e');
+model.exogenous('e', 0);
+
+model.updatesymboltables();
+
+rm2c = @(x) [x(:,1) x(:,3:4)];
+
+if ~isequal(sortrows(model.equations, 1), sortrows(m0.equations, 1))
+    error('Cannot revert flip of a and e (equations).')
+end
+
+if ~isequal(rm2c(sortrows(model.var, 1)), rm2c(sortrows(m0.var, 1)))
+    error('Cannot revert flip of a and e (list of endogenous variables).')
+end
+
+if ~isequal(sortrows(model.varexo, 1), sortrows(m0.varexo, 1))
+    error('Cannot revert flip of a and e (list of exogenoous variables).')
+end
+
+if ~isequal(sortrows(model.params, 1), sortrows(m0.params, 1))
+    error('Cannot revert flip of a and e (parameters).')
+end
+
+if ~isequal(model.tags, m0.tags)
+    error('Cannot revert flip of a and e (tags).')
 end
