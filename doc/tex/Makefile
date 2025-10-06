@@ -2,7 +2,7 @@ LATEX = pdflatex
 
 all: slides.pdf clean push
 
-slides.pdf: slides.tex ../models/rbc12.mod
+slides.pdf: slides.tex ../models/rbc12.mod ../models/rbc12b.mod
 	@latexmk -pdf slides
 	@latexmk -c
 

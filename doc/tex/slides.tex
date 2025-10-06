@@ -249,6 +249,40 @@ model =
 \end{frame}
 
 
+\begin{frame}[fragile]
+  \frametitle{Instantiate a model from a \texttt{.mod} file -- II' --}
+
+  \lstinputlisting[firstline=21,lastline=41,frame=none,basicstyle=\footnotesize,language=Dynare]{../models/rbc12b.mod}
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Instantiate a model from a \texttt{.mod} file -- III' --}
+
+  \begin{lstlisting}[style=MatlabConsole]
+
+    >> dynare rbc12b json=compute
+    ...
+    >> model = modBuilder(M_, oo_, 'rbc12b/model/json/modfile-original.json', 'endogenous')
+
+model =
+
+  modBuilder with properties:
+
+       params: {8x4 cell}
+       varexo: {2x4 cell}
+          var: {6x4 cell}
+         tags: [1x1 struct]
+      symbols: {1x0 cell}
+    equations: {6x2 cell}
+            T: [1x1 struct]
+         date: 04-Oct-2025 09:26:43
+   \end{lstlisting}
+
+\end{frame}
+
+
 \begin{frame}[c,fragile]
   \frametitle{Instantiate a model}
 
