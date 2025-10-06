@@ -36,6 +36,8 @@ end
 
 model.updatesymboltables();
 
+m0 = copy(model);
+
 model.flip('a', 'e');
 
 if ~isfield(model.T.equations, 'e') || isfield(model.T.equations, 'a')
@@ -63,3 +65,28 @@ if not(b)
 end
 
 delete rbc2.mod
+
+% Check if we can revert the flip
+model.flip('e', 'a');
+
+rm2c = @(x) [x(:,1) x(:,3:4)];
+
+if ~isequal(model.equations, m0.equations)
+    error('Cannot revert flip of a and e (equations).')
+end
+
+if ~isequal(rm2c(sortrows(model.var, 1)), rm2c(sortrows(m0.var, 1)))
+    error('Cannot revert flip of a and e (list of endogenous variables).')
+end
+
+if ~isequal(rm2c(sortrows(model.varexo, 1)), rm2c(sortrows(m0.varexo, 1)))
+    error('Cannot revert flip of a and e (list of exogenoous variables).')
+end
+
+if ~isequal(rm2c(sortrows(model.params, 1)), rm2c(sortrows(m0.params, 1)))
+    error('Cannot revert flip of a and e (parameters).')
+end
+
+if ~isequal(model.tags, m0.tags)
+    error('Cannot revert flip of a and e (tags).')
+end

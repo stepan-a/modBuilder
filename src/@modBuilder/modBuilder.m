@@ -1142,7 +1142,7 @@ classdef modBuilder<handle
             mask = strcmp(varexoname, o.T.equations.(varexoname));
             o.T.equations.(varexoname){mask} = varname;
             % Associate new endogenous variable to an equation (the one previously associated with varname)
-            o.equations{ie,1} = varexoname;
+            o.equations{strcmp(varname, o.equations(:,1)),1} = varexoname;
             % Update tags
             o.tags.(varexoname) = o.tags.(varname);
             o.tags = rmfield(o.tags, varname);
