@@ -291,6 +291,34 @@ model =
 
 
 \begin{frame}[c,fragile]
+  \frametitle{Tag equations}
+
+  \begin{lstlisting}[style=MatlabConsole]
+
+    >> model.tag('h', 'kind', 'static');
+    >> model.tag('k', 'kind', 'euler');
+   \end{lstlisting}
+
+   \bigskip
+
+  \begin{itemize}
+
+  \item The first argument specifies the equation's name, the second
+    argument denotes the tag's name, and the third argument represents
+    the tag's value.\newline
+
+  \item An equation can have any number of tags added to it.\newline
+
+  \item A tag can be named anything, except for 'name', which is
+    specifically reserved for linking equations to an endogenous
+    variable.\newline
+
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
   \frametitle{Type symbols}
 
   \begin{itemize}
