@@ -22,7 +22,7 @@ file, ready for simulation or estimation. The design encourages a
 structured yet flexible workflow, enabling model manipulation through
 intuitive methods and MATLAB’s language. With support
 for deep copies, serialisation, and custom indexing, =modBuilder=
-integrates smoothly into larger analytical pipelines or
+integrates smoothly into 
 version-controlled projects. Its implementation ensures that the
 generated =.mod= files are syntactically valid and semantically
 consistent, reducing manual effort and error risk.

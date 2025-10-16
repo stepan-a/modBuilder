@@ -102,6 +102,14 @@ classdef modBuilder<handle
             for i=1:n, fprintf('\n'), end
         end
 
+        function dprintf(format, varargin)
+            if nargin>1
+                disp(fprintf(format, varargin{:}));
+            else
+                disp(fprintf(format));
+            end
+        end
+
         function str = printlist(names)
             str = sprintf(' %s', names{:});
             str = sprintf('%s;', str);
@@ -1413,7 +1421,7 @@ classdef modBuilder<handle
                     for j=1:length(newsyms)
                         if ~o.issymbol(newsyms{j})
                             if ~ismember(newsyms{j}, list_of_unknown_symbols)
-                                disp(sprintf('Symbol %s is unknown, you need to provide a type (parameter, endogenous or exogenous variable).', newsyms{j}))
+                                modBuilder.dprintf('Symbol %s is unknown, you need to provide a type (parameter, endogenous or exogenous variable).', newsyms{j})
                                 list_of_unknown_symbols{end+1} = newsyms{j};
                             end
                         end
@@ -1426,13 +1434,13 @@ classdef modBuilder<handle
                         if ~o.appear_in_more_than_one_equation(delsyms{j})
                             switch type
                               case 'parameter'
-                                disp(sprintf('Parameter %s will be removed).', delsyms{j}))
+                                modBuilder.dprintf('Parameter %s will be removed).', delsyms{j})
                                 o.params(id,:) = [];
                               case 'exogenoous'
-                                disp(sprintf('Exogenous variable %s will be removed).', delsyms{j}))
+                                modBuilder.dprintf('Exogenous variable %s will be removed).', delsyms{j})
                                 o.varexo(id,:) = [];
                               case 'endogenous'
-                                disp(sprintf('Endogenous variable %s will be removed).', delsyms{j}))
+                                modBuilder.dprintf('Endogenous variable %s will be removed).', delsyms{j})
                                 o.var(id,:) = [];
                             end
                         else
@@ -1664,17 +1672,17 @@ classdef modBuilder<handle
             evaleq.rhs = eval(RHS);
             evaleq.resid = evaleq.lhs-evaleq.rhs;
             if printflag
-                disp(' ')
-                disp(sprintf('Static equation: %s', equation));
-                disp(' ')
-                disp(sprintf('LHS:             %f', evaleq.lhs));
-                disp(sprintf('RHS:             %f', evaleq.rhs));
+                modBuilder.skipline()
+                modBuilder.dprintf('Static equation: %s', equation);
+                modBuilder.skipline()
+                modBuilder.dprintf('LHS:             %f', evaleq.lhs);
+                modBuilder.dprintf('RHS:             %f', evaleq.rhs);
                 if evaleq.resid<0
-                    disp(sprintf('residual:       %f', evaleq.resid));
+                    modBuilder.dprintf('residual:       %f', evaleq.resid);
                 else
-                    disp(sprintf('residual:        %f', evaleq.resid));
+                    modBuilder.dprintf('residual:        %f', evaleq.resid);
                 end
-                disp(' ')
+                modBuilder.skipline()
             end
         end
 
