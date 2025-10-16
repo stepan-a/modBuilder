@@ -299,7 +299,7 @@ classdef modBuilder<handle
             end
         end
 
-        function C = replaceincell(C, oldword, newword);
+        function C = replaceincell(C, oldword, newword)
             s = strcmp(oldword, C);
             if any(s)
                 C{strcmp(oldword, C)} = newword;
