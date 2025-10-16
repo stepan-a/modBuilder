@@ -1592,7 +1592,7 @@ classdef modBuilder<handle
             remvarexo = not(ismember(fnames, q.varexo(:,1)));
             for i=1:length(remvarexo)
                 if remvarexo(i)
-                    rmfield(q.T.varexo, fnames{i});
+                    q.T.varexo = rmfield(q.T.varexo, fnames{i});
                 end
             end
             clear('fnames', 'remvarexo');
