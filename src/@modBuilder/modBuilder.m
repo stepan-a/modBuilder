@@ -306,6 +306,27 @@ classdef modBuilder<handle
             end
         end
 
+        function [allint, allstr] = check_indices_values(IndicesValues)
+            isint = @(x) isnumeric(x) && rem(x, 1)==0;
+            allint = false(numel(IndicesValues), 1);
+            allstr = false(numel(IndicesValues), 1);
+            for i=1:numel(IndicesValues)
+                if iscell(IndicesValues{i})
+                    if isvector(IndicesValues{i})
+                        allstr(i) = all(cellfun(@ischar, IndicesValues{i}));
+                        allint(i) = all(cellfun(isint, IndicesValues{i}));
+                        if not(allstr(i) || allint(i))
+                            error('Values for index $%u should be all char or all integer.', i)
+                        end
+                    else
+                        error('Values for index $%u should be pass as a one dimensional cell array.', i)
+                    end
+                else
+                    error('Values for index $%u should be pass as a cell array.', i)
+                end
+            end
+        end
+
     end % methods
 
     methods(Static)
@@ -512,24 +533,7 @@ classdef modBuilder<handle
                     error('This case of implicit loops is not covered. Indices must be the same in the equation and in varname.')
                 end
                 % Check that the indices are uniform.
-                isint = @(x) isnumeric(x) && rem(x, 1)==0;
-                allint = false(number_of_loops, 1);
-                allstr = false(number_of_loops, 1);
-                for i=1:number_of_loops
-                    if iscell(varargin{i})
-                        if isvector(varargin{i})
-                            allstr(i) = all(cellfun(@ischar, varargin{i}));
-                            allint(i) = all(cellfun(isint, varargin{i}));
-                            if not(allstr(i) || allint(i))
-                                error('Values for index $%u should be all char or all integer.', i)
-                            end
-                        else
-                            error('Values for index $%u should be pass as a one dimensional cell array.', i)
-                        end
-                    else
-                        error('Values for index $%u should be pass as a cell array.', i)
-                    end
-                end
+                [allint, allstr] = modBuilder.check_indices_values(varargin);
                 % Compute Cartesian product of set of values
                 mIndex = table2cell(combinations(varargin{:}));
                 % Prepare
@@ -610,7 +614,7 @@ classdef modBuilder<handle
             o.tags.(eqname).(tagname) = value;
         end % function
 
-        function o = parameter(o, pname, pvalue, varargin)
+        function o = parameter(o, pname, varargin)
         % Declare or calibrate a parameter
         %
         % INPUTS:
@@ -626,52 +630,89 @@ classdef modBuilder<handle
         % - If symbol pname is known as an exogenous variable, it is converted to a parameter. If pvalue is not NaN, pname is set
         % equal to pvalue, otherwise the parameter is calibrated with the value of the exogeous variable.
         % - Optional arguments in varargin must come by key/value pairs. Allowed keys are 'long_name' and 'texname'.
-            if ~(ismember(pname, o.symbols) || ismember(pname, o.varexo(:,1)) || ismember(pname, o.params(:,1)))
-                if ismember(pname, o.var(:,1))
-                    error('An endogenous variable cannot be converted into a parameter.')
+            inames = unique(regexp(pname, '\$\d*', 'match'));
+            if not(isempty(inames))
+                nindices = numel(inames);
+                if isequal(nargin-2-nindices, 1)
+                    pvalue = varargin{1};
+                    varargin = varargin(2:end);
+                elseif isequal(nargin-2-nindices, 0)
+                    pvalue = NaN;
                 else
-                    error('Symbol %s appears nowhere in the model.', pname)
+                    error('Wrong number of input arguments.')
                 end
-            end
-            if nargin<3 || isempty(pvalue)
-                % Set default value
-                pvalue = NaN;
-            end
-            [long_name, texname] = modBuilder.set_optional_fields('parameter', pname, varargin{:});
-            idp = ismember(o.params(:,1), pname);
-            if any(idp) % The parameter is already defined
-                o.params{idp, 2} = pvalue;
-                if not(isempty(long_name))
-                    o.params{idp,3} = long_name;
+                if not(isequal(numel(varargin), nindices))
+                    error('The number of indices in the parameter name is %u, but values for %u indices are provided', nindex, numel(varargin))
                 end
-                if not(isempty(texname))
-                    o.params{idp,4} = texname;
-                end
-            else
-                idx = ismember(o.varexo(:,1), pname);
-                if any(idx)
-                    % pname is an exogenous variable, we change its type to parameter.
-                    o.params(length(idp)+1,:) = o.varexo(idx,:);
-                    o.varexo(idx,:) = [];
-                    if not(isnan(pvalue))
-                        o.params{length(idp)+1,2} = pvalue;
+                % Check that the indices are uniform.
+                [allint, ~] = modBuilder.check_indices_values(varargin);
+                % Compute Cartesian product of set of index values
+                mIndex = table2cell(combinations(varargin{:}));
+                % Prepare
+                tmp = pname;
+                for i=nindices:-1:1
+                    if allint(i)
+                        tmp = strrep(tmp, sprintf('$%u',i), '%u');
+                    else
+                        tmp = strrep(tmp, sprintf('$%u',i), '%s');
                     end
+                end
+                for i=1:size(mIndex, 1)
+                    id = mIndex(i,:);
+                    name = sprintf(tmp, id{:});
+                    o.parameter(name, pvalue);
+                end
+                return
+            else
+                if ~(ismember(pname, o.symbols) || ismember(pname, o.varexo(:,1)) || ismember(pname, o.params(:,1)))
+                    if ismember(pname, o.var(:,1))
+                        error('An endogenous variable cannot be converted into a parameter.')
+                    else
+                        error('Symbol %s appears nowhere in the model.', pname)
+                    end
+                end
+                if nargin<3 || isempty(varargin{1})
+                    % Set default value
+                    pvalue = NaN;
+                else
+                    pvalue = varargin{1};
+                end
+                [long_name, texname] = modBuilder.set_optional_fields('parameter', pname, varargin{2:end});
+                idp = ismember(o.params(:,1), pname);
+                if any(idp) % The parameter is already defined
+                    o.params{idp, 2} = pvalue;
                     if not(isempty(long_name))
-                        o.params{length(idp)+1,3} = long_name;
+                        o.params{idp,3} = long_name;
                     end
                     if not(isempty(texname))
-                        o.params{length(idp)+1,4} = texname;
+                        o.params{idp,4} = texname;
                     end
                 else
-                    % Symbol pname has no predefined type.
-                    o.params{length(idp)+1,1} = pname;
-                    o.params{length(idp)+1,2} = pvalue;
-                    o.params{length(idp)+1,3} = long_name;
-                    o.params{length(idp)+1,4} = texname;
+                    idx = ismember(o.varexo(:,1), pname);
+                    if any(idx)
+                        % pname is an exogenous variable, we change its type to parameter.
+                        o.params(length(idp)+1,:) = o.varexo(idx,:);
+                        o.varexo(idx,:) = [];
+                        if not(isnan(pvalue))
+                            o.params{length(idp)+1,2} = pvalue;
+                        end
+                        if not(isempty(long_name))
+                            o.params{length(idp)+1,3} = long_name;
+                        end
+                        if not(isempty(texname))
+                            o.params{length(idp)+1,4} = texname;
+                        end
+                    else
+                        % Symbol pname has no predefined type.
+                        o.params{length(idp)+1,1} = pname;
+                        o.params{length(idp)+1,2} = pvalue;
+                        o.params{length(idp)+1,3} = long_name;
+                        o.params{length(idp)+1,4} = texname;
+                    end
                 end
+                % Remove pname from the list of untyped symbols
+                o.symbols = setdiff(o.symbols, pname);
             end
-            % Remove pname from the list of untyped symbols
-            o.symbols = setdiff(o.symbols, pname);
         end % function
 
         function o = exogenous(o, xname, xvalue, varargin)

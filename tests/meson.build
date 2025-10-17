@@ -65,6 +65,8 @@ listoftests = [
   'tag/rbc1.m',
   'tag/rbc2.m',
   'implicit-loops/t01.m',
+  'implicit-loops/t02.m',
+  'implicit-loops/t03.m',
   'load-mod-file/rbc1.m',
   'load-mod-file/rbc2.m',
 ]
