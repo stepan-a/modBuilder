@@ -627,9 +627,18 @@ classdef modBuilder<handle
         % - o         [modBuilder]   updated object
         %
         % REMARKS:
-        % - If symbol pname is known as an exogenous variable, it is converted to a parameter. If pvalue is not NaN, pname is set
-        % equal to pvalue, otherwise the parameter is calibrated with the value of the exogeous variable.
-        % - Optional arguments in varargin must come by key/value pairs. Allowed keys are 'long_name' and 'texname'.
+        % [1] If symbol pname is known as an exogenous variable, it is converted to a parameter. If pvalue is not NaN, pname is set
+        %     equal to pvalue, otherwise the parameter is calibrated with the value of the exogeous variable.
+        % [2] Optional arguments in varargin must come by key/value pairs. Allowed keys are 'long_name' and 'texname'.
+        % [3] If pname contains indices (e.g. 'beta_$1_$2'), then parameters are defined for all combinations of values provided in
+        %     varargin as cell arrays of index values.
+        % [4] If pname contains indices, pvalue can be provided as the first argument in varargin. If pvalue is not provided, the parameters
+        %     are created with default value NaN.
+        % [5] If implicit loops are used (pname contains indices), then the number of index value sets provided in varargin must match
+        %     the number of indices in pname.
+        % [6] If implicit loops are used (pname contains indices), then all values provided for a given index must be of the same type
+        %     (all char or all integer).
+        % [7] If implicit loops are used (pname contains indices), then optional attributes (long_name, texname) cannot be provided.
             inames = unique(regexp(pname, '\$\d*', 'match'));
             if not(isempty(inames))
                 nindices = numel(inames);
