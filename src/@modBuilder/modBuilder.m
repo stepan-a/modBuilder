@@ -723,7 +723,7 @@ classdef modBuilder<handle
             end
         end % function
 
-        function o = exogenous(o, xname, xvalue, varargin)
+        function o = exogenous(o, xname, varargin)
         % Declare or set default value for an exogenous variables
         %
         % INPUTS:
@@ -736,54 +736,88 @@ classdef modBuilder<handle
         % - o         [modBuilder]   updated object
         %
         % REMARKS:
-        % - If symbol xname is known as a parameter, it is converted to an exogenous variable. If xvalue is not NaN, xname is set
-        % equal to xvalue, otherwise the exogenous variable is calibrated with the value of the parameter.
-        % - Optional arguments in varargin must come by key/value pairs. Allowed keys are 'long_name' and 'texname'.
-            if ~(ismember(xname, o.symbols) || ismember(xname, o.varexo(:,1)) || ismember(xname, o.params(:,1)))
-                if ismember(xname, o.var(:,1))
-                    error('An endogenous variable cannot be converted into an exogenous variable.\nPlease remove the equation associated to the endogenous variable.')
+        % Same remarks as for method parameter, with obvious changes for exogenous variables.
+            inames = unique(regexp(xname, '\$\d*', 'match'));
+            if not(isempty(inames))
+                nindices = numel(inames);
+                if isequal(nargin-2-nindices, 1)
+                    xvalue = varargin{1};
+                    varargin = varargin(2:end);
+                elseif isequal(nargin-2-nindices, 0)
+                    xvalue = NaN;
                 else
-                    error('Symbol %s appears nowhere in the model.', pname)
+                    error('Wrong number of input arguments.')
                 end
-            end
-            if nargin<3 || isempty(xvalue)
-                % Set default value
-                xvalue = NaN;
-            end
-            [long_name, texname] = modBuilder.set_optional_fields('exogenous', xname, varargin{:});
-            idx = ismember(o.varexo(:,1), xname);
-            if any(idx) % The exogenous variable is already defined
-                o.varexo{idx,2} = xvalue;
-                if not(isempty(long_name))
-                    o.varexo{idx,3} = long_name;
+                if not(isequal(numel(varargin), nindices))
+                    error('The number of indices in the exogenous variable name is %u, but values for %u indices are provided', nindex, numel(varargin))
                 end
-                if not(isempty(texname))
-                    o.varexo{idx,4} = texname;
+                % Check that the indices are uniform.
+                [allint, ~] = modBuilder.check_indices_values(varargin);
+                % Compute Cartesian product of set of index values
+                mIndex = table2cell(combinations(varargin{:}));
+                % Prepare
+                tmp = xname;
+                for i=nindices:-1:1
+                    if allint(i)
+                        tmp = strrep(tmp, sprintf('$%u',i), '%u');
+                    else
+                        tmp = strrep(tmp, sprintf('$%u',i), '%s');
+                    end
+                end
+                for i=1:size(mIndex, 1)
+                    id = mIndex(i,:);
+                    name = sprintf(tmp, id{:});
+                    o.exogenous(name, xvalue);
                 end
             else
-                idp = ismember(o.params(:,1), xname);
-                if any(idp)
-                    % pname is a parameter, we change its type to exogenous variable.
-                    o.varexo(length(idx)+1,:) = o.params(idp,:);
-                    o.params(idp,:) = [];
-                    if not(isnan(xvalue))
-                        o.varexo{length(idx)+1,2} = xvalue;
+                if ~(ismember(xname, o.symbols) || ismember(xname, o.varexo(:,1)) || ismember(xname, o.params(:,1)))
+                    if ismember(xname, o.var(:,1))
+                        error('An endogenous variable cannot be converted into an exogenous variable.\nPlease remove the equation associated to the endogenous variable.')
+                    else
+                        error('Symbol %s appears nowhere in the model.', xname)
                     end
+                end
+                if nargin<3 || isempty(varargin{1})
+                    % Set default value
+                    xvalue = NaN;
+                else
+                    xvalue = varargin{1};
+                end
+                [long_name, texname] = modBuilder.set_optional_fields('exogenous', xname, varargin{2:end});
+                idx = ismember(o.varexo(:,1), xname);
+                if any(idx) % The exogenous variable is already defined
+                    o.varexo{idx,2} = xvalue;
                     if not(isempty(long_name))
-                        o.varexo{length(idx)+1,3} = long_name;
+                        o.varexo{idx,3} = long_name;
                     end
                     if not(isempty(texname))
-                        o.varexo{length(idx)+1,4} = texname;
+                        o.varexo{idx,4} = texname;
                     end
                 else
-                    o.varexo{length(idx)+1,1} = xname;
-                    o.varexo{length(idx)+1,2} = xvalue;
-                    o.varexo{length(idx)+1,3} = long_name;
-                    o.varexo{length(idx)+1,4} = texname;
+                    idp = ismember(o.params(:,1), xname);
+                    if any(idp)
+                        % pname is a parameter, we change its type to exogenous variable.
+                        o.varexo(length(idx)+1,:) = o.params(idp,:);
+                        o.params(idp,:) = [];
+                        if not(isnan(xvalue))
+                            o.varexo{length(idx)+1,2} = xvalue;
+                        end
+                        if not(isempty(long_name))
+                            o.varexo{length(idx)+1,3} = long_name;
+                        end
+                        if not(isempty(texname))
+                            o.varexo{length(idx)+1,4} = texname;
+                        end
+                    else
+                        o.varexo{length(idx)+1,1} = xname;
+                        o.varexo{length(idx)+1,2} = xvalue;
+                        o.varexo{length(idx)+1,3} = long_name;
+                        o.varexo{length(idx)+1,4} = texname;
+                    end
                 end
+                % Remove xname from the list of untyped symbols
+                o.symbols = setdiff(o.symbols, xname);
             end
-            % Remove xname from the list of untyped symbols
-            o.symbols = setdiff(o.symbols, xname);
         end % function
 
         function o = endogenous(o, ename, evalue, varargin)
