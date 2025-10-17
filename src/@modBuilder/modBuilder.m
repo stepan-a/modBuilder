@@ -671,7 +671,6 @@ classdef modBuilder<handle
                     name = sprintf(tmp, id{:});
                     o.parameter(name, pvalue);
                 end
-                return
             else
                 if ~(ismember(pname, o.symbols) || ismember(pname, o.varexo(:,1)) || ismember(pname, o.params(:,1)))
                     if ismember(pname, o.var(:,1))
