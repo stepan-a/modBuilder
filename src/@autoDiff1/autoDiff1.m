@@ -295,54 +295,22 @@ classdef autoDiff1
 
         function b = lt(o, p)
         % Overload the < operator.
-            if isa(o, 'autoDiff1') && isa(p, 'autoDiff1')
-                b = o.x<p.x;
-            elseif isa(o, 'autoDiff1') && isnumeric(p)
-                b = o.x<p;
-            elseif isnumeric(o) && isa(p, 'autoDiff1')
-                b = o<p.x;
-            else
-                error('Type error.')
-            end
+            b = autoDiff1.compare_op(o, p, @lt);
         end
 
         function b = le(o, p)
         % Overload the <= operator.
-            if isa(o, 'autoDiff1') && isa(p, 'autoDiff1')
-                b = o.x<=p.x;
-            elseif isa(o, 'autoDiff1') && isnumeric(p)
-                b = o.x<=p;
-            elseif isnumeric(o) && isa(p, 'autoDiff1')
-                b = o<=p.x;
-            else
-                error('Type error.')
-            end
+            b = autoDiff1.compare_op(o, p, @le);
         end
 
         function b = gt(o, p)
         % Overload the > operator.
-            if isa(o, 'autoDiff1') && isa(p, 'autoDiff1')
-                b = o.x>p.x;
-            elseif isa(o, 'autoDiff1') && isnumeric(p)
-                b = o.x>p;
-            elseif isnumeric(o) && isa(p, 'autoDiff1')
-                b = o>p.x;
-            else
-                error('Type error.')
-            end
+            b = autoDiff1.compare_op(o, p, @gt);
         end
 
         function b = ge(o, p)
         % Overload the >= operator.
-            if isa(o, 'autoDiff1') && isa(p, 'autoDiff1')
-                b = o.x>=p.x;
-            elseif isa(o, 'autoDiff1') && isnumeric(p)
-                b = o.x>=p;
-            elseif isnumeric(o) && isa(p, 'autoDiff1')
-                b = o>=p.x;
-            else
-                error('Type error.')
-            end
+            b = autoDiff1.compare_op(o, p, @ge);
         end
 
     end
@@ -364,6 +332,27 @@ classdef autoDiff1
             end
             if isnumeric(b)
                 b = autoDiff1(b, 0);
+            end
+        end
+
+        function b = compare_op(o, p, op)
+        % Helper for comparison operators.
+        %
+        % INPUTS:
+        % - o     [numeric, autoDiff1]   scalar
+        % - p     [numeric, autoDiff1]   scalar
+        % - op    [function_handle]      comparison operator
+        %
+        % OUTPUTS:
+        % - b     [logical]              result of comparison
+            if isa(o, 'autoDiff1') && isa(p, 'autoDiff1')
+                b = op(o.x, p.x);
+            elseif isa(o, 'autoDiff1') && isnumeric(p)
+                b = op(o.x, p);
+            elseif isnumeric(o) && isa(p, 'autoDiff1')
+                b = op(o, p.x);
+            else
+                error('Type error.')
             end
         end
 
