@@ -170,7 +170,7 @@ classdef autoDiff1
         function q = tan(o)
         % Overload the tangent function.
             n = (o.x - pi/2)/pi;
-            if abs(n - round(n)) > 1e-15;
+            if abs(n - round(n)) > 1e-15
                 q = autoDiff1(tan(o.x), o.dx/cos(o.x)^2);
             else
                 error('Domain error: tan(x) has asymptotes if x = pi/2+n*pi (n is an integer).')
