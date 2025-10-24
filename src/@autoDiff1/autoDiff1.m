@@ -212,7 +212,8 @@ classdef autoDiff1
 
         function q = tanh(o)
         % Overload the hyperbolic tangent function.
-            q = autoDiff1(tanh(o.x), (1-tanh(o.x)^2)*o.dx);
+            tmp = tanh(o.x);
+            q = autoDiff1(tmp, (1-tmp^2)*o.dx);
         end
 
         function q = asinh(o)
