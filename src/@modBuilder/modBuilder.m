@@ -123,7 +123,7 @@ classdef modBuilder<handle
                     o.T.var.(o.var{i,1}) = unique(o.T.var.(o.var{i,1}));
                 end
               otherwise
-                error('Unknown type (%)', type)
+                error('Unknown type (%s)', type)
             end % switch
         end % function
 
@@ -763,7 +763,7 @@ classdef modBuilder<handle
                     error('Wrong number of input arguments.')
                 end
                 if not(isequal(numel(varargin), nindices))
-                    error('The number of indices in the parameter name is %u, but values for %u indices are provided', nindex, numel(varargin))
+                    error('The number of indices in the parameter name is %u, but values for %u indices are provided', nindices, numel(varargin))
                 end
                 % Check that the indices are uniform.
                 [allint, ~] = modBuilder.check_indices_values(varargin);
@@ -861,7 +861,7 @@ classdef modBuilder<handle
                     error('Wrong number of input arguments.')
                 end
                 if not(isequal(numel(varargin), nindices))
-                    error('The number of indices in the exogenous variable name is %u, but values for %u indices are provided', nindex, numel(varargin))
+                    error('The number of indices in the exogenous variable name is %u, but values for %u indices are provided', nindices, numel(varargin))
                 end
                 % Check that the indices are uniform.
                 [allint, ~] = modBuilder.check_indices_values(varargin);
