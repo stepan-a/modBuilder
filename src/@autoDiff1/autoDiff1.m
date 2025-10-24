@@ -149,7 +149,7 @@ classdef autoDiff1
         end
 
         function q = abs(o)
-        % Overlaod the absolute value function.
+        % Overload the absolute value function.
             if abs(o.x)>0
                 q = autoDiff1(abs(o.x), sign(o.x)*o.dx);
             else
@@ -289,7 +289,7 @@ classdef autoDiff1
         end
 
         function q = erfc(o)
-            % Overload the erf function.
+            % Overload the erfc function.
             q = autoDiff1(erfc(o.x), -(2.0/sqrt(pi))*exp(-o.x^2)*o.dx);
         end
 
