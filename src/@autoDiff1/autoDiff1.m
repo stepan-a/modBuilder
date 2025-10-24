@@ -52,7 +52,7 @@ classdef autoDiff1
             elseif isnumeric(o) && isa(p, 'autoDiff1')
                 if o>0
                     tmp = o^p.x;
-                    q = autoDiff1(tmp, log(o)*tmp);
+                    q = autoDiff1(tmp, log(o)*tmp*p.dx);
                 else
                     error('Domain error: base must be positive.')
                 end
