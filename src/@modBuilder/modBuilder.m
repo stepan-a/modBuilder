@@ -18,17 +18,54 @@ classdef modBuilder<handle
 % along with Dynare.  If not, see <https://www.gnu.org/licenses/>.
 
     properties
-        params = cell(0, 4);             % List of parameters
-        varexo = cell(0, 4);             % List of exogenous variables.
-        var = cell(0, 4);                % List of endogenous variables.
-        tags = struct();                 % struct of dictionaries (one for each equation) for tags.
-        symbols = cell(1, 0);            % List of untyped symbols
-        equations = cell(0, 2);          % List of equations.
+        % Parameters table (n×4 cell array)
+        % Column 1: parameter name (char)
+        % Column 2: calibration value (double or NaN)
+        % Column 3: long_name (char or empty)
+        % Column 4: tex_name (char or empty)
+        params = cell(0, 4);
+
+        % Exogenous variables table (n×4 cell array)
+        % Column 1: variable name (char)
+        % Column 2: default value (double or NaN)
+        % Column 3: long_name (char or empty)
+        % Column 4: tex_name (char or empty)
+        varexo = cell(0, 4);
+
+        % Endogenous variables table (n×4 cell array)
+        % Column 1: variable name (char)
+        % Column 2: steady state value (double or NaN)
+        % Column 3: long_name (char or empty)
+        % Column 4: tex_name (char or empty)
+        var = cell(0, 4);
+
+        % Equation tags: struct with one field per equation
+        % Each field contains a struct with tag name/value pairs
+        % All equations have at least a 'name' tag
+        tags = struct();
+
+        % Temporary list of untyped symbols (1×n cell array)
+        % Symbols extracted from equations that haven't been
+        % classified as parameter, endogenous, or exogenous
+        symbols = cell(1, 0);
+
+        % Equations table (n×2 cell array)
+        % Column 1: equation name (associated endogenous variable)
+        % Column 2: equation expression (char)
+        equations = cell(0, 2);
+
+        % Symbol table: maps symbols to equations where they appear
+        % T.params.<NAME> = {eq1, eq2, ...} - equations using parameter NAME
+        % T.varexo.<NAME> = {eq1, eq2, ...} - equations using exogenous variable NAME
+        % T.var.<NAME> = {eq1, eq2, ...} - equations using endogenous variable NAME
+        % T.equations.<EQNAME> = {sym1, sym2, ...} - symbols used in equation EQNAME
         T = struct('params', struct(), 'varexo', struct(), 'var', struct(), 'equations', struct());
     end
 
     properties (SetAccess = immutable)
-        date                               % Creation date.
+        % Creation date (datetime): timestamp when the modBuilder object was created
+        % This property is immutable and set only during construction
+        date
     end
 
 
@@ -96,6 +133,10 @@ classdef modBuilder<handle
     methods(Static, Access = private)
 
         function skipline(n)
+        % Print n blank lines to the console
+        %
+        % INPUTS:
+        % - n    [integer]    number of lines to skip (default: 1)
             if ~nargin || isempty(n)
                 n = 1;
             end
@@ -103,6 +144,11 @@ classdef modBuilder<handle
         end
 
         function dprintf(format, varargin)
+        % Display formatted output using fprintf and disp combination
+        %
+        % INPUTS:
+        % - format    [char]     format string (same as fprintf)
+        % - varargin  [cell]     optional arguments for format string
             if nargin>1
                 disp(fprintf(format, varargin{:}));
             else
@@ -111,11 +157,25 @@ classdef modBuilder<handle
         end
 
         function str = printlist(names)
+        % Convert a cell array of names to a space-separated string ending with semicolon
+        %
+        % INPUTS:
+        % - names    [cell]    cell array of character arrays (symbol names)
+        %
+        % OUTPUTS:
+        % - str      [char]    formatted string: " name1 name2 name3;"
             str = sprintf(' %s', names{:});
             str = sprintf('%s;', str);
         end
 
         function printlist2(fid, type, Table)
+        % Write formatted variable/parameter declarations to a file with optional metadata
+        %
+        % INPUTS:
+        % - fid      [integer]    file identifier
+        % - type     [char]       'endogenous', 'parameters', or 'exogenous'
+        % - Table    [cell]       n×4 array with name, value, long_name, tex_name
+            % Map type to Dynare keyword
             switch type
               case 'endogenous'
                 keyword = 'var';
@@ -278,6 +338,16 @@ classdef modBuilder<handle
         end
 
         function [long_name, texname] = set_optional_fields(type, sname, varargin)
+        % Parse optional 'long_name' and 'texname' arguments from varargin
+        %
+        % INPUTS:
+        % - type        [char]     symbol type ('parameter', 'endogenous', or 'exogenous')
+        % - sname       [char]     symbol name
+        % - varargin    [cell]     key/value pairs (e.g., 'long_name', 'Some Name', 'texname', '\alpha')
+        %
+        % OUTPUTS:
+        % - long_name   [char]     long name or empty string
+        % - texname     [char]     TeX name or empty string
             long_name = '';
             texname='';
             if ~isempty(varargin)
@@ -300,6 +370,15 @@ classdef modBuilder<handle
         end
 
         function C = replaceincell(C, oldword, newword)
+        % Replace all occurrences of oldword with newword in a cell array
+        %
+        % INPUTS:
+        % - C          [cell]    cell array of character arrays
+        % - oldword    [char]    string to find
+        % - newword    [char]    replacement string
+        %
+        % OUTPUTS:
+        % - C          [cell]    updated cell array
             s = strcmp(oldword, C);
             if any(s)
                 C{strcmp(oldword, C)} = newword;
@@ -307,6 +386,17 @@ classdef modBuilder<handle
         end
 
         function [allint, allstr] = check_indices_values(IndicesValues)
+        % Validate that index values are uniformly typed (all integers or all strings)
+        %
+        % INPUTS:
+        % - IndicesValues    [cell]    cell array of cell arrays containing index values
+        %
+        % OUTPUTS:
+        % - allint          [logical]    n×1 array, true if index i is all integers
+        % - allstr          [logical]    n×1 array, true if index i is all strings
+        %
+        % REMARKS:
+        % Used for implicit loop validation. Each index must have uniform type.
             isint = @(x) isnumeric(x) && rem(x, 1)==0;
             allint = false(numel(IndicesValues), 1);
             allstr = false(numel(IndicesValues), 1);
@@ -365,7 +455,22 @@ classdef modBuilder<handle
     methods
 
         function o = modBuilder(varargin)
-        % Return an empty modBuilder object
+        % Constructor for modBuilder class
+        %
+        % USAGE:
+        % - o = modBuilder()                          Create empty model
+        % - o = modBuilder(datetime_obj)              Create empty model with specific date
+        % - o = modBuilder(M_, oo_, jsonfile)         Load from Dynare structures and JSON
+        % - o = modBuilder(M_, oo_, jsonfile, tag)    Load with custom equation tag name
+        %
+        % INPUTS:
+        % - varargin{1}    [datetime or struct]    date or M_ structure from Dynare
+        % - varargin{2}    [struct]                oo_ structure from Dynare (if loading)
+        % - varargin{3}    [char]                  path to JSON file with equations
+        % - varargin{4}    [char]                  equation tag name (default: 'name')
+        %
+        % OUTPUTS:
+        % - o              [modBuilder]            new modBuilder object
             if nargin==1 && isdatetime(varargin{1})
                 o.date = varargin{1};
             elseif nargin==0
@@ -488,14 +593,14 @@ classdef modBuilder<handle
         end
 
         function  n = size(o, type)
-        % Return the number of parameters, endogenous or exogenous variables.
+        % Return the number of parameters, endogenous variables, exogenous variables, or equations
         %
         % INPUTS:
-        %  - o      [modBuilder]
-        % - type    [char]           1×n array, type of symbol ('equations', 'parameters', 'exogenous' or 'endogenous')
+        % - o      [modBuilder]
+        % - type   [char]           type of symbol: 'parameters', 'exogenous', 'endogenous', or 'equations'
         %
         % OUTPUTS:
-        % - n    [integer]    scalar, number of symbols.
+        % - n      [integer]        scalar, number of elements of the specified type
             switch type
               case 'parameters'
                 n = size(o.params, 1);
@@ -564,15 +669,22 @@ classdef modBuilder<handle
         end % function
 
         function o = addeq(o, varname, equation)
-        % Add an equation to the model and associate an endogenous variable
+        % Add an equation to the model and associate an endogenous variable (internal method)
         %
         % INPUTS:
         % - o           [modBuilder]
-        % - varname     [char]         1×n array, name of an endogenous variable
-        % - equation    [char]         1×m array, expression
+        % - varname     [char]         name of an endogenous variable
+        % - equation    [char]         equation expression
         %
         % OUTPUTS:
         % - o           [modBuilder]   updated object (with new equation)
+        %
+        % REMARKS:
+        % - This is the core equation-adding method called by add()
+        % - Automatically extracts symbols from the equation
+        % - Updates the symbol table T.equations
+        % - Creates equation tag with 'name' field
+        % - If varname was previously exogenous, it becomes endogenous
             if any(ismember(o.equations(:,1), varname))
                 error('Variable %s already has an equation. Use the change method if you really want to redefine the equation for %s. ', varname, varname)
             end
@@ -902,16 +1014,20 @@ classdef modBuilder<handle
         end % function
 
         function o = rm(o, varargin)
-        % Remove equations from the model.
+        % Remove multiple equations from the model in one call
         %
         % INPUTS:
         % - o          [modBuilder]
-        % - eqname1    [char]            1×n array, name of an equation (or endogenous variable associated to an equation)
-        % - eqname2    [char]            1×m array, name of an equation (or endogenous variable associated to an equation)
-        % - …
+        % - eqname1    [char]            name of an equation (endogenous variable)
+        % - eqname2    [char]            name of another equation
+        % - …          [char]            additional equation names
         %
         % OUTPUTS:
-        % - o          [char]            updated object
+        % - o          [modBuilder]      updated object
+        %
+        % REMARKS:
+        % - This is a convenience method that calls remove() for each equation
+        % - Duplicate equation names are handled automatically
             if not(all(cellfun(@(x) ischar(x) && isrow(x), varargin)))
                 error('All input arguments must be row char arrays (equation names).')
             end
@@ -1246,13 +1362,17 @@ classdef modBuilder<handle
         end % function
 
         function p = copy(o)
-        % Deep copy of an object
+        % Create a deep copy of the modBuilder object
         %
         % INPUTS:
-        % - o   [modBuilder]
+        % - o   [modBuilder]    source object
         %
         % OUTPUTS:
-        % - p   [modBuilder]
+        % - p   [modBuilder]    independent copy with same content
+        %
+        % REMARKS:
+        % - All properties are copied, including symbol tables
+        % - The copy has the same creation date as the original
             p = modBuilder(o.date);
             p.params = o.params;
             p.varexo = o.varexo;
@@ -1264,14 +1384,18 @@ classdef modBuilder<handle
         end
 
         function b = eq(o, p)
-        % Overload eq method.
+        % Test equality of two modBuilder objects (overloads == operator)
         %
         % INPUTS:
-        % - o   [modBuilder]
-        % - p   [modBuilder]
+        % - o   [modBuilder]    first object
+        % - p   [modBuilder]    second object
         %
         % OUTPUTS:
-        % - b   [logical]      scalar, true iff objects o and p are identical.
+        % - b   [logical]       true if objects are identical, false otherwise
+        %
+        % REMARKS:
+        % - Compares all properties: params, varexo, var, symbols, equations, tags, and symbol tables
+        % - Order of elements does not matter for cell arrays (treated as sets)
             if ~isa(o, 'modBuilder') || ~isa(p, 'modBuilder')
                 error('Cannot compare modBuilder object with an object from another class.')
             end
@@ -1321,15 +1445,22 @@ classdef modBuilder<handle
         end
 
         function o = change(o, varname, equation)
-        % Change an equation in the model
+        % Replace an existing equation in the model
         %
         % INPUTS:
         % - o           [modBuilder]
-        % - varname     [char]         1×n array, name of an endogenous variable
-        % - equation    [char]         1×m array, expression (new equation)
+        % - varname     [char]         name of the endogenous variable (equation name)
+        % - equation    [char]         new equation expression
         %
         % OUTPUTS:
-        % - o           [modBuilder]   updated object (with new equation)
+        % - o           [modBuilder]   updated object
+        %
+        % REMARKS:
+        % - Raises error if varname has no associated equation
+        % - Extracts and validates symbols from the new equation
+        % - Updates symbol tables automatically
+        % - Removes parameters/exogenous variables that no longer appear in any equation
+        % - Warns if new equation introduces untyped symbols
             warning('off','backtrace')
             ide = ismember(o.equations(:,1), varname);
             if not(any(ide))
@@ -1408,20 +1539,24 @@ classdef modBuilder<handle
         end % function
 
         function o = substitution(o, expr1, expr2, eqname, usestrrep)
-        % Substitute expr1 by expr2 in equation eqname (use strrep or ).
+        % Internal method for substitution: replace expr1 with expr2 in equations
         %
         % INPUTS:
         % - o           [modBuilder]
-        % - expr1       [char]         1×n array, expression
-        % - expr2       [char]         1×m array, expression
-        % - eqname      [char]         1×p array, name of an equation
-        % - usestrrep   [logicdal]      scalar, use strrep if true, use regexprep otherwise.
+        % - expr1       [char]         expression to find (string literal or regex pattern)
+        % - expr2       [char]         replacement expression
+        % - eqname      [char or cell] equation name(s) or [] for all equations
+        % - usestrrep   [logical]      true=use strrep (literal), false=use regexprep (regex)
         %
         % OUTPUTS:
-        % - o           [modBuilder]   updated object (with new equation)
+        % - o           [modBuilder]   updated object
         %
         % REMARKS:
-        % If last argument is not provided, expr1 is substituted by expr2 in all the model.
+        % - If eqname is empty, substitution applies to all equations
+        % - When usestrrep=false, validates that regex matches exactly one expression
+        % - Automatically uses rename() if substitution affects a symbol across all equations
+        % - Updates symbol tables after substitution
+        % - Warns about new unknown symbols introduced by substitution
             if usestrrep
                 % Is it safe to use the subs method?
                 if o.issymbol(expr1)
@@ -1537,17 +1672,19 @@ classdef modBuilder<handle
         end % function
 
         function p = extract(o, varargin)
-        % Extract equations from a model a return a new modBuilder object.
+        % Extract a subset of equations to create a new submodel
         %
         % INPUTS:
         % - o      [modBuilder]
-        % - ...    [char]          row arrays, equation names to be extracted from o
+        % - ...    [char]          equation names to extract (variable arguments)
         %
         % OUTPUTS:
-        % - p      [modBuilder]
+        % - p      [modBuilder]    new model containing only the specified equations
         %
         % REMARKS:
-        % The number of equations in p is equal to the number of arguments passed to the extract method.
+        % - The number of equations in p equals the number of arguments
+        % - Automatically includes all parameters and exogenous variables used by extracted equations
+        % - Removes unused symbols that don't appear in the extracted equations
             p = copy(o);
             if not(all(ismember(varargin, p.equations(:,1))))
                 error('Equation(s) missing for:%s.', modBuilder.printlist(varargin(~ismember(varargin, p.equations(:,1)))))
@@ -1557,18 +1694,21 @@ classdef modBuilder<handle
         end
 
         function q = merge(o, p)
-        % Merge two models.
+        % Merge two models into a single larger model
         %
         % INPUTS:
-        % - o    [modBuilder]
-        % - p    [modBuilder]
+        % - o    [modBuilder]    first model
+        % - p    [modBuilder]    second model
         %
         % OUTPUTS:
-        % - q    [modBuilder]
+        % - q    [modBuilder]    merged model containing all equations from o and p
         %
         % REMARKS:
-        % Endogenous variables in models o and p must be different, i.e. intersect(o.var, p.var) must be empty. If this is not the case, the user must remove
-        % the common endogenous variables (and associated equations) in one of the model.
+        % - Models o and p cannot share endogenous variables (error if intersect(o.var, p.var) is not empty)
+        % - Common parameters are allowed; p's calibration takes precedence if both are calibrated
+        % - Exogenous variables in one model can be endogenous in the other (type conversion handled automatically)
+        % - Symbol tables are merged appropriately
+        % - Useful for combining independent blocks of a larger model
             commonvariables = intersect(o.var(:,1), p.var(:,1));
             if ~isempty(commonvariables)
                 error('Models to be merged cannot contain common endogenous variables. Check variable(s)%s.', sprintf(' %s', commonvariables{:}))
@@ -1770,16 +1910,22 @@ classdef modBuilder<handle
         end
 
         function o = solve(o, eqname, sname, sinit)
-        % Solve static equation eqname for symbol sname.
+        % Numerically solve an equation for a symbol (parameter, endogenous, or exogenous)
         %
         % INPUTS:
         % - o            [modBuilder]
-        % - eqname       [char]         1×n array, name of an equation (endogenous variable)
-        % - sname        [char]         1×m array, name of a symbol
-        % - sinit        [double]       scalar, initial guess
+        % - eqname       [char]         equation name to solve
+        % - sname        [char]         symbol to solve for
+        % - sinit        [double]       initial guess for the solution
         %
         % OUTPUTS:
-        % - o            [modBuilder]
+        % - o            [modBuilder]   updated object with calibrated symbol value
+        %
+        % REMARKS:
+        % - Converts equation to static form (removes time subscripts)
+        % - Uses Newton's method via solvers.newton
+        % - All other symbols must have known values
+        % - Updates the calibration value of sname in o.params, o.varexo, or o.var
             if not(ismember(sname, o.T.equations.(eqname)))
                 if o.isendogenous(sname)
                     if not(ismember(eqname, o.T.var.(sname)))
@@ -1848,6 +1994,19 @@ classdef modBuilder<handle
         end
 
         function p = subsref(o, S)
+        % Overload subsref to enable custom indexing: o('eqname') extracts equation, o.method() calls method
+        %
+        % INPUTS:
+        % - o    [modBuilder]
+        % - S    [struct]         subscript structure from MATLAB
+        %
+        % OUTPUTS:
+        % - p    [varies]         extracted submodel, property value, or method result
+        %
+        % REMARKS:
+        % - o('eq1', 'eq2') extracts equations by name
+        % - o.varname extracts equation or calls method
+        % - Enables natural syntax like: submodel = model('consumption', 'investment')
             if isequal(S(1).type, '()')
                 p = o.extract(S(1).subs{:});
                     S = modBuilder.shiftS(S, 1);
@@ -1882,7 +2041,20 @@ classdef modBuilder<handle
         end % function
 
         function o = subsasgn(o,S,B)
-        % Overload subsasgn method
+        % Overload subsasgn to enable custom assignment: o('symbol') = value or equation
+        %
+        % INPUTS:
+        % - o    [modBuilder]
+        % - S    [struct]         subscript structure
+        % - B    [varies]         value to assign (numeric for calibration, char for equation change)
+        %
+        % OUTPUTS:
+        % - o    [modBuilder]     updated object
+        %
+        % REMARKS:
+        % - o('param') = 0.5 sets parameter value
+        % - o('var') = 'new_equation' changes equation
+        % - o('endovar') = 1.0 sets steady state value
             if length(S)>1
                 error('Wrong assignment.')
             end
