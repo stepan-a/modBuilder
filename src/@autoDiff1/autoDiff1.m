@@ -42,7 +42,7 @@ classdef autoDiff1
         function q = mrdivide(o, p)
             % Overload the / binary operator.
             [o, p] = autoDiff1.convert(o, p);
-            q = autoDiff1(o.x./p.x, (o.dx*p.x - p.dx*o.x)/(p.x^2));
+            q = autoDiff1(o.x/p.x, (o.dx*p.x - p.dx*o.x)/(p.x^2));
         end
 
         function q = mpower(o, p)
