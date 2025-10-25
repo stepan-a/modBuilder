@@ -1654,7 +1654,7 @@ classdef modBuilder<handle
                               case 'parameter'
                                 modBuilder.dprintf('Parameter %s will be removed).', delsyms{j})
                                 o.params(id,:) = [];
-                              case 'exogenoous'
+                              case 'exogenous'
                                 modBuilder.dprintf('Exogenous variable %s will be removed).', delsyms{j})
                                 o.varexo(id,:) = [];
                               case 'endogenous'
