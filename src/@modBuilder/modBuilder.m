@@ -323,37 +323,59 @@ classdef modBuilder<handle
 
             % Set list of exogenous variables
             if ~isempty(o_varexo2var)
-                ose = ~ismember(o_varexo2var, o_varexo_list); % Select exogenous variables from model o, excluding those that will be endogeneised when merging with model p.
+                ose = ~ismember(o_varexo_list, o_varexo2var); % Select exogenous variables from model o, excluding those that will be endogeneised when merging with model p.
             else
                 ose = true(length(o_varexo_list), 1);
             end
             if ~isempty(p_varexo2var)
-                pse = ~ismember(p_varexo2var, p_varexo_list); % Select exogenous variables from model p, excluding those that will be endogeneised when merging with model o.
+                pse = ~ismember(p_varexo_list, p_varexo2var); % Select exogenous variables from model p, excluding those that will be endogeneised when merging with model o.
             else
                 pse = true(length(p_varexo_list), 1);
             end
-            tmp = [o_varexo_list(ose); p_varexo_list(pse)];
+
+            % Identify common exogenous variables (that remain exogenous in both models)
+            o_remaining_exo = o_varexo_list(ose);
+            p_remaining_exo = p_varexo_list(pse);
+            common_exo = intersect(o_remaining_exo, p_remaining_exo);
+
+            % Build merged exogenous list with deduplication
+            % Strategy: o-only, p-only, then common (p takes precedence for common)
+            o_only_exo = setdiff(o_remaining_exo, common_exo);
+            p_only_exo = setdiff(p_remaining_exo, common_exo);
+            tmp = [o_only_exo; p_only_exo; common_exo];
+
             q_varexo = cell(length(tmp), 4);
             q_varexo(:,modBuilder.COL_NAME) = tmp;
             q_varexo(:,modBuilder.COL_VALUE) = {NaN};
-            [ido, io] = ismember(q_varexo(:,modBuilder.COL_NAME), o_varexo_list);
-            [idp, ip] = ismember(q_varexo(:,modBuilder.COL_NAME), p_varexo_list);
-            if any(ido)
-                for i=1:length(o_varexo_list(ose))
-                    if ido(i)
-                        q_varexo{i,modBuilder.COL_VALUE} = o.varexo{io(i),modBuilder.COL_VALUE};
-                        q_varexo{i,modBuilder.COL_LONG_NAME} = o.varexo{io(i),modBuilder.COL_LONG_NAME};
-                        q_varexo{i,modBuilder.COL_TEX_NAME} = o.varexo{io(i),modBuilder.COL_TEX_NAME};
-                    end
-                end
+
+            % Create index maps for O(1) lookups (only if non-empty)
+            if ~isempty(o_varexo_list)
+                o_varexo_map = containers.Map(o_varexo_list, 1:length(o_varexo_list));
             end
-            if any(idp)
-                for i=length(o_varexo_list(ose))+1:length(p_varexo_list(pse))
-                    if idp(i)
-                        q_varexo{i,modBuilder.COL_VALUE} = p.varexo{ip(i),modBuilder.COL_VALUE};
-                        q_varexo{i,modBuilder.COL_LONG_NAME} = p.varexo{ip(i),modBuilder.COL_LONG_NAME};
-                        q_varexo{i,modBuilder.COL_TEX_NAME} = p.varexo{ip(i),modBuilder.COL_TEX_NAME};
-                    end
+            if ~isempty(p_varexo_list)
+                p_varexo_map = containers.Map(p_varexo_list, 1:length(p_varexo_list));
+            end
+
+            % Fill in values and metadata
+            for i = 1:length(tmp)
+                varname = tmp{i};
+
+                % Check if this exogenous variable comes from o, p, or both
+                in_o = ismember(varname, o_remaining_exo);
+                in_p = ismember(varname, p_remaining_exo);
+
+                if in_p
+                    % p takes precedence (for common) or is the only source (for p-only)
+                    idx = p_varexo_map(varname);
+                    q_varexo{i,modBuilder.COL_VALUE} = p.varexo{idx,modBuilder.COL_VALUE};
+                    q_varexo{i,modBuilder.COL_LONG_NAME} = p.varexo{idx,modBuilder.COL_LONG_NAME};
+                    q_varexo{i,modBuilder.COL_TEX_NAME} = p.varexo{idx,modBuilder.COL_TEX_NAME};
+                elseif in_o
+                    % o is the only source (o-only variables)
+                    idx = o_varexo_map(varname);
+                    q_varexo{i,modBuilder.COL_VALUE} = o.varexo{idx,modBuilder.COL_VALUE};
+                    q_varexo{i,modBuilder.COL_LONG_NAME} = o.varexo{idx,modBuilder.COL_LONG_NAME};
+                    q_varexo{i,modBuilder.COL_TEX_NAME} = o.varexo{idx,modBuilder.COL_TEX_NAME};
                 end
             end
         end
