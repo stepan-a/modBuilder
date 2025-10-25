@@ -69,6 +69,13 @@ listoftests = [
   'implicit-loops/t03.m',
   'load-mod-file/rbc1.m',
   'load-mod-file/rbc2.m',
+  'merge/t01.m',
+  'merge/t02.m',
+  'merge/t03.m',
+  'merge/t04.m',
+  'merge/t05.m',
+  'merge/t06.m',
+  'merge/t07.m',
 ]
 
 listoffailingtests = [

@@ -209,6 +209,184 @@ classdef modBuilder<handle
             end
         end
 
+        function validate_merge_compatibility(o, p)
+        % Validate that two models can be merged
+        %
+        % INPUTS:
+        % - o   [modBuilder]   First model
+        % - p   [modBuilder]   Second model
+        %
+        % OUTPUTS:
+        % None (throws error if models cannot be merged)
+        %
+        % REMARKS:
+        % - Models cannot share endogenous variables
+        % - Throws descriptive error listing conflicting variables
+
+            commonvariables = intersect(o.var(:,modBuilder.COL_NAME), p.var(:,modBuilder.COL_NAME));
+            if ~isempty(commonvariables)
+                error('Models to be merged cannot contain common endogenous variables. Check variable(s)%s.', ...
+                      sprintf(' %s', commonvariables{:}))
+            end
+        end
+
+        function q_params = merge_parameters(o, p)
+        % Merge parameters from two models
+        %
+        % INPUTS:
+        % - o   [modBuilder]   First model
+        % - p   [modBuilder]   Second model
+        %
+        % OUTPUTS:
+        % - q_params   [cell]   n×4 merged parameter table
+        %
+        % REMARKS:
+        % - Common parameters: p's calibration takes precedence if both are calibrated
+        % - Uses optimized O(1) index lookups instead of repeated ismember calls
+
+            o_params_list = o.params(:,modBuilder.COL_NAME);
+            p_params_list = p.params(:,modBuilder.COL_NAME);
+            common_params = intersect(o_params_list, p_params_list);
+            o_only_params_list = setdiff(o_params_list, p_params_list);
+            p_only_params_list = setdiff(p_params_list, o_params_list);
+            q_params = cell(length(o_only_params_list)+length(p_only_params_list)+length(common_params), 4);
+
+            % Create index maps for O(1) lookups instead of repeated O(n) ismember calls
+            [~, o_param_idx] = ismember(o_only_params_list, o.params(:,modBuilder.COL_NAME));
+            [~, p_param_idx_common] = ismember(common_params, p.params(:,modBuilder.COL_NAME));
+            [~, o_param_idx_common] = ismember(common_params, o.params(:,modBuilder.COL_NAME));
+            [~, p_param_idx] = ismember(p_only_params_list, p.params(:,modBuilder.COL_NAME));
+
+            i = 1;
+            % Copy o-only parameters
+            for j=1:length(o_only_params_list)
+                idx = o_param_idx(j);
+                q_params{i,modBuilder.COL_NAME} = o_only_params_list{j};
+                q_params{i,modBuilder.COL_VALUE} = o.params{idx,modBuilder.COL_VALUE};
+                q_params{i,modBuilder.COL_LONG_NAME} = o.params{idx,modBuilder.COL_LONG_NAME};
+                q_params{i,modBuilder.COL_TEX_NAME} = o.params{idx,modBuilder.COL_TEX_NAME};
+                i = i+1;
+            end
+            % Handle common parameters (p takes precedence if calibrated)
+            for j=1:length(common_params)
+                p_idx = p_param_idx_common(j);
+                o_idx = o_param_idx_common(j);
+                q_params{i,modBuilder.COL_NAME} = common_params{j};
+                tmp = p.params{p_idx,modBuilder.COL_VALUE};
+                if not(isnan(tmp))
+                    q_params{i,modBuilder.COL_VALUE} = tmp;
+                    q_params{i,modBuilder.COL_LONG_NAME} = p.params{p_idx,modBuilder.COL_LONG_NAME};
+                    q_params{i,modBuilder.COL_TEX_NAME} = p.params{p_idx,modBuilder.COL_TEX_NAME};
+                else
+                    q_params{i,modBuilder.COL_VALUE} = o.params{o_idx,modBuilder.COL_VALUE};
+                    q_params{i,modBuilder.COL_LONG_NAME} = o.params{o_idx,modBuilder.COL_LONG_NAME};
+                    q_params{i,modBuilder.COL_TEX_NAME} = o.params{o_idx,modBuilder.COL_TEX_NAME};
+                end
+                i = i+1;
+            end
+            % Copy p-only parameters
+            for j=1:length(p_only_params_list)
+                idx = p_param_idx(j);
+                q_params{i,modBuilder.COL_NAME} = p_only_params_list{j};
+                q_params{i,modBuilder.COL_VALUE} = p.params{idx,modBuilder.COL_VALUE};
+                q_params{i,modBuilder.COL_LONG_NAME} = p.params{idx,modBuilder.COL_LONG_NAME};
+                q_params{i,modBuilder.COL_TEX_NAME} = p.params{idx,modBuilder.COL_TEX_NAME};
+                i = i+1;
+            end
+        end
+
+        function [q_var, q_varexo] = merge_variables(o, p)
+        % Merge endogenous and exogenous variables from two models
+        %
+        % INPUTS:
+        % - o   [modBuilder]   First model
+        % - p   [modBuilder]   Second model
+        %
+        % OUTPUTS:
+        % - q_var      [cell]   n×4 merged endogenous variable table
+        % - q_varexo   [cell]   m×4 merged exogenous variable table
+        %
+        % REMARKS:
+        % - Exogenous variables in one model can be endogenous in the other
+        % - Type conversion handled automatically
+
+            % Merge endogenous variables (simple concatenation)
+            q_var = [o.var; p.var];
+
+            % Merge exogenous variables with type conversion
+            o_varexo_list = o.varexo(:,modBuilder.COL_NAME);
+            p_varexo_list = p.varexo(:,modBuilder.COL_NAME);
+            % Set list of exogenous variables, in model o, that will become endogenous when model o is merged with model p.
+            o_varexo2var = intersect(o_varexo_list, p.var(:,modBuilder.COL_NAME));
+            % Set list of exogenous variables, in model p, that will become endogenous when model p is merged with model o.
+            p_varexo2var = intersect(p_varexo_list, o.var(:,modBuilder.COL_NAME));
+
+            % Set list of exogenous variables
+            if ~isempty(o_varexo2var)
+                ose = ~ismember(o_varexo2var, o_varexo_list); % Select exogenous variables from model o, excluding those that will be endogeneised when merging with model p.
+            else
+                ose = true(length(o_varexo_list), 1);
+            end
+            if ~isempty(p_varexo2var)
+                pse = ~ismember(p_varexo2var, p_varexo_list); % Select exogenous variables from model p, excluding those that will be endogeneised when merging with model o.
+            else
+                pse = true(length(p_varexo_list), 1);
+            end
+            tmp = [o_varexo_list(ose); p_varexo_list(pse)];
+            q_varexo = cell(length(tmp), 4);
+            q_varexo(:,modBuilder.COL_NAME) = tmp;
+            q_varexo(:,modBuilder.COL_VALUE) = {NaN};
+            [ido, io] = ismember(q_varexo(:,modBuilder.COL_NAME), o_varexo_list);
+            [idp, ip] = ismember(q_varexo(:,modBuilder.COL_NAME), p_varexo_list);
+            if any(ido)
+                for i=1:length(o_varexo_list(ose))
+                    if ido(i)
+                        q_varexo{i,modBuilder.COL_VALUE} = o.varexo{io(i),modBuilder.COL_VALUE};
+                        q_varexo{i,modBuilder.COL_LONG_NAME} = o.varexo{io(i),modBuilder.COL_LONG_NAME};
+                        q_varexo{i,modBuilder.COL_TEX_NAME} = o.varexo{io(i),modBuilder.COL_TEX_NAME};
+                    end
+                end
+            end
+            if any(idp)
+                for i=length(o_varexo_list(ose))+1:length(p_varexo_list(pse))
+                    if idp(i)
+                        q_varexo{i,modBuilder.COL_VALUE} = p.varexo{ip(i),modBuilder.COL_VALUE};
+                        q_varexo{i,modBuilder.COL_LONG_NAME} = p.varexo{ip(i),modBuilder.COL_LONG_NAME};
+                        q_varexo{i,modBuilder.COL_TEX_NAME} = p.varexo{ip(i),modBuilder.COL_TEX_NAME};
+                    end
+                end
+            end
+        end
+
+        function q = merge_symbol_tables(o, p, q)
+        % Merge symbol tables from two models
+        %
+        % INPUTS:
+        % - o   [modBuilder]   First model
+        % - p   [modBuilder]   Second model
+        % - q   [modBuilder]   Target merged model
+        %
+        % OUTPUTS:
+        % - q   [modBuilder]   Updated model with merged symbol tables
+        %
+        % REMARKS:
+        % - Merges T.params, T.varexo, T.var, T.equations
+        % - Removes exogenous variables that became endogenous
+
+            q.T.params = modBuilder.mergeStructs(o.T.params, p.T.params);
+            q.T.varexo = modBuilder.mergeStructs(o.T.varexo, p.T.varexo);
+            fnames = fields(q.T.varexo);
+            remvarexo = not(ismember(fnames, q.varexo(:,modBuilder.COL_NAME)));
+            for i=1:length(remvarexo)
+                if remvarexo(i)
+                    q.T.varexo = rmfield(q.T.varexo, fnames{i});
+                end
+            end
+            q.T.var = modBuilder.mergeStructs(o.T.var, p.T.var);
+            q.T.equations = modBuilder.mergeStructs(o.T.equations, p.T.equations);
+            q.tags = modBuilder.mergeStructs(o.tags, p.tags);
+        end
+
         function o = updatesymboltable(o, type)
         % Update fields under o.T. These fields map symbols (parameter, endogenous and exogenous variables) with equations.
         %
@@ -1940,133 +2118,26 @@ classdef modBuilder<handle
         % - Exogenous variables in one model can be endogenous in the other (type conversion handled automatically)
         % - Symbol tables are merged appropriately
         % - Useful for combining independent blocks of a larger model
-            commonvariables = intersect(o.var(:,modBuilder.COL_NAME), p.var(:,modBuilder.COL_NAME));
-            if ~isempty(commonvariables)
-                error('Models to be merged cannot contain common endogenous variables. Check variable(s)%s.', sprintf(' %s', commonvariables{:}))
-            end
+
+            % Validate that models can be merged
+            o.validate_merge_compatibility(p);
+
+            % Create new model
             q = modBuilder();
-            %
-            % Set parameters of the new model.
-            %
-            o_params_list = o.params(:,modBuilder.COL_NAME);
-            p_params_list = p.params(:,modBuilder.COL_NAME);
-            common_params = intersect(o_params_list, p_params_list);
-            o_only_params_list = setdiff(o_params_list, p_params_list);
-            p_only_params_list = setdiff(p_params_list, o_params_list);
-            q_params = cell(length(o_only_params_list)+length(p_only_params_list)+length(common_params), 4);
 
-            % Create index maps for O(1) lookups instead of repeated O(n) ismember calls
-            [~, o_param_idx] = ismember(o_only_params_list, o.params(:,modBuilder.COL_NAME));
-            [~, p_param_idx_common] = ismember(common_params, p.params(:,modBuilder.COL_NAME));
-            [~, o_param_idx_common] = ismember(common_params, o.params(:,modBuilder.COL_NAME));
-            [~, p_param_idx] = ismember(p_only_params_list, p.params(:,modBuilder.COL_NAME));
+            % Merge parameters (handles common parameters with precedence rules)
+            q.params = o.merge_parameters(p);
 
-            i = 1;
-            % Copy o-only parameters
-            for j=1:length(o_only_params_list)
-                idx = o_param_idx(j);
-                q_params{i,modBuilder.COL_NAME} = o_only_params_list{j};
-                q_params{i,modBuilder.COL_VALUE} = o.params{idx,modBuilder.COL_VALUE};
-                q_params{i,modBuilder.COL_LONG_NAME} = o.params{idx,modBuilder.COL_LONG_NAME};
-                q_params{i,modBuilder.COL_TEX_NAME} = o.params{idx,modBuilder.COL_TEX_NAME};
-                i = i+1;
-            end
-            % Handle common parameters (p takes precedence if calibrated)
-            for j=1:length(common_params)
-                p_idx = p_param_idx_common(j);
-                o_idx = o_param_idx_common(j);
-                q_params{i,modBuilder.COL_NAME} = common_params{j};
-                tmp = p.params{p_idx,modBuilder.COL_VALUE};
-                if not(isnan(tmp))
-                    q_params{i,modBuilder.COL_VALUE} = tmp;
-                    q_params{i,modBuilder.COL_LONG_NAME} = p.params{p_idx,modBuilder.COL_LONG_NAME};
-                    q_params{i,modBuilder.COL_TEX_NAME} = p.params{p_idx,modBuilder.COL_TEX_NAME};
-                else
-                    q_params{i,modBuilder.COL_VALUE} = o.params{o_idx,modBuilder.COL_VALUE};
-                    q_params{i,modBuilder.COL_LONG_NAME} = o.params{o_idx,modBuilder.COL_LONG_NAME};
-                    q_params{i,modBuilder.COL_TEX_NAME} = o.params{o_idx,modBuilder.COL_TEX_NAME};
-                end
-                i = i+1;
-            end
-            % Copy p-only parameters
-            for j=1:length(p_only_params_list)
-                idx = p_param_idx(j);
-                q_params{i,modBuilder.COL_NAME} = p_only_params_list{j};
-                q_params{i,modBuilder.COL_VALUE} = p.params{idx,modBuilder.COL_VALUE};
-                q_params{i,modBuilder.COL_LONG_NAME} = p.params{idx,modBuilder.COL_LONG_NAME};
-                q_params{i,modBuilder.COL_TEX_NAME} = p.params{idx,modBuilder.COL_TEX_NAME};
-                i = i+1;
-            end
-            q.params = q_params;
-            %
-            % Set list of endogenous variables in the new model and change type of some exogenous variables.
-            %
-            o_varexo_list = o.varexo(:,modBuilder.COL_NAME);
-            p_varexo_list = p.varexo(:,modBuilder.COL_NAME);
-            % Set list of exogenous variables, in model o, that will become endogenous when model o is merged with model p.
-            o_varexo2var = intersect(o_varexo_list, p.var(:,modBuilder.COL_NAME));
-            % Set list of exogenous variables, in model p, that will become endogenous when model p is merged with model o.
-            p_varexo2var = intersect(p_varexo_list, o.var(:,modBuilder.COL_NAME));
-            % Set list of endogenous variables (with calibration)
-            q.var = [o.var; p.var];
-            %
-            % Set list of exogenous variables
-            %
-            if ~isempty(o_varexo2var)
-                ose = ~ismember(o_varexo2var, o_varexo_list); % Select exogenous variables from model o, excluding those that will be endogeneised when merging with model p.
-            else
-                ose = true(length(o_varexo_list), 1);
-            end
-            if ~isempty(p_varexo2var)
-                pse = ~ismember(p_varexo2var, p_varexo_list); % Select exogenous variables from model p, excluding those that will be endogeneised when merging with model o.
-            else
-                pse = true(length(p_varexo_list), 1);
-            end
-            tmp = [o_varexo_list(ose); p_varexo_list(pse)];
-            q_varexo = cell(length(tmp), 4);
-            q_varexo(:,modBuilder.COL_NAME) = tmp;
-            q_varexo(:,modBuilder.COL_VALUE) = {NaN};
-            [ido, io] = ismember(q_varexo(:,modBuilder.COL_NAME), o_varexo_list);
-            [idp, ip] = ismember(q_varexo(:,modBuilder.COL_NAME), p_varexo_list);
-            if any(ido)
-                for i=1:length(o_varexo_list(ose))
-                    if ido(i)
-                        q_varexo{i,modBuilder.COL_VALUE} = o.varexo{io(i),modBuilder.COL_VALUE};
-                        q_varexo{i,modBuilder.COL_LONG_NAME} = o.varexo{io(i),modBuilder.COL_LONG_NAME};
-                        q_varexo{i,modBuilder.COL_TEX_NAME} = o.varexo{io(i),modBuilder.COL_TEX_NAME};
-                    end
-                end
-            end
-            if any(idp)
-                for i=length(o_varexo_list(ose))+1:length(p_varexo_list(pse))
-                    if idp(i)
-                        q_varexo{i,modBuilder.COL_VALUE} = p.varexo{ip(i),modBuilder.COL_VALUE};
-                        q_varexo{i,modBuilder.COL_LONG_NAME} = p.varexo{ip(i),modBuilder.COL_LONG_NAME};
-                        q_varexo{i,modBuilder.COL_TEX_NAME} = p.varexo{ip(i),modBuilder.COL_TEX_NAME};
-                    end
-                end
-            end
-            q.varexo = q_varexo;
-            %
-            % Set list of equations
-            %
+            % Merge endogenous and exogenous variables (handles type conversions)
+            [q.var, q.varexo] = o.merge_variables(p);
+
+            % Merge equations (simple concatenation)
             q.equations = [o.equations; p.equations];
-            %
-            % Set symbol tables
-            %
-            q.T.params = modBuilder.mergeStructs(o.T.params, p.T.params);
-            q.T.varexo = modBuilder.mergeStructs(o.T.varexo, p.T.varexo);
-            fnames = fields(q.T.varexo);
-            remvarexo = not(ismember(fnames, q.varexo(:,modBuilder.COL_NAME)));
-            for i=1:length(remvarexo)
-                if remvarexo(i)
-                    q.T.varexo = rmfield(q.T.varexo, fnames{i});
-                end
-            end
-            clear('fnames', 'remvarexo');
-            q.T.var = modBuilder.mergeStructs(o.T.var, p.T.var);
-            q.T.equations = modBuilder.mergeStructs(o.T.equations, p.T.equations);
-            q.tags = modBuilder.mergeStructs(o.tags, p.tags);
+
+            % Merge symbol tables
+            q = o.merge_symbol_tables(p, q);
+
+            % Update symbol tables for the merged model
             q.updatesymboltables();
         end
 
