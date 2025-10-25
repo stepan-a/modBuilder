@@ -1871,7 +1871,7 @@ classdef modBuilder<handle
         % - Exogenous variables in one model can be endogenous in the other (type conversion handled automatically)
         % - Symbol tables are merged appropriately
         % - Useful for combining independent blocks of a larger model
-            commonvariables = intersect(o.var(:,modBuilder.COL_NAME), p.var(:,1));
+            commonvariables = intersect(o.var(:,modBuilder.COL_NAME), p.var(:,modBuilder.COL_NAME));
             if ~isempty(commonvariables)
                 error('Models to be merged cannot contain common endogenous variables. Check variable(s)%s.', sprintf(' %s', commonvariables{:}))
             end
@@ -1880,38 +1880,52 @@ classdef modBuilder<handle
             % Set parameters of the new model.
             %
             o_params_list = o.params(:,modBuilder.COL_NAME);
-            p_params_list = p.params(:,1);
+            p_params_list = p.params(:,modBuilder.COL_NAME);
             common_params = intersect(o_params_list, p_params_list);
             o_only_params_list = setdiff(o_params_list, p_params_list);
             p_only_params_list = setdiff(p_params_list, o_params_list);
             q_params = cell(length(o_only_params_list)+length(p_only_params_list)+length(common_params), 4);
+
+            % Create index maps for O(1) lookups instead of repeated O(n) ismember calls
+            [~, o_param_idx] = ismember(o_only_params_list, o.params(:,modBuilder.COL_NAME));
+            [~, p_param_idx_common] = ismember(common_params, p.params(:,modBuilder.COL_NAME));
+            [~, o_param_idx_common] = ismember(common_params, o.params(:,modBuilder.COL_NAME));
+            [~, p_param_idx] = ismember(p_only_params_list, p.params(:,modBuilder.COL_NAME));
+
             i = 1;
+            % Copy o-only parameters
             for j=1:length(o_only_params_list)
-                q_params{i,1} = o_only_params_list{j};
-                q_params{i,2} = o.params{ismember(o.params(:,modBuilder.COL_NAME), o_only_params_list{j}),2};
-                q_params{i,3} = o.params{ismember(o.params(:,modBuilder.COL_NAME), o_only_params_list{j}),3};
-                q_params{i,4} = o.params{ismember(o.params(:,modBuilder.COL_NAME), o_only_params_list{j}),4};
+                idx = o_param_idx(j);
+                q_params{i,modBuilder.COL_NAME} = o_only_params_list{j};
+                q_params{i,modBuilder.COL_VALUE} = o.params{idx,modBuilder.COL_VALUE};
+                q_params{i,modBuilder.COL_LONG_NAME} = o.params{idx,modBuilder.COL_LONG_NAME};
+                q_params{i,modBuilder.COL_TEX_NAME} = o.params{idx,modBuilder.COL_TEX_NAME};
                 i = i+1;
             end
+            % Handle common parameters (p takes precedence if calibrated)
             for j=1:length(common_params)
-                q_params{i,1} = common_params{j};
-                tmp = p.params{ismember(p.params(:,1), common_params{j}),2};
+                p_idx = p_param_idx_common(j);
+                o_idx = o_param_idx_common(j);
+                q_params{i,modBuilder.COL_NAME} = common_params{j};
+                tmp = p.params{p_idx,modBuilder.COL_VALUE};
                 if not(isnan(tmp))
-                    q_params{i,2} = tmp;
-                    q_params{i,3} = p.params{ismember(p.params(:,1), common_params{j}),3};
-                    q_params{i,4} = p.params{ismember(p.params(:,1), common_params{j}),4};
+                    q_params{i,modBuilder.COL_VALUE} = tmp;
+                    q_params{i,modBuilder.COL_LONG_NAME} = p.params{p_idx,modBuilder.COL_LONG_NAME};
+                    q_params{i,modBuilder.COL_TEX_NAME} = p.params{p_idx,modBuilder.COL_TEX_NAME};
                 else
-                    q_params{i,2} = o.params{ismember(o.params(:,modBuilder.COL_NAME), o_only_params_list{j}),2};
-                    q_params{i,3} = o.params{ismember(o.params(:,modBuilder.COL_NAME), o_only_params_list{j}),3};
-                    q_params{i,4} = o.params{ismember(o.params(:,modBuilder.COL_NAME), o_only_params_list{j}),4};
+                    q_params{i,modBuilder.COL_VALUE} = o.params{o_idx,modBuilder.COL_VALUE};
+                    q_params{i,modBuilder.COL_LONG_NAME} = o.params{o_idx,modBuilder.COL_LONG_NAME};
+                    q_params{i,modBuilder.COL_TEX_NAME} = o.params{o_idx,modBuilder.COL_TEX_NAME};
                 end
                 i = i+1;
             end
+            % Copy p-only parameters
             for j=1:length(p_only_params_list)
-                q_params{i,1} = p_only_params_list{j};
-                q_params{i,2} = p.params{ismember(p.params(:,1), p_only_params_list{j}),2};
-                q_params{i,3} = p.params{ismember(p.params(:,1), p_only_params_list{j}),3};
-                q_params{i,4} = p.params{ismember(p.params(:,1), p_only_params_list{j}),4};
+                idx = p_param_idx(j);
+                q_params{i,modBuilder.COL_NAME} = p_only_params_list{j};
+                q_params{i,modBuilder.COL_VALUE} = p.params{idx,modBuilder.COL_VALUE};
+                q_params{i,modBuilder.COL_LONG_NAME} = p.params{idx,modBuilder.COL_LONG_NAME};
+                q_params{i,modBuilder.COL_TEX_NAME} = p.params{idx,modBuilder.COL_TEX_NAME};
                 i = i+1;
             end
             q.params = q_params;
@@ -1919,9 +1933,9 @@ classdef modBuilder<handle
             % Set list of endogenous variables in the new model and change type of some exogenous variables.
             %
             o_varexo_list = o.varexo(:,modBuilder.COL_NAME);
-            p_varexo_list = p.varexo(:,1);
+            p_varexo_list = p.varexo(:,modBuilder.COL_NAME);
             % Set list of exogenous variables, in model o, that will become endogenous when model o is merged with model p.
-            o_varexo2var = intersect(o_varexo_list, p.var(:,1));
+            o_varexo2var = intersect(o_varexo_list, p.var(:,modBuilder.COL_NAME));
             % Set list of exogenous variables, in model p, that will become endogenous when model p is merged with model o.
             p_varexo2var = intersect(p_varexo_list, o.var(:,modBuilder.COL_NAME));
             % Set list of endogenous variables (with calibration)
@@ -1941,25 +1955,25 @@ classdef modBuilder<handle
             end
             tmp = [o_varexo_list(ose); p_varexo_list(pse)];
             q_varexo = cell(length(tmp), 4);
-            q_varexo(:,1) = tmp;
-            q_varexo(:,2) = {NaN};
-            [ido, io] = ismember(q_varexo(:,1), o_varexo_list);
-            [idp, ip] = ismember(q_varexo(:,1), p_varexo_list);
+            q_varexo(:,modBuilder.COL_NAME) = tmp;
+            q_varexo(:,modBuilder.COL_VALUE) = {NaN};
+            [ido, io] = ismember(q_varexo(:,modBuilder.COL_NAME), o_varexo_list);
+            [idp, ip] = ismember(q_varexo(:,modBuilder.COL_NAME), p_varexo_list);
             if any(ido)
                 for i=1:length(o_varexo_list(ose))
                     if ido(i)
-                        q_varexo{i,2} = o.varexo{io(i),modBuilder.COL_VALUE};
-                        q_varexo{i,3} = o.varexo{io(i),modBuilder.COL_LONG_NAME};
-                        q_varexo{i,4} = o.varexo{io(i),modBuilder.COL_TEX_NAME};
+                        q_varexo{i,modBuilder.COL_VALUE} = o.varexo{io(i),modBuilder.COL_VALUE};
+                        q_varexo{i,modBuilder.COL_LONG_NAME} = o.varexo{io(i),modBuilder.COL_LONG_NAME};
+                        q_varexo{i,modBuilder.COL_TEX_NAME} = o.varexo{io(i),modBuilder.COL_TEX_NAME};
                     end
                 end
             end
             if any(idp)
                 for i=length(o_varexo_list(ose))+1:length(p_varexo_list(pse))
                     if idp(i)
-                        q_varexo{i,2} = p.varexo{ip(i),2};
-                        q_varexo{i,3} = p.varexo{ip(i),3};
-                        q_varexo{i,4} = p.varexo{ip(i),4};
+                        q_varexo{i,modBuilder.COL_VALUE} = p.varexo{ip(i),modBuilder.COL_VALUE};
+                        q_varexo{i,modBuilder.COL_LONG_NAME} = p.varexo{ip(i),modBuilder.COL_LONG_NAME};
+                        q_varexo{i,modBuilder.COL_TEX_NAME} = p.varexo{ip(i),modBuilder.COL_TEX_NAME};
                     end
                 end
             end
@@ -1974,7 +1988,7 @@ classdef modBuilder<handle
             q.T.params = modBuilder.mergeStructs(o.T.params, p.T.params);
             q.T.varexo = modBuilder.mergeStructs(o.T.varexo, p.T.varexo);
             fnames = fields(q.T.varexo);
-            remvarexo = not(ismember(fnames, q.varexo(:,1)));
+            remvarexo = not(ismember(fnames, q.varexo(:,modBuilder.COL_NAME)));
             for i=1:length(remvarexo)
                 if remvarexo(i)
                     q.T.varexo = rmfield(q.T.varexo, fnames{i});
