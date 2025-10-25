@@ -79,6 +79,18 @@ listoftests = [
   'validation/t01.m',
   'validation/t02.m',
   'validation/t03.m',
+  'examples/add.m',
+  'examples/parameter.m',
+  'examples/exogenous.m',
+  'examples/change.m',
+  'examples/remove.m',
+  'examples/rename.m',
+  'examples/typeof.m',
+  'examples/lookfor.m',
+  'examples/write.m',
+  'examples/copy.m',
+  'examples/extract.m',
+  'examples/merge.m',
 ]
 
 listoffailingtests = [

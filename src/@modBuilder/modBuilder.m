@@ -1091,6 +1091,21 @@ classdef modBuilder<handle
         %
         % OUTPUTS:
         % - o           [modBuilder]   updated object (with new equation)
+        %
+        % EXAMPLES:
+        % % Simple equation
+        % m = modBuilder();
+        % m.add('c', 'c = w*h');
+        %
+        % % Equation with lags and leads
+        % m.add('k', 'k = (1-delta)*k(-1) + i');
+        % m.add('r', '1/beta = (c/c(+1))*(r(+1)+1-delta)');
+        %
+        % % With implicit loops
+        % m.add('x_$1', 'x_$1 = alpha_$1 * y', {1, 2, 3});
+        % % Creates: x_1 = alpha_1 * y
+        % %          x_2 = alpha_2 * y
+        % %          x_3 = alpha_3 * y
 
             % Validate inputs
             validateattributes(varname, {'char'}, {'nonempty', 'row'}, 'add', 'varname');
@@ -1231,6 +1246,23 @@ classdef modBuilder<handle
         % [6] If implicit loops are used (pname contains indices), then all values provided for a given index must be of the same type
         %     (all char or all integer).
         % [7] If implicit loops are used (pname contains indices), then optional attributes (long_name, texname) cannot be provided.
+        %
+        % EXAMPLES:
+        % m = modBuilder();
+        % m.add('c', 'c = alpha*k');
+        %
+        % % Calibrate a parameter
+        % m.parameter('alpha', 0.33);
+        %
+        % % Declare uncalibrated parameter
+        % m.parameter('beta');  % value will be NaN
+        %
+        % % With long name and TeX name
+        % m.parameter('rho', 0.95, 'long_name', 'Persistence', 'texname', '\rho');
+        %
+        % % Implicit loops - create multiple parameters
+        % m.parameter('gamma_$1', 0.5, {1, 2, 3});
+        % % Creates: gamma_1=0.5, gamma_2=0.5, gamma_3=0.5
             % Validate that pname is a non-empty row char array
             validateattributes(pname, {'char'}, {'nonempty', 'row'}, 'parameter', 'pname');
 
@@ -1307,6 +1339,20 @@ classdef modBuilder<handle
         %
         % REMARKS:
         % Same remarks as for method parameter, with obvious changes for exogenous variables.
+        %
+        % EXAMPLES:
+        % m = modBuilder();
+        % m.add('y', 'y = a + epsilon');
+        % m.parameter('a', 1.5);
+        %
+        % % Declare exogenous variable with default value
+        % m.exogenous('epsilon', 0);
+        %
+        % % Declare without setting value (defaults to NaN)
+        % m.exogenous('u');
+        %
+        % % With long name and TeX name
+        % m.exogenous('e', 0, 'long_name', 'Technology shock', 'texname', '\varepsilon');
             % Validate that xname is a non-empty row char array
             validateattributes(xname, {'char'}, {'nonempty', 'row'}, 'exogenous', 'xname');
 
@@ -1425,6 +1471,15 @@ classdef modBuilder<handle
         % REMARKS:
         % - Clears symbol_map to force typeof() to use linear search during removals
         % - This prevents stale index references after deletions
+        %
+        % EXAMPLES:
+        % m = modBuilder();
+        % m.add('c', 'c = w*h');
+        % m.add('y', 'y = c + i');
+        % m.parameter('w', 1.5);
+        %
+        % % Remove the consumption equation
+        % m.remove('c');  % Also removes h if it doesn't appear elsewhere
 
             % Clear symbol_map so typeof() uses linear search (safe during deletions)
             o.symbol_map = [];
@@ -1500,6 +1555,17 @@ classdef modBuilder<handle
         %
         % OUTPUTS:
         % - o            [char]            updated object
+        %
+        % EXAMPLES:
+        % m = modBuilder();
+        % m.add('c', 'c = alpha*k');
+        % m.parameter('alpha', 0.33);
+        %
+        % % Rename parameter
+        % m.rename('alpha', 'beta');
+        %
+        % % Rename endogenous variable
+        % m.rename('c', 'consumption');
             [type, id] = o.typeof(oldsymbol);
             switch type
               case 'parameter'
@@ -1545,6 +1611,14 @@ classdef modBuilder<handle
         %
         % OUTPUTS:
         % None
+        %
+        % EXAMPLES:
+        % m = modBuilder();
+        % m.add('c', 'c = alpha*k');
+        % m.parameter('alpha', 0.33);
+        %
+        % % Write to file 'mymodel.mod'
+        % m.write('mymodel');
             fid = fopen(sprintf('%s.mod', basename), 'w');
             %
             % Print list of endogenous variables
@@ -1756,6 +1830,17 @@ classdef modBuilder<handle
         % - Uses O(1) hash map lookup when symbol_map is available
         % - Falls back to O(n) linear search if symbol_map is not initialized
         % - Significantly faster for repeated lookups in large models
+        %
+        % EXAMPLES:
+        % m = modBuilder();
+        % m.add('c', 'c = alpha*k + epsilon');
+        % m.parameter('alpha', 0.33);
+        % m.exogenous('epsilon', 0);
+        %
+        % % Check symbol types
+        % [type, id] = m.typeof('alpha');    % Returns 'parameter'
+        % [type, id] = m.typeof('c');        % Returns 'endogenous'
+        % [type, id] = m.typeof('epsilon');  % Returns 'exogenous'
 
             % Try O(1) lookup first if symbol_map is available
             if ~isempty(o.symbol_map) && isa(o.symbol_map, 'containers.Map') && o.symbol_map.isKey(name)
@@ -1824,6 +1909,20 @@ classdef modBuilder<handle
         %
         % OUTPUTS:
         % - b         [logical]      scalar
+        %
+        % EXAMPLES:
+        % m = modBuilder();
+        % m.add('c', 'c = w*h');
+        % m.add('y', 'y = c + i');
+        % m.add('i', 'i = delta*k');
+        % m.parameter('w', 1.5);
+        % m.parameter('delta', 0.1);
+        %
+        % % Find all equations containing 'c'
+        % m.lookfor('c');
+        % % Output: Endogenous variable c appears in 2 equations:
+        % %         [c]  c = w*h
+        % %         [y]  y = c + i
             if o.isparameter(name)
                 symboltype = 'Parameter';
                 eqnames = o.T.params.(name);
@@ -2024,6 +2123,16 @@ classdef modBuilder<handle
         % - o   [modBuilder]    source object
         %
         % OUTPUTS:
+        %
+        % EXAMPLES:
+        % m = modBuilder();
+        % m.add('c', 'c = alpha*k');
+        % m.parameter('alpha', 0.33);
+        %
+        % % Create a copy to experiment with
+        % m2 = m.copy();
+        % m2.change('c', 'c = beta*k');
+        % % Original m is unchanged
         % - p   [modBuilder]    independent copy with same content
         %
         % REMARKS:
@@ -2118,6 +2227,15 @@ classdef modBuilder<handle
         % - Updates symbol tables automatically
         % - Removes parameters/exogenous variables that no longer appear in any equation
         % - Warns if new equation introduces untyped symbols
+        %
+        % EXAMPLES:
+        % m = modBuilder();
+        % m.add('c', 'c = w*h');
+        % m.parameter('w', 1.5);
+        %
+        % % Replace the equation for c
+        % m.change('c', 'c = alpha*k + w*h');
+        % m.parameter('alpha', 0.3);
 
             % Validate inputs
             validateattributes(varname, {'char'}, {'nonempty', 'row'}, 'change', 'varname');
@@ -2358,6 +2476,18 @@ classdef modBuilder<handle
         % - The number of equations in p equals the number of arguments
         % - Automatically includes all parameters and exogenous variables used by extracted equations
         % - Removes unused symbols that don't appear in the extracted equations
+        %
+        % EXAMPLES:
+        % m = modBuilder();
+        % m.add('c', 'c = w*h');
+        % m.add('y', 'y = c + i');
+        % m.add('i', 'i = delta*k');
+        % m.parameter('w', 1.5);
+        % m.parameter('delta', 0.1);
+        %
+        % % Extract only consumption and output equations
+        % submodel = m.extract('c', 'y');
+        % % submodel has 2 equations, w parameter, but not delta
             p = copy(o);
             if not(all(ismember(varargin, p.equations(:,modBuilder.EQ_COL_NAME))))
                 error('Equation(s) missing for:%s.', modBuilder.printlist(varargin(~ismember(varargin, p.equations(:,modBuilder.EQ_COL_NAME)))))
@@ -2382,6 +2512,21 @@ classdef modBuilder<handle
         % - Exogenous variables in one model can be endogenous in the other (type conversion handled automatically)
         % - Symbol tables are merged appropriately
         % - Useful for combining independent blocks of a larger model
+        %
+        % EXAMPLES:
+        % % Create first model (consumption block)
+        % m1 = modBuilder();
+        % m1.add('c', 'c = w*h');
+        % m1.parameter('w', 1.5);
+        %
+        % % Create second model (production block)
+        % m2 = modBuilder();
+        % m2.add('y', 'y = alpha*k');
+        % m2.parameter('alpha', 0.33);
+        %
+        % % Merge the two models
+        % full_model = m1.merge(m2);
+        % % full_model contains both equations and all parameters
 
             % Validate that models can be merged
             o.validate_merge_compatibility(p);
