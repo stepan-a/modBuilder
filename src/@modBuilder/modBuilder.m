@@ -81,6 +81,13 @@ classdef modBuilder<handle
         EQ_COL_EXPR = 2     % Equation expression (char)
     end
 
+    properties (Constant)
+        % Valid symbol/component types for type checking
+        % Used by size(), updatesymboltable(), and other methods that accept type arguments
+        % Public constant so users can query valid types programmatically
+        VALID_TYPES = {'parameters', 'exogenous', 'endogenous', 'equations'}
+    end
+
     properties (Access = private)
         % Symbol lookup map for O(1) type checking: symbol_name -> struct(type, idx)
         % Updated automatically by update_symbol_map() after structural changes
@@ -216,6 +223,10 @@ classdef modBuilder<handle
         % - o.T.params.<NAME> is a cell array of row char arrays, each element targets an equation (designated by an endogenous variable) where parameter NAME appears,
         % - o.T.varexo.<NAME> same as o.T.params.<NAME> for exogenous variables,
         % - o.T.var.<NAME> same as o.T.params.<NAME> for endogenous variables.
+
+            % Validate type before processing
+            modBuilder.validate_type(type);
+
             switch type
               case 'parameters'
                 for i=1:o.size(type)
@@ -253,13 +264,40 @@ classdef modBuilder<handle
                     end
                     o.T.var.(o.var{i,modBuilder.COL_NAME}) = unique(o.T.var.(o.var{i,modBuilder.COL_NAME}));
                 end
-              otherwise
-                error('Unknown type (%s)', type)
             end % switch
         end % function
 
     end % methods
 
+
+    methods(Static)
+
+        function validate_type(type)
+        % Validate that a type string is one of the allowed symbol/component types
+        %
+        % INPUTS:
+        % - type   [char]   Type string to validate
+        %
+        % OUTPUTS:
+        % None (throws error if invalid)
+        %
+        % REMARKS:
+        % - Validates against modBuilder.VALID_TYPES constant
+        % - Provides helpful error message listing valid options
+        % - Used internally by size(), updatesymboltable(), and other type-checking methods
+        % - Can be called by users to validate type strings before use
+        %
+        % EXAMPLE:
+        % modBuilder.validate_type('parameters')  % OK
+        % modBuilder.validate_type('vars')        % Error: Unknown type (vars). Valid types are: ...
+
+            if ~ismember(type, modBuilder.VALID_TYPES)
+                error('Unknown type (%s). Valid types are: %s', ...
+                      type, strjoin(modBuilder.VALID_TYPES, ', '));
+            end
+        end
+
+    end
 
     methods(Static, Access = private)
 
@@ -306,6 +344,14 @@ classdef modBuilder<handle
         % - fid      [integer]    file identifier
         % - type     [char]       'endogenous', 'parameters', or 'exogenous'
         % - Table    [cell]       n×4 array with name, value, long_name, tex_name
+
+            % Validate type (printlist2 only supports these three types)
+            valid_printlist_types = {'endogenous', 'parameters', 'exogenous'};
+            if ~ismember(type, valid_printlist_types)
+                error('printlist2: Unknown type (%s). Valid types are: %s', ...
+                      type, strjoin(valid_printlist_types, ', '));
+            end
+
             % Map type to Dynare keyword
             switch type
               case 'endogenous'
@@ -732,6 +778,10 @@ classdef modBuilder<handle
         %
         % OUTPUTS:
         % - n      [integer]        scalar, number of elements of the specified type
+
+            % Validate type before processing
+            modBuilder.validate_type(type);
+
             switch type
               case 'parameters'
                 n = size(o.params, 1);
