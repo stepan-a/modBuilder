@@ -173,7 +173,7 @@ classdef modBuilder<handle
 
             % Validate number of indices
             if not(isequal(numel(varargin), nindices))
-                error('The number of indices in the %s name is %u, but values for %u indices are provided', ...
+                error('The number of indices in the "%s" name is %u, but values for %u indices are provided.', ...
                       symbol_type, nindices, numel(varargin))
             end
 
@@ -204,7 +204,7 @@ classdef modBuilder<handle
                     case 'exogenous'
                         o = o.exogenous(name, value);
                     otherwise
-                        error('Unsupported symbol type: %s', symbol_type)
+                        error('Unsupported symbol type: "%s".', symbol_type)
                 end
             end
         end
@@ -1067,7 +1067,7 @@ classdef modBuilder<handle
         % - Creates equation tag with 'name' field
         % - If varname was previously exogenous, it becomes endogenous
             if any(ismember(o.equations(:,modBuilder.EQ_COL_NAME), varname))
-                error('Variable %s already has an equation. Use the change method if you really want to redefine the equation for %s. ', varname, varname)
+                error('Variable "%s" already has an equation. Use the change method if you really want to redefine the equation for "%s".', varname, varname)
             end
             id = size(o.equations, 1)+1;
             o.equations{id,modBuilder.EQ_COL_NAME} = varname;
@@ -1142,7 +1142,7 @@ classdef modBuilder<handle
                     if ismember(pname, o.var(:,modBuilder.COL_NAME))
                         error('An endogenous variable cannot be converted into a parameter.')
                     else
-                        error('Symbol %s appears nowhere in the model.', pname)
+                        error('Symbol "%s" does not appear in the model.', pname)
                     end
                 end
                 if nargin<3 || isempty(varargin{1})
@@ -1211,9 +1211,9 @@ classdef modBuilder<handle
             else
                 if ~(ismember(xname, o.symbols) || ismember(xname, o.varexo(:,modBuilder.COL_NAME)) || ismember(xname, o.params(:,modBuilder.COL_NAME)))
                     if ismember(xname, o.var(:,modBuilder.COL_NAME))
-                        error('An endogenous variable cannot be converted into an exogenous variable.\nPlease remove the equation associated to the endogenous variable.')
+                        error('An endogenous variable cannot be converted into an exogenous variable. Please remove the equation associated to the endogenous variable.')
                     else
-                        error('Symbol %s appears nowhere in the model.', xname)
+                        error('Symbol "%s" does not appear in the model.', xname)
                     end
                 end
                 if nargin<3 || isempty(varargin{1})
@@ -1316,7 +1316,7 @@ classdef modBuilder<handle
 
             ide = ismember(o.equations(:,modBuilder.EQ_COL_NAME), eqname);
             if not(any(ide))
-                error('Unknown equation (%s).', eqname)
+                error('Unknown equation "%s".', eqname)
             end
             o.equations(ide,:) = [];
             o.tags = rmfield(o.tags, eqname);
@@ -1677,7 +1677,7 @@ classdef modBuilder<handle
                 type = 'endogenous';
                 return
             end
-            error('Unknown type for symbol %s.', name);
+            error('Unknown type for symbol "%s".', name)
         end
 
         function b = appear_in_more_than_one_equation(o, name)
@@ -1758,11 +1758,11 @@ classdef modBuilder<handle
         % - o           [modBuilder]    updated object
             ie = ismember(o.var(:,modBuilder.COL_NAME), varname);
             if not(any(ie))
-                error('%s is not a known endogenous variable.', varname)
+                error('"%s" is not a known endogenous variable.', varname)
             end
             ix = ismember(o.varexo(:,modBuilder.COL_NAME), varexoname);
             if not(any(ix))
-                error('%s is not a known exogenous variable.', varexoname)
+                error('"%s" is not a known exogenous variable.', varexoname)
             end
             % Copy variables
             o.var = [o.var; {varexoname o.varexo{ix,modBuilder.COL_VALUE} o.varexo{ix,modBuilder.COL_LONG_NAME} o.varexo{ix,modBuilder.COL_TEX_NAME}}];
@@ -1889,7 +1889,7 @@ classdef modBuilder<handle
             warning('off','backtrace')
             ide = ismember(o.equations(:,modBuilder.EQ_COL_NAME), varname);
             if not(any(ide))
-                error('There is no equation for %s.', varname)
+                error('There is no equation for "%s".', varname)
             end
             o.equations{ide,modBuilder.EQ_COL_EXPR} = equation;
             otokens = o.T.equations.(varname);
@@ -2267,10 +2267,10 @@ classdef modBuilder<handle
             if not(ismember(sname, o.T.equations.(eqname)))
                 if o.isendogenous(sname)
                     if not(ismember(eqname, o.T.var.(sname)))
-                        error('Symbol %s does not appear in equation %s', sname, eqname)
+                        error('Symbol "%s" does not appear in equation "%s".', sname, eqname)
                     end
                 else
-                    error('Symbol %s does not appear in equation %s', sname, eqname)
+                    error('Symbol "%s" does not appear in equation "%s".', sname, eqname)
                 end
             end
             %
@@ -2403,7 +2403,7 @@ classdef modBuilder<handle
                     catch
                         % Character array S(1).subs{1} is neither a parameter name, endogenous or
                         % exogenous variable name.
-                        error('Wrong index (unknwow symbol).')
+                        error('Wrong index (unknown symbol).')
                     end
                     switch type
                       case 'parameter'
