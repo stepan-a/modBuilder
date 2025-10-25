@@ -133,6 +133,75 @@ classdef modBuilder<handle
             end
         end
 
+        function o = handle_implicit_loops(o, symbol_name, symbol_type, varargin)
+        % Generic handler for symbols with implicit loops (indices like $1, $2)
+        %
+        % INPUTS:
+        % - o            [modBuilder]
+        % - symbol_name  [char]        Symbol name with indices (e.g., 'beta_$1_$2')
+        % - symbol_type  [char]        'parameter' or 'exogenous'
+        % - varargin     [cell]        Index values and optional calibration value
+        %
+        % OUTPUTS:
+        % - o            [modBuilder]  Updated object
+        %
+        % REMARKS:
+        % - Extracts common implicit loop logic used by parameter() and exogenous() methods
+        % - Handles parsing of indices, value extraction, and Cartesian product computation
+        % - Recursively calls the appropriate method (parameter or exogenous) for each combination
+
+            % Find all indices in the symbol name (e.g., $1, $2)
+            inames = unique(regexp(symbol_name, '\$\d*', 'match'));
+            nindices = numel(inames);
+
+            % Extract value if provided
+            if isequal(nargin-3-nindices, 1)
+                value = varargin{1};
+                varargin = varargin(2:end);
+            elseif isequal(nargin-3-nindices, 0)
+                value = NaN;
+            else
+                error('Wrong number of input arguments.')
+            end
+
+            % Validate number of indices
+            if not(isequal(numel(varargin), nindices))
+                error('The number of indices in the %s name is %u, but values for %u indices are provided', ...
+                      symbol_type, nindices, numel(varargin))
+            end
+
+            % Check that indices are uniform (all integers or all strings for each index)
+            [allint, ~] = modBuilder.check_indices_values(varargin);
+
+            % Compute Cartesian product of index values
+            mIndex = table2cell(combinations(varargin{:}));
+
+            % Prepare template for sprintf (replace $1, $2, etc. with %u or %s)
+            tmp = symbol_name;
+            for i=nindices:-1:1
+                if allint(i)
+                    tmp = strrep(tmp, sprintf('$%u',i), '%u');
+                else
+                    tmp = strrep(tmp, sprintf('$%u',i), '%s');
+                end
+            end
+
+            % Create symbols for all combinations
+            for i=1:size(mIndex, 1)
+                id = mIndex(i,:);
+                name = sprintf(tmp, id{:});
+                % Call the specific method recursively
+                switch symbol_type
+                    case 'parameter'
+                        o = o.parameter(name, value);
+                    case 'exogenous'
+                        o = o.exogenous(name, value);
+                    otherwise
+                        error('Unsupported symbol type: %s', symbol_type)
+                end
+            end
+        end
+
         function o = updatesymboltable(o, type)
         % Update fields under o.T. These fields map symbols (parameter, endogenous and exogenous variables) with equations.
         %
@@ -813,38 +882,11 @@ classdef modBuilder<handle
         % [6] If implicit loops are used (pname contains indices), then all values provided for a given index must be of the same type
         %     (all char or all integer).
         % [7] If implicit loops are used (pname contains indices), then optional attributes (long_name, texname) cannot be provided.
+            % Check if parameter name contains implicit loop indices (e.g., 'beta_$1_$2')
             inames = unique(regexp(pname, '\$\d*', 'match'));
             if not(isempty(inames))
-                nindices = numel(inames);
-                if isequal(nargin-2-nindices, 1)
-                    pvalue = varargin{1};
-                    varargin = varargin(2:end);
-                elseif isequal(nargin-2-nindices, 0)
-                    pvalue = NaN;
-                else
-                    error('Wrong number of input arguments.')
-                end
-                if not(isequal(numel(varargin), nindices))
-                    error('The number of indices in the parameter name is %u, but values for %u indices are provided', nindices, numel(varargin))
-                end
-                % Check that the indices are uniform.
-                [allint, ~] = modBuilder.check_indices_values(varargin);
-                % Compute Cartesian product of set of index values
-                mIndex = table2cell(combinations(varargin{:}));
-                % Prepare
-                tmp = pname;
-                for i=nindices:-1:1
-                    if allint(i)
-                        tmp = strrep(tmp, sprintf('$%u',i), '%u');
-                    else
-                        tmp = strrep(tmp, sprintf('$%u',i), '%s');
-                    end
-                end
-                for i=1:size(mIndex, 1)
-                    id = mIndex(i,:);
-                    name = sprintf(tmp, id{:});
-                    o.parameter(name, pvalue);
-                end
+                % Delegate to common implicit loop handler
+                o = o.handle_implicit_loops(pname, 'parameter', varargin{:});
             else
                 if ~(ismember(pname, o.symbols) || ismember(pname, o.varexo(:,modBuilder.COL_NAME)) || ismember(pname, o.params(:,modBuilder.COL_NAME)))
                     if ismember(pname, o.var(:,modBuilder.COL_NAME))
@@ -911,38 +953,11 @@ classdef modBuilder<handle
         %
         % REMARKS:
         % Same remarks as for method parameter, with obvious changes for exogenous variables.
+            % Check if exogenous name contains implicit loop indices (e.g., 'epsilon_$1_$2')
             inames = unique(regexp(xname, '\$\d*', 'match'));
             if not(isempty(inames))
-                nindices = numel(inames);
-                if isequal(nargin-2-nindices, 1)
-                    xvalue = varargin{1};
-                    varargin = varargin(2:end);
-                elseif isequal(nargin-2-nindices, 0)
-                    xvalue = NaN;
-                else
-                    error('Wrong number of input arguments.')
-                end
-                if not(isequal(numel(varargin), nindices))
-                    error('The number of indices in the exogenous variable name is %u, but values for %u indices are provided', nindices, numel(varargin))
-                end
-                % Check that the indices are uniform.
-                [allint, ~] = modBuilder.check_indices_values(varargin);
-                % Compute Cartesian product of set of index values
-                mIndex = table2cell(combinations(varargin{:}));
-                % Prepare
-                tmp = xname;
-                for i=nindices:-1:1
-                    if allint(i)
-                        tmp = strrep(tmp, sprintf('$%u',i), '%u');
-                    else
-                        tmp = strrep(tmp, sprintf('$%u',i), '%s');
-                    end
-                end
-                for i=1:size(mIndex, 1)
-                    id = mIndex(i,:);
-                    name = sprintf(tmp, id{:});
-                    o.exogenous(name, xvalue);
-                end
+                % Delegate to common implicit loop handler
+                o = o.handle_implicit_loops(xname, 'exogenous', varargin{:});
             else
                 if ~(ismember(xname, o.symbols) || ismember(xname, o.varexo(:,modBuilder.COL_NAME)) || ismember(xname, o.params(:,modBuilder.COL_NAME)))
                     if ismember(xname, o.var(:,modBuilder.COL_NAME))
