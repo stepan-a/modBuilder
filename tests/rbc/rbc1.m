@@ -40,6 +40,15 @@ model.updatesymboltables();
 fprintf('Testing summary method:\n');
 model.summary();
 
+% Test the table method
+fprintf('Testing table method:\n');
+param_table = model.table('parameters');
+disp(param_table);
+var_table = model.table('endogenous');
+disp(var_table);
+varexo_table = model.table('exogenous');
+disp(varexo_table);
+
 model.write('rbc1');
 
 b = modiff('rbc1.mod', 'rbc1.true.mod');

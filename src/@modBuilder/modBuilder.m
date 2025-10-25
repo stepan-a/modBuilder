@@ -1911,6 +1911,69 @@ classdef modBuilder<handle
         end
 
 
+        function tbl = table(o, type)
+        % Convert params/varexo/var to MATLAB table for easier viewing
+        %
+        % INPUTS:
+        % - o      [modBuilder]
+        % - type   [char]        'parameters', 'exogenous', or 'endogenous'
+        %
+        % OUTPUTS:
+        % - tbl    [table]       MATLAB table with columns: Name, Value, LongName, TeXName
+        %
+        % EXAMPLE:
+        % m = modBuilder();
+        % m.parameter('alpha', 0.33, 'Capital share');
+        % m.parameter('beta', 0.99);
+        % t = m.table('parameters');
+        % disp(t);
+
+            % Validate type
+            switch type
+                case 'parameters'
+                    data = o.params;
+                case 'exogenous'
+                    data = o.varexo;
+                case 'endogenous'
+                    data = o.var;
+                otherwise
+                    error('Unknown type: %s. Valid types are: parameters, exogenous, endogenous', type);
+            end
+
+            % Convert to MATLAB table
+            if isempty(data)
+                % Create empty table with correct structure
+                tbl = table(categorical([]), [], categorical([]), categorical([]), ...
+                           'VariableNames', {'Name', 'Value', 'LongName', 'TeXName'});
+            else
+                % Extract columns and convert to categorical for clean display (no quotes)
+                names = categorical(data(:, modBuilder.COL_NAME));
+                values = cell2mat(data(:, modBuilder.COL_VALUE));
+
+                % Process LongName and TeXName, replacing empty with 'NA'
+                longnames_cell = cell(size(data, 1), 1);
+                texnames_cell = cell(size(data, 1), 1);
+                for i = 1:size(data, 1)
+                    if isempty(data{i, modBuilder.COL_LONG_NAME})
+                        longnames_cell{i} = 'NA';
+                    else
+                        longnames_cell{i} = data{i, modBuilder.COL_LONG_NAME};
+                    end
+                    if isempty(data{i, modBuilder.COL_TEX_NAME})
+                        texnames_cell{i} = 'NA';
+                    else
+                        texnames_cell{i} = data{i, modBuilder.COL_TEX_NAME};
+                    end
+                end
+                longnames = categorical(longnames_cell);
+                texnames = categorical(texnames_cell);
+
+                tbl = table(names, values, longnames, texnames, ...
+                           'VariableNames', {'Name', 'Value', 'LongName', 'TeXName'});
+            end
+        end
+
+
         function o = flip(o, varname, varexoname)
         % Flip types of varname (initially an endogenous variable)
         % and varexoname (initially an exogenous variable). After the
