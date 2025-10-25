@@ -1193,10 +1193,14 @@ classdef modBuilder<handle
             %
             % Print calibration if any
             %
-            for i=1:o.size('parameters')
-                if not(isnan(o.params{i,modBuilder.COL_VALUE}))
-                    fprintf(fid, '%s = %f;\n', o.params{i,modBuilder.COL_NAME}, o.params{i,modBuilder.COL_VALUE});
-                end
+            % Find all calibrated parameters at once (vectorized operation)
+            calibrated_idx = ~cellfun(@isnan, o.params(:, modBuilder.COL_VALUE));
+            calibrated_params = o.params(calibrated_idx, :);
+            % Write in batch
+            for i=1:size(calibrated_params, 1)
+                fprintf(fid, '%s = %f;\n', ...
+                        calibrated_params{i, modBuilder.COL_NAME}, ...
+                        calibrated_params{i, modBuilder.COL_VALUE});
             end
             fprintf(fid, '\n');
             %
