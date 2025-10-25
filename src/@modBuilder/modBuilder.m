@@ -88,6 +88,17 @@ classdef modBuilder<handle
         VALID_TYPES = {'parameters', 'exogenous', 'endogenous', 'equations'}
     end
 
+    properties (Constant, Access = private)
+        % Reserved function names that cannot be used as symbol names
+        % These are MATLAB/Octave built-in functions and Dynare-specific functions
+        % Used by getsymbols() to filter out functions and by validate_symbol_name() to reject reserved names
+        RESERVED_NAMES = {'log', 'log10', 'ln', 'exp', 'sqrt', 'cbrt', 'abs', 'sign', ...
+                          'sin', 'cos', 'tan', 'asin', 'acos', 'atan', ...
+                          'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh', ...
+                          'min', 'max', 'normcdf', 'normpdf', 'erf', ...
+                          'diff', 'adl', 'EXPECTATIONS', 'STEADY_STATE'}
+    end
+
     properties (Access = private)
         % Symbol lookup map for O(1) type checking: symbol_name -> struct(type, idx)
         % Updated automatically by update_symbol_map() after structural changes
@@ -541,6 +552,37 @@ classdef modBuilder<handle
             end
         end
 
+        function validate_symbol_name(sname, method_name)
+        % Validate that symbol name is a non-empty string and not a reserved function name
+        %
+        % INPUTS:
+        % - sname         [char]   Symbol name to validate
+        % - method_name   [char]   Name of calling method (for error messages)
+        %
+        % OUTPUTS:
+        % None (throws error if validation fails)
+        %
+        % REMARKS:
+        % - Checks that sname is a char array using validateattributes
+        % - Checks that sname is non-empty row vector
+        % - Checks that sname is not a reserved MATLAB/Dynare function name
+        % - Called by add(), parameter(), exogenous(), endogenous(), change() methods
+        % - Compatible with both MATLAB and GNU Octave
+        %
+        % EXAMPLE:
+        % modBuilder.validate_symbol_name('alpha', 'parameter')   % OK
+        % modBuilder.validate_symbol_name('log', 'parameter')     % Error: reserved name
+        % modBuilder.validate_symbol_name('', 'add')              % Error: empty string
+
+            % Validate that sname is a non-empty row char array
+            validateattributes(sname, {'char'}, {'nonempty', 'row'}, method_name, 'symbol name');
+
+            % Check for reserved names
+            if ismember(sname, modBuilder.RESERVED_NAMES)
+                error('%s: Symbol name "%s" is a reserved function name.', method_name, sname);
+            end
+        end
+
     end
 
     methods(Static, Access = private)
@@ -648,8 +690,8 @@ classdef modBuilder<handle
             tokens = strsplit(expr, {'=', '+','-','*','/','^', '(', ')', ',', '\n', '\t', ' '});
             % Filter out the numbers, punctuation.
             tokens(cellfun(@(x) all(isstrprop(x, 'digit')+isstrprop(x, 'punct')), tokens)) = [];
-            % Filter out functions and operators
-            tokens(cellfun(@(x) ismember(x, {'log', 'log10', 'ln', 'exp', 'sqrt', 'cbrt', 'abs', 'sign', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh', 'min', 'max', 'normcdf', 'normpdf', 'erf', 'diff', 'adl', 'EXPECTATIONS', 'STEADY_STATE'}), tokens)) = [];
+            % Filter out reserved functions and operators
+            tokens(cellfun(@(x) ismember(x, modBuilder.RESERVED_NAMES), tokens)) = [];
             % Filter out empty elements.
             tokens(cellfun(@(x) all(isempty(x)), tokens)) = [];
             % Remove duplicates
@@ -1049,6 +1091,11 @@ classdef modBuilder<handle
         %
         % OUTPUTS:
         % - o           [modBuilder]   updated object (with new equation)
+
+            % Validate inputs
+            validateattributes(varname, {'char'}, {'nonempty', 'row'}, 'add', 'varname');
+            validateattributes(equation, {'char'}, {'nonempty', 'row'}, 'add', 'equation');
+
             number_of_loops = length(varargin);
             if not(number_of_loops)
                 o = addeq(o, varname, equation);
@@ -1114,6 +1161,9 @@ classdef modBuilder<handle
 
             % Validate equation syntax
             modBuilder.validate_equation_syntax(equation)
+
+            % Validate symbol name (checks for non-empty char and reserved names)
+            modBuilder.validate_symbol_name(varname, 'add')
 
             if any(ismember(o.equations(:,modBuilder.EQ_COL_NAME), varname))
                 error('Variable "%s" already has an equation. Use the change method if you really want to redefine the equation for "%s".', varname, varname)
@@ -1181,12 +1231,17 @@ classdef modBuilder<handle
         % [6] If implicit loops are used (pname contains indices), then all values provided for a given index must be of the same type
         %     (all char or all integer).
         % [7] If implicit loops are used (pname contains indices), then optional attributes (long_name, texname) cannot be provided.
+            % Validate that pname is a non-empty row char array
+            validateattributes(pname, {'char'}, {'nonempty', 'row'}, 'parameter', 'pname');
+
             % Check if parameter name contains implicit loop indices (e.g., 'beta_$1_$2')
             inames = unique(regexp(pname, '\$\d*', 'match'));
             if not(isempty(inames))
                 % Delegate to common implicit loop handler
                 o = o.handle_implicit_loops(pname, 'parameter', varargin{:});
             else
+                % Validate symbol name for reserved names (only for non-template names)
+                modBuilder.validate_symbol_name(pname, 'parameter')
                 if ~(ismember(pname, o.symbols) || ismember(pname, o.varexo(:,modBuilder.COL_NAME)) || ismember(pname, o.params(:,modBuilder.COL_NAME)))
                     if ismember(pname, o.var(:,modBuilder.COL_NAME))
                         error('An endogenous variable cannot be converted into a parameter.')
@@ -1252,12 +1307,17 @@ classdef modBuilder<handle
         %
         % REMARKS:
         % Same remarks as for method parameter, with obvious changes for exogenous variables.
+            % Validate that xname is a non-empty row char array
+            validateattributes(xname, {'char'}, {'nonempty', 'row'}, 'exogenous', 'xname');
+
             % Check if exogenous name contains implicit loop indices (e.g., 'epsilon_$1_$2')
             inames = unique(regexp(xname, '\$\d*', 'match'));
             if not(isempty(inames))
                 % Delegate to common implicit loop handler
                 o = o.handle_implicit_loops(xname, 'exogenous', varargin{:});
             else
+                % Validate symbol name for reserved names (only for non-template names)
+                modBuilder.validate_symbol_name(xname, 'exogenous')
                 if ~(ismember(xname, o.symbols) || ismember(xname, o.varexo(:,modBuilder.COL_NAME)) || ismember(xname, o.params(:,modBuilder.COL_NAME)))
                     if ismember(xname, o.var(:,modBuilder.COL_NAME))
                         error('An endogenous variable cannot be converted into an exogenous variable. Please remove the equation associated to the endogenous variable.')
@@ -1322,6 +1382,12 @@ classdef modBuilder<handle
         %
         % REMARKS:
         % - Optional arguments in varargin must come by key/value pairs. Allowed keys are 'long_name' and 'texname'.
+            % Validate that ename is a non-empty row char array
+            validateattributes(ename, {'char'}, {'nonempty', 'row'}, 'endogenous', 'ename');
+
+            % Validate symbol name for reserved names
+            modBuilder.validate_symbol_name(ename, 'endogenous')
+
             if nargin<3 || isempty(evalue)
                 % Set default value
                 evalue = NaN;
@@ -1936,6 +2002,10 @@ classdef modBuilder<handle
         % - Updates symbol tables automatically
         % - Removes parameters/exogenous variables that no longer appear in any equation
         % - Warns if new equation introduces untyped symbols
+
+            % Validate inputs
+            validateattributes(varname, {'char'}, {'nonempty', 'row'}, 'change', 'varname');
+            validateattributes(equation, {'char'}, {'nonempty', 'row'}, 'change', 'equation');
 
             % Validate equation syntax
             modBuilder.validate_equation_syntax(equation)
