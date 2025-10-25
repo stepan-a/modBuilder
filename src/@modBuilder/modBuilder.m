@@ -1132,7 +1132,7 @@ classdef modBuilder<handle
                 o.T.varexo = rmfield(o.T.varexo, oldsymbol);
               case 'endogenous'
                 o.var{id,modBuilder.COL_NAME} = newsymbol;
-                o.equations{strcmp(oldsymbol, o.equations(:,modBuilder.EQ_COL_NAME)),1} = newsymbol;
+                o.equations{strcmp(oldsymbol, o.equations(:,modBuilder.EQ_COL_NAME)),modBuilder.EQ_COL_NAME} = newsymbol;
                 o.T.var.(newsymbol) = o.T.var.(oldsymbol);
                 o.T.var = rmfield(o.T.var, oldsymbol);
                 o.T.equations.(newsymbol) = o.T.equations.(oldsymbol);
@@ -1511,7 +1511,7 @@ classdef modBuilder<handle
             mask = strcmp(varexoname, o.T.equations.(varexoname));
             o.T.equations.(varexoname){mask} = varname;
             % Associate new endogenous variable to an equation (the one previously associated with varname)
-            o.equations{strcmp(varname, o.equations(:,modBuilder.EQ_COL_NAME)),1} = varexoname;
+            o.equations{strcmp(varname, o.equations(:,modBuilder.EQ_COL_NAME)),modBuilder.EQ_COL_NAME} = varexoname;
             % Update tags
             o.tags.(varexoname) = o.tags.(varname);
             o.tags = rmfield(o.tags, varname);
@@ -1848,10 +1848,10 @@ classdef modBuilder<handle
         % - Automatically includes all parameters and exogenous variables used by extracted equations
         % - Removes unused symbols that don't appear in the extracted equations
             p = copy(o);
-            if not(all(ismember(varargin, p.equations(:,1))))
-                error('Equation(s) missing for:%s.', modBuilder.printlist(varargin(~ismember(varargin, p.equations(:,1)))))
+            if not(all(ismember(varargin, p.equations(:,modBuilder.EQ_COL_NAME))))
+                error('Equation(s) missing for:%s.', modBuilder.printlist(varargin(~ismember(varargin, p.equations(:,modBuilder.EQ_COL_NAME)))))
             end
-            eqnames = setdiff(p.equations(:,1), varargin);
+            eqnames = setdiff(p.equations(:,modBuilder.EQ_COL_NAME), varargin);
             p.rm(eqnames{:});
         end
 
