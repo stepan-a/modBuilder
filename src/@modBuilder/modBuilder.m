@@ -1780,7 +1780,10 @@ classdef modBuilder<handle
                 o.rename(expr0, expr2);
                 return
             end
-            list_of_unknown_symbols = {};
+            % Preallocate with reasonable max size (optimize for common case)
+            list_of_unknown_symbols = cell(1, numel(eqnames) * 5); % Assume max 5 new symbols per equation
+            unknown_count = 0;
+
             for i=1:numel(eqnames)
                 eqname = eqnames{i};
                 select = strcmp(eqname, o.equations(:,modBuilder.EQ_COL_NAME));
@@ -1794,9 +1797,10 @@ classdef modBuilder<handle
                 if ~isempty(newsyms)
                     for j=1:length(newsyms)
                         if ~o.issymbol(newsyms{j})
-                            if ~ismember(newsyms{j}, list_of_unknown_symbols)
+                            if ~ismember(newsyms{j}, list_of_unknown_symbols(1:unknown_count))
                                 modBuilder.dprintf('Symbol %s is unknown, you need to provide a type (parameter, endogenous or exogenous variable).', newsyms{j})
-                                list_of_unknown_symbols{end+1} = newsyms{j};
+                                unknown_count = unknown_count + 1;
+                                list_of_unknown_symbols{unknown_count} = newsyms{j};
                             end
                         end
                     end
@@ -1824,6 +1828,8 @@ classdef modBuilder<handle
                 end
                 o.T.equations.(eqname) = Symbols;
             end
+            % Trim preallocated array to actual size
+            list_of_unknown_symbols = list_of_unknown_symbols(1:unknown_count);
             o.updatesymboltables;
         end % function
 
