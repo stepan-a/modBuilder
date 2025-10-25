@@ -1858,6 +1858,59 @@ classdef modBuilder<handle
         end % function
 
 
+        function o = summary(o)
+        % Display a formatted summary of the model
+        %
+        % INPUTS:
+        % - o      [modBuilder]
+        %
+        % OUTPUTS:
+        % - o      [modBuilder]  (returns the object for method chaining)
+        %
+        % EXAMPLE:
+        % m = modBuilder();
+        % m.parameter('alpha', 0.33);
+        % m.parameter('beta', NaN);
+        % m.add('c', 'c = alpha * k');
+        % m.summary();
+        %
+        % EXAMPLE OUTPUT:
+        % Model Summary
+        % =============
+        % Created: 2025-01-15 10:30:00
+        %
+        % Parameters: 2 (1 calibrated, 1 uncalibrated)
+        % Endogenous: 1
+        % Exogenous: 0
+        % Equations: 1
+
+            fprintf('\nModel Summary\n');
+            fprintf('=============\n');
+            fprintf('Created: %s\n\n', char(o.date));
+
+            % Count calibrated and uncalibrated parameters
+            n_params = o.size('parameters');
+            if n_params > 0
+                n_params_calibrated = sum(~cellfun(@isnan, o.params(:, modBuilder.COL_VALUE)));
+                n_params_uncalibrated = n_params - n_params_calibrated;
+                fprintf('Parameters: %d (%d calibrated, %d uncalibrated)\n', ...
+                        n_params, n_params_calibrated, n_params_uncalibrated);
+            else
+                fprintf('Parameters: 0\n');
+            end
+
+            fprintf('Endogenous: %d\n', o.size('endogenous'));
+            fprintf('Exogenous: %d\n', o.size('exogenous'));
+            fprintf('Equations: %d\n', o.size('equations'));
+
+            if ~isempty(o.symbols)
+                fprintf('\nWarning: %d untyped symbol(s)\n', length(o.symbols));
+            end
+
+            fprintf('\n');
+        end
+
+
         function o = flip(o, varname, varexoname)
         % Flip types of varname (initially an endogenous variable)
         % and varexoname (initially an exogenous variable). After the

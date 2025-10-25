@@ -36,6 +36,10 @@ end
 
 model.updatesymboltables();
 
+% Test the summary method
+fprintf('Testing summary method:\n');
+model.summary();
+
 model.write('rbc1');
 
 b = modiff('rbc1.mod', 'rbc1.true.mod');
