@@ -81,8 +81,57 @@ classdef modBuilder<handle
         EQ_COL_EXPR = 2     % Equation expression (char)
     end
 
+    properties (Access = private)
+        % Symbol lookup map for O(1) type checking: symbol_name -> struct(type, idx)
+        % Updated automatically by update_symbol_map() after structural changes
+        % Provides significant performance improvement over linear search
+        symbol_map = []
+    end
+
 
     methods (Access = private)
+
+        function o = update_symbol_map(o)
+        % Update the symbol lookup map for O(1) type checking
+        %
+        % INPUTS:
+        % - o   [modBuilder]
+        %
+        % OUTPUTS:
+        % - o   [modBuilder]   updated object with populated symbol_map
+        %
+        % REMARKS:
+        % - Creates a containers.Map for O(1) symbol type lookup
+        % - Called automatically after structural changes
+        % - Maps symbol_name -> struct('type', <type>, 'idx', <index>)
+        % - Significantly faster than linear search through params/varexo/var arrays
+
+            % Initialize empty map if it doesn't exist or is empty
+            if isempty(o.symbol_map) || ~isa(o.symbol_map, 'containers.Map')
+                o.symbol_map = containers.Map('KeyType', 'char', 'ValueType', 'any');
+            else
+                % Clear existing map
+                remove(o.symbol_map, keys(o.symbol_map));
+            end
+
+            % Add all parameters
+            for i=1:size(o.params, 1)
+                o.symbol_map(o.params{i, modBuilder.COL_NAME}) = ...
+                    struct('type', 'parameter', 'idx', i);
+            end
+
+            % Add all exogenous variables
+            for i=1:size(o.varexo, 1)
+                o.symbol_map(o.varexo{i, modBuilder.COL_NAME}) = ...
+                    struct('type', 'exogenous', 'idx', i);
+            end
+
+            % Add all endogenous variables
+            for i=1:size(o.var, 1)
+                o.symbol_map(o.var{i, modBuilder.COL_NAME}) = ...
+                    struct('type', 'endogenous', 'idx', i);
+            end
+        end
 
         function o = updatesymboltable(o, type)
         % Update fields under o.T. These fields map symbols (parameter, endogenous and exogenous variables) with equations.
@@ -992,6 +1041,14 @@ classdef modBuilder<handle
         %
         % OUTPUTS:
         % - o          [char]            updated object
+        %
+        % REMARKS:
+        % - Clears symbol_map to force typeof() to use linear search during removals
+        % - This prevents stale index references after deletions
+
+            % Clear symbol_map so typeof() uses linear search (safe during deletions)
+            o.symbol_map = [];
+
             ide = ismember(o.equations(:,modBuilder.EQ_COL_NAME), eqname);
             if not(any(ide))
                 error('Unknown equation (%s).', eqname)
@@ -1015,12 +1072,15 @@ classdef modBuilder<handle
                 end % if
             end
             o.T.equations = rmfield(o.T.equations, eqname);
-            o.T.var.(eqname) = setdiff(o.T.var.(eqname), eqname); % Remove reference to the equation defining eqname.
-            if not(isempty(o.T.var.(eqname)))
-                % If the variable eqname is referenced in another equation, it must be converted to an exogenous variable.
-                o.varexo = [o.varexo; o.var(ismember(o.var(:,modBuilder.COL_NAME), eqname),:)];
-                o.T.varexo.(eqname) = o.T.var.(eqname);
-                o.T.var = rmfield(o.T.var, eqname);
+            % Check if eqname exists in T.var before accessing (might not if tables not fully initialized)
+            if isfield(o.T.var, eqname)
+                o.T.var.(eqname) = setdiff(o.T.var.(eqname), eqname); % Remove reference to the equation defining eqname.
+                if not(isempty(o.T.var.(eqname)))
+                    % If the variable eqname is referenced in another equation, it must be converted to an exogenous variable.
+                    o.varexo = [o.varexo; o.var(ismember(o.var(:,modBuilder.COL_NAME), eqname),:)];
+                    o.T.varexo.(eqname) = o.T.var.(eqname);
+                    o.T.var = rmfield(o.T.var, eqname);
+                end
             end
             o.var(ismember(o.var(:,modBuilder.COL_NAME), eqname),:) = [];
             o.updatesymboltables();
@@ -1182,14 +1242,71 @@ classdef modBuilder<handle
         end
 
         function o = updatesymboltables(o)
-        % Update fields under o.T. These fields map symbols (parameter, endogenous and exogenous variables) with equations.
-        % See private method updatesymboltable
+        % Update fields under o.T using optimized single-pass algorithm
+        %
+        % INPUTS:
+        % - o   [modBuilder]
+        %
+        % OUTPUTS:
+        % - o   [modBuilder]   updated object with populated symbol tables
+        %
+        % REMARKS:
+        % - OPTIMIZED VERSION: O(n×m) complexity instead of O(n²)
+        % - Single pass through equations populates all symbol types
+        % - Uses containers.Map for O(1) symbol type lookups
+        % - Significantly faster for large models (100+ equations)
+
+            % Initialize all symbol tables
             o.T.params = struct();
             o.T.varexo = struct();
             o.T.var = struct();
-            o.updatesymboltable('parameters');
-            o.updatesymboltable('exogenous');
-            o.updatesymboltable('endogenous');
+
+            % Pre-initialize fields for all known symbols (O(n))
+            for i=1:size(o.params, 1)
+                o.T.params.(o.params{i, modBuilder.COL_NAME}) = cell(1, 0);
+            end
+            for i=1:size(o.varexo, 1)
+                o.T.varexo.(o.varexo{i, modBuilder.COL_NAME}) = cell(1, 0);
+            end
+            % For endogenous variables, initialize with the variable itself (its own equation)
+            for i=1:size(o.var, 1)
+                o.T.var.(o.var{i, modBuilder.COL_NAME}) = o.var(i, modBuilder.COL_NAME);
+            end
+
+            % Update symbol map for O(1) lookups
+            o = o.update_symbol_map();
+
+            % Single pass through equations (O(n_equations × avg_symbols))
+            for j=1:size(o.equations, 1)
+                eqname = o.equations{j, modBuilder.EQ_COL_NAME};
+                symbols = o.T.equations.(eqname);
+
+                % For each symbol in equation, determine its type and add equation reference
+                for k=1:length(symbols)
+                    sym = symbols{k};
+
+                    % O(1) lookup instead of O(n) ismember
+                    if o.symbol_map.isKey(sym)
+                        sym_info = o.symbol_map(sym);
+                        switch sym_info.type
+                          case 'parameter'
+                            o.T.params.(sym){end+1} = eqname;
+                          case 'exogenous'
+                            o.T.varexo.(sym){end+1} = eqname;
+                          case 'endogenous'
+                            o.T.var.(sym){end+1} = eqname;
+                        end
+                    end
+                    % Note: symbols not in symbol_map are ignored (could be untyped)
+                end
+            end
+
+            % Ensure unique entries for endogenous variables
+            % (Parameters and exogenous are already unique since each appears once per equation)
+            var_names = fieldnames(o.T.var);
+            for i=1:length(var_names)
+                o.T.var.(var_names{i}) = unique(o.T.var.(var_names{i}));
+            end
         end % function
 
         function b = isparameter(o, name)
@@ -1241,7 +1358,7 @@ classdef modBuilder<handle
         end % function
 
         function [type, id] = typeof(o, name)
-        % Return the type of a symbol.
+        % Return the type of a symbol (optimized with O(1) lookup when symbol_map available)
         %
         % INPUTS:
         % - o        [modBuilder]
@@ -1249,7 +1366,33 @@ classdef modBuilder<handle
         %
         % OUTPUTS:
         % - type     [char]            1×m array, type of the symbol
-        % - id       [logical]         p×1 array with only one true element, targeting the symbol in o.{params,varexo,var}
+        % - id       [logical or integer]  Position of symbol in respective array
+        %
+        % REMARKS:
+        % - Uses O(1) hash map lookup when symbol_map is available
+        % - Falls back to O(n) linear search if symbol_map is not initialized
+        % - Significantly faster for repeated lookups in large models
+
+            % Try O(1) lookup first if symbol_map is available
+            if ~isempty(o.symbol_map) && isa(o.symbol_map, 'containers.Map') && o.symbol_map.isKey(name)
+                sym_info = o.symbol_map(name);
+                type = sym_info.type;
+                % Convert to logical array for backward compatibility
+                switch type
+                  case 'parameter'
+                    id = false(size(o.params, 1), 1);
+                    id(sym_info.idx) = true;
+                  case 'exogenous'
+                    id = false(size(o.varexo, 1), 1);
+                    id(sym_info.idx) = true;
+                  case 'endogenous'
+                    id = false(size(o.var, 1), 1);
+                    id(sym_info.idx) = true;
+                end
+                return
+            end
+
+            % Fallback to O(n) linear search
             id = ismember(o.params(:,modBuilder.COL_NAME), name);
             if any(id)
                 type = 'parameter';
