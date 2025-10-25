@@ -76,6 +76,8 @@ listoftests = [
   'merge/t05.m',
   'merge/t06.m',
   'merge/t07.m',
+  'validation/t01.m',
+  'validation/t02.m',
 ]
 
 listoffailingtests = [

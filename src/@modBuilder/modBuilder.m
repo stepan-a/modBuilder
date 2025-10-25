@@ -493,7 +493,51 @@ classdef modBuilder<handle
 
             if ~ismember(type, modBuilder.VALID_TYPES)
                 error('Unknown type (%s). Valid types are: %s', ...
-                      type, strjoin(modBuilder.VALID_TYPES, ', '));
+                      type, strjoin(modBuilder.VALID_TYPES, ', '))
+            end
+        end
+
+        function validate_equation_syntax(equation)
+        % Validate equation string syntax for common errors
+        %
+        % INPUTS:
+        % - equation   [char]   Equation string to validate
+        %
+        % OUTPUTS:
+        % None (throws error if issues found)
+        %
+        % REMARKS:
+        % - Checks for balanced parentheses (error if unbalanced)
+        % - Checks for invalid operators: ==, ./, ++, --
+        % - Called automatically by add() and change() methods
+        % - Can be called by users to validate equations before use
+        %
+        % EXAMPLE:
+        % modBuilder.validate_equation_syntax('y = a*y(-1) + b')      % OK
+        % modBuilder.validate_equation_syntax('y = a*(y(-1) + b')     % Error: unbalanced parentheses
+        % modBuilder.validate_equation_syntax('y == a*y(-1)')         % Error: contains ==
+
+            % Check balanced parentheses
+            if sum(equation == '(') ~= sum(equation == ')')
+                error('Equation has unbalanced parentheses: "%s".', equation)
+            end
+
+            % Check for invalid equality operator
+            if contains(equation, '==')
+                error('Equation contains "==". Use "=" for assignment. Equation: "%s"', equation)
+            end
+
+            % Check for element-wise division (likely unintended)
+            if contains(equation, './')
+                error('Equation contains "./". Element-wise division is not allowed. Use "/" instead. Equation: "%s"', equation)
+            end
+
+            % Warn about potentially unintended operators
+            if contains(equation, '++')
+                warning('Equation contains "++". This may be unintended. Equation: "%s"', equation)
+            end
+            if contains(equation, '--')
+                warning('Equation contains "--". This may be unintended. Equation: "%s"', equation)
             end
         end
 
@@ -1066,6 +1110,11 @@ classdef modBuilder<handle
         % - Updates the symbol table T.equations
         % - Creates equation tag with 'name' field
         % - If varname was previously exogenous, it becomes endogenous
+        % - Validates equation syntax (parentheses balance, no ==, no ./, etc.)
+
+            % Validate equation syntax
+            modBuilder.validate_equation_syntax(equation)
+
             if any(ismember(o.equations(:,modBuilder.EQ_COL_NAME), varname))
                 error('Variable "%s" already has an equation. Use the change method if you really want to redefine the equation for "%s".', varname, varname)
             end
@@ -1882,10 +1931,15 @@ classdef modBuilder<handle
         %
         % REMARKS:
         % - Raises error if varname has no associated equation
+        % - Validates equation syntax (parentheses balance, no ==, no ./, etc.)
         % - Extracts and validates symbols from the new equation
         % - Updates symbol tables automatically
         % - Removes parameters/exogenous variables that no longer appear in any equation
         % - Warns if new equation introduces untyped symbols
+
+            % Validate equation syntax
+            modBuilder.validate_equation_syntax(equation)
+
             warning('off','backtrace')
             ide = ismember(o.equations(:,modBuilder.EQ_COL_NAME), varname);
             if not(any(ide))
@@ -2061,6 +2115,8 @@ classdef modBuilder<handle
                 else
                     o.equations(select,modBuilder.EQ_COL_EXPR) = regexprep(o.equations(select,modBuilder.EQ_COL_EXPR), expr1, expr2);
                 end
+                % Validate the modified equation syntax
+                modBuilder.validate_equation_syntax(o.equations{select,modBuilder.EQ_COL_EXPR})
                 Symbols = modBuilder.getsymbols(o.equations{select,modBuilder.EQ_COL_EXPR});
                 newsyms = setdiff(Symbols, o.T.equations.(eqname)); % New symbols in updated equation
                 if ~isempty(newsyms)
