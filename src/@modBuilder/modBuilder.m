@@ -1546,6 +1546,11 @@ classdef modBuilder<handle
             % Validate symbol name for reserved names
             modBuilder.validate_symbol_name(ename, 'endogenous')
 
+            % Check that ename is defined as an endogenous variable (has an equation)
+            if ~ismember(ename, o.equations(:,modBuilder.EQ_COL_NAME))
+                error('Symbol "%s" is not an endogenous variable.', ename)
+            end
+
             if nargin<3 || isempty(evalue)
                 % Set default value
                 evalue = NaN;
