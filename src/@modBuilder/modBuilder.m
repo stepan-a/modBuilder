@@ -158,7 +158,7 @@ classdef modBuilder<handle
         % - o            [modBuilder]
         % - symbol_name  [char]        Symbol name with indices (e.g., 'beta_$1_$2')
         % - symbol_type  [char]        'parameter' or 'exogenous'
-        % - varargin     [cell]        Index values and optional calibration value
+        % - varargin     [cell]        Optional calibration value, optional key/value pairs, then index values
         %
         % OUTPUTS:
         % - o            [modBuilder]  Updated object
@@ -167,53 +167,137 @@ classdef modBuilder<handle
         % - Extracts common implicit loop logic used by parameter() and exogenous() methods
         % - Handles parsing of indices, value extraction, and Cartesian product computation
         % - Recursively calls the appropriate method (parameter or exogenous) for each combination
+        % - Supports optional 'long_name' and 'texname' attributes with index placeholders
+        % - Argument order: [value], ['long_name', val, 'texname', val], index_array_1, ..., index_array_n
 
             % Find all indices in the symbol name (e.g., $1, $2)
             inames = unique(regexp(symbol_name, '\$\d*', 'match'));
             nindices = numel(inames);
 
-            % Extract value if provided
-            if isequal(nargin-3-nindices, 1)
-                value = varargin{1};
-                varargin = varargin(2:end);
-            elseif isequal(nargin-3-nindices, 0)
-                value = NaN;
-            else
-                error('Wrong number of input arguments.')
+            % Parse varargin to extract: value (optional), key/value pairs (optional), then index arrays
+            % The structure is: [value (optional)], ['key', val, ...], index_array_1, ..., index_array_n
+
+            % First, determine if a value is provided
+            % Check if first argument is a scalar numeric value (not a cell or char)
+            value = NaN;  % Default value
+            remaining = varargin;
+            if numel(remaining) > 0 && ~iscell(remaining{1}) && ~ischar(remaining{1})
+                value = remaining{1};
+                remaining = remaining(2:end);
             end
 
-            % Validate number of indices
-            if not(isequal(numel(varargin), nindices))
+            % Parse key/value pairs (long_name, texname) until we hit a cell array (index array)
+            key_val_args = {};
+            idx = 1;
+            while idx <= numel(remaining)
+                if ischar(remaining{idx}) && ismember(remaining{idx}, {'long_name', 'texname'})
+                    % This is a key
+                    if idx + 1 > numel(remaining)
+                        error('Key "%s" provided without a value.', remaining{idx});
+                    end
+                    key_val_args = [key_val_args, remaining{idx}, remaining{idx+1}];
+                    idx = idx + 2;
+                elseif iscell(remaining{idx})
+                    % Start of index arrays
+                    break;
+                else
+                    error('Unexpected argument type in implicit loop. Expected key/value pair or index array.');
+                end
+            end
+
+            % Remaining args are index arrays
+            index_args = remaining(idx:end);
+
+            % Validate number of index arrays
+            if not(isequal(numel(index_args), nindices))
                 error('The number of indices in the "%s" name is %u, but values for %u indices are provided.', ...
-                      symbol_type, nindices, numel(varargin))
+                      symbol_type, nindices, numel(index_args))
+            end
+
+            % Parse optional long_name and texname from key_val_args
+            [long_name, texname] = modBuilder.set_optional_fields(symbol_type, symbol_name, key_val_args{:});
+
+            % Validate that long_name and texname have the same number of indices as symbol_name
+            if ~isempty(long_name)
+                inames_long = unique(regexp(long_name, '\$\d*', 'match'));
+                if numel(inames_long) ~= nindices
+                    error('long_name has %u indices but %s name has %u indices.', ...
+                          numel(inames_long), symbol_type, nindices);
+                end
+            end
+            if ~isempty(texname)
+                inames_tex = unique(regexp(texname, '\$\d*', 'match'));
+                if numel(inames_tex) ~= nindices
+                    error('texname has %u indices but %s name has %u indices.', ...
+                          numel(inames_tex), symbol_type, nindices);
+                end
             end
 
             % Check that indices are uniform (all integers or all strings for each index)
-            [allint, ~] = modBuilder.check_indices_values(varargin);
+            [allint, ~] = modBuilder.check_indices_values(index_args);
 
             % Compute Cartesian product of index values
-            mIndex = table2cell(combinations(varargin{:}));
+            mIndex = table2cell(combinations(index_args{:}));
 
             % Prepare template for sprintf (replace $1, $2, etc. with %u or %s)
-            tmp = symbol_name;
+            tmp_name = symbol_name;
+            tmp_long_name = long_name;  % May be empty
+            tmp_texname = texname;      % May be empty
+
+            % Escape backslashes for sprintf (\ becomes \\) in texname and long_name
+            if ~isempty(long_name)
+                tmp_long_name = strrep(tmp_long_name, '\', '\\');
+            end
+            if ~isempty(texname)
+                tmp_texname = strrep(tmp_texname, '\', '\\');
+            end
+
             for i=nindices:-1:1
                 if allint(i)
-                    tmp = strrep(tmp, sprintf('$%u',i), '%u');
+                    tmp_name = strrep(tmp_name, sprintf('$%u',i), '%u');
+                    if ~isempty(long_name)
+                        tmp_long_name = strrep(tmp_long_name, sprintf('$%u',i), '%u');
+                    end
+                    if ~isempty(texname)
+                        tmp_texname = strrep(tmp_texname, sprintf('$%u',i), '%u');
+                    end
                 else
-                    tmp = strrep(tmp, sprintf('$%u',i), '%s');
+                    tmp_name = strrep(tmp_name, sprintf('$%u',i), '%s');
+                    if ~isempty(long_name)
+                        tmp_long_name = strrep(tmp_long_name, sprintf('$%u',i), '%s');
+                    end
+                    if ~isempty(texname)
+                        tmp_texname = strrep(tmp_texname, sprintf('$%u',i), '%s');
+                    end
                 end
             end
 
             % Create symbols for all combinations
             for i=1:size(mIndex, 1)
                 id = mIndex(i,:);
-                name = sprintf(tmp, id{:});
+                name = sprintf(tmp_name, id{:});
+
+                % Build arguments for recursive call
+                call_args = {name, value};
+
+                % Add expanded long_name if provided
+                if ~isempty(long_name)
+                    expanded_long_name = sprintf(tmp_long_name, id{:});
+                    call_args = [call_args, {'long_name', expanded_long_name}];
+                end
+
+                % Add expanded texname if provided
+                if ~isempty(texname)
+                    expanded_texname = sprintf(tmp_texname, id{:});
+                    call_args = [call_args, {'texname', expanded_texname}];
+                end
+
                 % Call the specific method recursively
                 switch symbol_type
                     case 'parameter'
-                        o = o.parameter(name, value);
+                        o = o.parameter(call_args{:});
                     case 'exogenous'
-                        o = o.exogenous(name, value);
+                        o = o.exogenous(call_args{:});
                     otherwise
                         error('Unsupported symbol type: "%s".', symbol_type)
                 end
@@ -1237,15 +1321,17 @@ classdef modBuilder<handle
         % [1] If symbol pname is known as an exogenous variable, it is converted to a parameter. If pvalue is not NaN, pname is set
         %     equal to pvalue, otherwise the parameter is calibrated with the value of the exogeous variable.
         % [2] Optional arguments in varargin must come by key/value pairs. Allowed keys are 'long_name' and 'texname'.
-        % [3] If pname contains indices (e.g. 'beta_$1_$2'), then parameters are defined for all combinations of values provided in
-        %     varargin as cell arrays of index values.
+        % [3] If pname contains indices (e.g. 'beta_$1_$2'), then parameters are defined for all combinations of values provided
+        %     as cell arrays of index values at the end of varargin.
         % [4] If pname contains indices, pvalue can be provided as the first argument in varargin. If pvalue is not provided, the parameters
         %     are created with default value NaN.
-        % [5] If implicit loops are used (pname contains indices), then the number of index value sets provided in varargin must match
-        %     the number of indices in pname.
-        % [6] If implicit loops are used (pname contains indices), then all values provided for a given index must be of the same type
+        % [5] If implicit loops are used (pname contains indices), optional attributes (long_name, texname) should be provided as
+        %     key/value pairs before the index value arrays.
+        % [6] If implicit loops are used (pname contains indices), the number of index value arrays must match the number of indices in pname.
+        % [7] If implicit loops are used (pname contains indices), all values provided for a given index must be of the same type
         %     (all char or all integer).
-        % [7] If implicit loops are used (pname contains indices), then optional attributes (long_name, texname) cannot be provided.
+        % [8] If implicit loops are used with long_name or texname, these must contain the same number of index placeholders ($1, $2, etc.)
+        %     as the parameter name. The placeholders will be expanded for each combination.
         %
         % EXAMPLES:
         % m = modBuilder();
@@ -1263,6 +1349,19 @@ classdef modBuilder<handle
         % % Implicit loops - create multiple parameters
         % m.parameter('gamma_$1', 0.5, {1, 2, 3});
         % % Creates: gamma_1=0.5, gamma_2=0.5, gamma_3=0.5
+        %
+        % % Implicit loops with TeX names (note: texname comes before index array)
+        % m.parameter('alpha_$1', 0.33, 'texname', '\alpha_{$1}', {1, 2, 3});
+        % % Creates: alpha_1, alpha_2, alpha_3 with TeX names \alpha_{1}, \alpha_{2}, \alpha_{3}
+        %
+        % % Multiple indices with TeX formatting (note: key/value pairs before index arrays)
+        % Countries = {'FR', 'DE', 'IT'};
+        % Sectors = {1, 2};
+        % m.parameter('rho_$1_$2', 0.9, ...
+        %             'long_name', 'Persistence for $1 sector $2', ...
+        %             'texname', '\rho_{$1,$2}', ...
+        %             Countries, Sectors);
+        % % Creates: rho_FR_1, rho_FR_2, rho_DE_1, ... with appropriate TeX names
             % Validate that pname is a non-empty row char array
             validateattributes(pname, {'char'}, {'nonempty', 'row'}, 'parameter', 'pname');
 
@@ -1353,6 +1452,19 @@ classdef modBuilder<handle
         %
         % % With long name and TeX name
         % m.exogenous('e', 0, 'long_name', 'Technology shock', 'texname', '\varepsilon');
+        %
+        % % Implicit loops with TeX names (note: texname comes before index array)
+        % m.exogenous('A_$1', 1.0, 'texname', 'A^{$1}', {'FR', 'DE', 'IT'});
+        % % Creates: A_FR, A_DE, A_IT with TeX names A^{FR}, A^{DE}, A^{IT}
+        %
+        % % Multiple indices with TeX formatting (note: key/value pairs before index arrays)
+        % Countries = {'FR', 'DE'};
+        % Sectors = {1, 2, 3};
+        % m.exogenous('K_$1_$2', 1.0, ...
+        %             'long_name', 'Capital in $1 sector $2', ...
+        %             'texname', 'K^{$1}_{$2}', ...
+        %             Countries, Sectors);
+        % % Creates: K_FR_1, K_FR_2, K_FR_3, K_DE_1, ... with appropriate TeX names
             % Validate that xname is a non-empty row char array
             validateattributes(xname, {'char'}, {'nonempty', 'row'}, 'exogenous', 'xname');
 
