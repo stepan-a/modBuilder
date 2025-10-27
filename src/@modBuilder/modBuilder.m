@@ -1648,19 +1648,23 @@ classdef modBuilder<handle
             end
         end % function
 
-        function o = remove(o, eqname)
+        function o = remove(o, eqname, varargin)
         % Remove an equation from the model, remove one endogenous variable, remove unecessary parameters and exogenous variables
         %
         % INPUTS:
         % - o          [modBuilder]
         % - eqname     [char]            1×n array, name of an equation (or endogenous variable associated to an equation)
+        % - ...
         %
         % OUTPUTS:
-        % - o          [char]            updated object
+        % - o          [modBuilder]      updated object
         %
         % REMARKS:
-        % - Clears symbol_map to force typeof() to use linear search during removals
-        % - This prevents stale index references after deletions
+        % [1] Clears symbol_map to force typeof() to use linear search during removals
+        % [2] This prevents stale index references after deletions
+        % [3] If eqname contains indices (e.g. 'Y_$1_$2'), then equations are removed for all combinations of values provided
+        %     as cell arrays of index values in varargin.
+        % [4] If implicit loops are used (eqname contains indices), the number of index value arrays must match the number of indices in eqname.
         %
         % EXAMPLES:
         % m = modBuilder();
@@ -1670,6 +1674,63 @@ classdef modBuilder<handle
         %
         % % Remove the consumption equation
         % m.remove('c');  % Also removes h if it doesn't appear elsewhere
+        %
+        % % Implicit loops - remove multiple equations
+        % m2 = modBuilder();
+        % m2.add('Y_$1', 'Y_$1 = A_$1*K_$1', {1, 2, 3});
+        % m2.parameter('A_$1', 1.0, {1, 2, 3});
+        % m2.exogenous('K_$1', 1.0, {1, 2, 3});
+        % m2.remove('Y_$1', {1, 3});  % Removes Y_1 and Y_3, keeps Y_2
+        %
+        % % Multiple indices
+        % Countries = {'FR', 'DE'};
+        % Sectors = {1, 2};
+        % m3 = modBuilder();
+        % m3.add('Y_$1_$2', 'Y_$1_$2 = A_$1_$2*K_$1_$2', Countries, Sectors);
+        % m3.parameter('A_$1_$2', 1.0, Countries, Sectors);
+        % m3.exogenous('K_$1_$2', 1.0, Countries, Sectors);
+        % m3.remove('Y_$1_$2', {'FR'}, {1, 2});  % Removes Y_FR_1 and Y_FR_2
+
+            % Validate that eqname is a non-empty row char array
+            validateattributes(eqname, {'char'}, {'nonempty', 'row'}, 'remove', 'eqname');
+
+            % Check if equation name contains implicit loop indices (e.g., 'Y_$1_$2')
+            inames = unique(regexp(eqname, '\$\d*', 'match'));
+            if not(isempty(inames))
+                % Implicit loop: expand and remove all matching equations
+                nindices = numel(inames);
+
+                % Validate number of index arrays
+                if not(isequal(numel(varargin), nindices))
+                    error('The number of indices in the equation name is %u, but values for %u indices are provided.', ...
+                          nindices, numel(varargin))
+                end
+
+                % Check that indices are uniform (all integers or all strings for each index)
+                [allint, ~] = modBuilder.check_indices_values(varargin);
+
+                % Compute Cartesian product of index values
+                mIndex = table2cell(combinations(varargin{:}));
+
+                % Prepare template for sprintf (replace $1, $2, etc. with %u or %s)
+                tmp_name = eqname;
+                for i=nindices:-1:1
+                    if allint(i)
+                        tmp_name = strrep(tmp_name, sprintf('$%u',i), '%u');
+                    else
+                        tmp_name = strrep(tmp_name, sprintf('$%u',i), '%s');
+                    end
+                end
+
+                % Remove equations for all combinations
+                for i=1:size(mIndex, 1)
+                    id = mIndex(i,:);
+                    name = sprintf(tmp_name, id{:});
+                    % Recursively call remove for each expanded name
+                    o = o.remove(name);
+                end
+                return;
+            end
 
             % Clear symbol_map so typeof() uses linear search (safe during deletions)
             o.symbol_map = [];

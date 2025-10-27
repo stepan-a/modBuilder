@@ -70,6 +70,7 @@ listoftests = [
   'implicit-loops/t04.m',
   'implicit-loops/t05.m',
   'implicit-loops/t06.m',
+  'implicit-loops/t07.m',
   'load-mod-file/rbc1.m',
   'load-mod-file/rbc2.m',
   'merge/t01.m',
