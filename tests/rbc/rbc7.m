@@ -23,8 +23,6 @@ model.exogenous('b', 0);
 % Redefine a as a parameter
 model.parameter('a', .1);
 
-model.updatesymboltables();
-
 if not(model.size('exogenous')==1)
     error('Wrong number of exogenous variables.')
 end
@@ -39,8 +37,6 @@ end
 
 model.exogenous('a', 0);
 
-model.updatesymboltables();
-
 if not(model.size('exogenous')==2)
     error('Wrong number of exogenous variables.')
 end
@@ -52,5 +48,3 @@ end
 if not(model.varexo{2,1}=='a') || not(model.varexo{2,2}==0)
     error('Conversion from parameter to exogenous variable is not working properly.')
 end
-
-model.updatesymboltables();

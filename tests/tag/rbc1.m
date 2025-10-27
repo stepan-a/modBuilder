@@ -29,8 +29,6 @@ end
 model.exogenous('e', 0);
 model.exogenous('u', 0);
 
-model.updatesymboltables();
-
 try
     model.tag('a','name','toto'); % Should raise an error because users are not allowed to change the name of an equation.
     error('Wrong test result. Call to tag should raise an error')

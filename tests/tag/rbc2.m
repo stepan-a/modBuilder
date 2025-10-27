@@ -29,8 +29,6 @@ end
 model.exogenous('e', 0);
 model.exogenous('u', 0);
 
-model.updatesymboltables();
-
 model.tag('a', 'toto', 'Exogenous variable');
 model.tag('b', 'toto', 'Exogenous variable');
 
