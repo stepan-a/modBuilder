@@ -1327,20 +1327,20 @@ classdef modBuilder<handle
         % - o         [modBuilder]   updated object
         %
         % REMARKS:
-        % [1] If symbol pname is known as an exogenous variable, it is converted to a parameter. If pvalue is not NaN, pname is set
-        %     equal to pvalue, otherwise the parameter is calibrated with the value of the exogeous variable.
-        % [2] Optional arguments in varargin must come by key/value pairs. Allowed keys are 'long_name' and 'texname'.
-        % [3] If pname contains indices (e.g. 'beta_$1_$2'), then parameters are defined for all combinations of values provided
-        %     as cell arrays of index values at the end of varargin.
-        % [4] If pname contains indices, pvalue can be provided as the first argument in varargin. If pvalue is not provided, the parameters
-        %     are created with default value NaN.
-        % [5] If implicit loops are used (pname contains indices), optional attributes (long_name, texname) should be provided as
-        %     key/value pairs before the index value arrays.
-        % [6] If implicit loops are used (pname contains indices), the number of index value arrays must match the number of indices in pname.
-        % [7] If implicit loops are used (pname contains indices), all values provided for a given index must be of the same type
-        %     (all char or all integer).
-        % [8] If implicit loops are used with long_name or texname, these must contain the same number of index placeholders ($1, $2, etc.)
-        %     as the parameter name. The placeholders will be expanded for each combination.
+        % - If symbol pname is known as an exogenous variable, it is converted to a parameter. If pvalue is not NaN, pname is set
+        %   equal to pvalue, otherwise the parameter is calibrated with the value of the exogeous variable.
+        % - Optional arguments in varargin must come by key/value pairs. Allowed keys are 'long_name' and 'texname'.
+        % - If pname contains indices (e.g. 'beta_$1_$2'), then parameters are defined for all combinations of values provided
+        %   as cell arrays of index values at the end of varargin.
+        % - If pname contains indices, pvalue can be provided as the first argument in varargin. If pvalue is not provided, the parameters
+        %   are created with default value NaN.
+        % - If implicit loops are used (pname contains indices), optional attributes (long_name, texname) should be provided as
+        %   key/value pairs before the index value arrays.
+        % - If implicit loops are used (pname contains indices), the number of index value arrays must match the number of indices in pname.
+        % - If implicit loops are used (pname contains indices), all values provided for a given index must be of the same type
+        %   (all char or all integer).
+        % - If implicit loops are used with long_name or texname, these must contain the same number of index placeholders ($1, $2, etc.)
+        %   as the parameter name. The placeholders will be expanded for each combination.
         %
         % EXAMPLES:
         % m = modBuilder();
@@ -1548,18 +1548,18 @@ classdef modBuilder<handle
         % - o         [modBuilder]   updated object
         %
         % REMARKS:
-        % [1] Optional arguments in varargin must come by key/value pairs. Allowed keys are 'long_name' and 'texname'.
-        % [2] If ename contains indices (e.g. 'y_$1_$2'), then endogenous variables are set for all combinations of values provided
-        %     as cell arrays of index values at the end of varargin.
-        % [3] If ename contains indices, evalue can be provided as the second argument. If evalue is not provided or is empty,
-        %     existing values are preserved (or NaN if not set).
-        % [4] If implicit loops are used (ename contains indices), optional attributes (long_name, texname) should be provided as
-        %     key/value pairs before the index value arrays.
-        % [5] If implicit loops are used (ename contains indices), the number of index value arrays must match the number of indices in ename.
-        % [6] If implicit loops are used (ename contains indices), all values provided for a given index must be of the same type
-        %     (all char or all integer).
-        % [7] If implicit loops are used with long_name or texname, these must contain the same number of index placeholders ($1, $2, etc.)
-        %     as the endogenous variable name. The placeholders will be expanded for each combination.
+        % - Optional arguments in varargin must come by key/value pairs. Allowed keys are 'long_name' and 'texname'.
+        % - If ename contains indices (e.g. 'y_$1_$2'), then endogenous variables are set for all combinations of values provided
+        %   as cell arrays of index values at the end of varargin.
+        % - If ename contains indices, evalue can be provided as the second argument. If evalue is not provided or is empty,
+        %   existing values are preserved (or NaN if not set).
+        % - If implicit loops are used (ename contains indices), optional attributes (long_name, texname) should be provided as
+        %   key/value pairs before the index value arrays.
+        % - If implicit loops are used (ename contains indices), the number of index value arrays must match the number of indices in ename.
+        % - If implicit loops are used (ename contains indices), all values provided for a given index must be of the same type
+        %   (all char or all integer).
+        % - If implicit loops are used with long_name or texname, these must contain the same number of index placeholders ($1, $2, etc.)
+        %   as the endogenous variable name. The placeholders will be expanded for each combination.
         %
         % EXAMPLES:
         % m = modBuilder();
