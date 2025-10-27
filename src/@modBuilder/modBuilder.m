@@ -1552,9 +1552,15 @@ classdef modBuilder<handle
             end
 
             if nargin<3 || isempty(evalue)
-                % Set default value
-                evalue = NaN;
+                if isempty(o.var(ismember(o.var(:,modBuilder.COL_NAME), ename), modBuilder.COL_VALUE))
+                    % Set default value
+                    evalue = NaN;
+                else
+                    % Endogenous variable already has a value (long run level), keep it.
+                    evalue = o.var{ismember(o.var(:,modBuilder.COL_NAME), ename), modBuilder.COL_VALUE};
+                end
             end
+
             [long_name, texname] = modBuilder.set_optional_fields('endogenous', ename, varargin{:});
             ide = ismember(o.var(:,modBuilder.COL_NAME), ename);
             if any(ide) % The endogenous variable is already defined
