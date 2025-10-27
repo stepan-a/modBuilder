@@ -1927,12 +1927,10 @@ classdef modBuilder<handle
             % Single pass through equations (O(n_equations × avg_symbols))
             for j=1:size(o.equations, 1)
                 eqname = o.equations{j, modBuilder.EQ_COL_NAME};
-                symbols = o.T.equations.(eqname);
-
+                Symbols = o.T.equations.(eqname);
                 % For each symbol in equation, determine its type and add equation reference
-                for k=1:length(symbols)
-                    sym = symbols{k};
-
+                for k=1:length(Symbols)
+                    sym = Symbols{k};
                     % O(1) lookup instead of O(n) ismember
                     if o.symbol_map.isKey(sym)
                         sym_info = o.symbol_map(sym);
