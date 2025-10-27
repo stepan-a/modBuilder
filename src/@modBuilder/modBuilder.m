@@ -157,16 +157,16 @@ classdef modBuilder<handle
         % INPUTS:
         % - o            [modBuilder]
         % - symbol_name  [char]        Symbol name with indices (e.g., 'beta_$1_$2')
-        % - symbol_type  [char]        'parameter' or 'exogenous'
+        % - symbol_type  [char]        'parameter', 'exogenous', or 'endogenous'
         % - varargin     [cell]        Optional calibration value, optional key/value pairs, then index values
         %
         % OUTPUTS:
         % - o            [modBuilder]  Updated object
         %
         % REMARKS:
-        % - Extracts common implicit loop logic used by parameter() and exogenous() methods
+        % - Extracts common implicit loop logic used by parameter(), exogenous(), and endogenous() methods
         % - Handles parsing of indices, value extraction, and Cartesian product computation
-        % - Recursively calls the appropriate method (parameter or exogenous) for each combination
+        % - Recursively calls the appropriate method (parameter, exogenous, or endogenous) for each combination
         % - Supports optional 'long_name' and 'texname' attributes with index placeholders
         % - Argument order: [value], ['long_name', val, 'texname', val], index_array_1, ..., index_array_n
 
@@ -179,10 +179,17 @@ classdef modBuilder<handle
 
             % First, determine if a value is provided
             % Check if first argument is a scalar numeric value (not a cell or char)
-            value = NaN;  % Default value
+            % For endogenous, default to [] to preserve existing values; for others use NaN
+            if strcmp(symbol_type, 'endogenous')
+                value = [];  % Empty means preserve existing value
+            else
+                value = NaN;  % Default value for parameter/exogenous
+            end
+            value_provided = false;
             remaining = varargin;
             if numel(remaining) > 0 && ~iscell(remaining{1}) && ~ischar(remaining{1})
                 value = remaining{1};
+                value_provided = true;
                 remaining = remaining(2:end);
             end
 
@@ -298,6 +305,8 @@ classdef modBuilder<handle
                         o = o.parameter(call_args{:});
                     case 'exogenous'
                         o = o.exogenous(call_args{:});
+                    case 'endogenous'
+                        o = o.endogenous(call_args{:});
                     otherwise
                         error('Unsupported symbol type: "%s".', symbol_type)
                 end
@@ -1539,46 +1548,106 @@ classdef modBuilder<handle
         % - o         [modBuilder]   updated object
         %
         % REMARKS:
-        % - Optional arguments in varargin must come by key/value pairs. Allowed keys are 'long_name' and 'texname'.
+        % [1] Optional arguments in varargin must come by key/value pairs. Allowed keys are 'long_name' and 'texname'.
+        % [2] If ename contains indices (e.g. 'y_$1_$2'), then endogenous variables are set for all combinations of values provided
+        %     as cell arrays of index values at the end of varargin.
+        % [3] If ename contains indices, evalue can be provided as the second argument. If evalue is not provided or is empty,
+        %     existing values are preserved (or NaN if not set).
+        % [4] If implicit loops are used (ename contains indices), optional attributes (long_name, texname) should be provided as
+        %     key/value pairs before the index value arrays.
+        % [5] If implicit loops are used (ename contains indices), the number of index value arrays must match the number of indices in ename.
+        % [6] If implicit loops are used (ename contains indices), all values provided for a given index must be of the same type
+        %     (all char or all integer).
+        % [7] If implicit loops are used with long_name or texname, these must contain the same number of index placeholders ($1, $2, etc.)
+        %     as the endogenous variable name. The placeholders will be expanded for each combination.
+        %
+        % EXAMPLES:
+        % m = modBuilder();
+        % m.add('c', 'c = alpha*k');
+        %
+        % % Set value for endogenous variable
+        % m.endogenous('c', 1.5);
+        %
+        % % With long name and TeX name
+        % m.endogenous('c', 1.5, 'long_name', 'Consumption', 'texname', 'C');
+        %
+        % % Implicit loops - set values for multiple endogenous variables
+        % m.add('Y_$1', 'Y_$1 = A_$1*K_$1', {1, 2, 3});
+        % m.exogenous('A_$1', 1.0, {1, 2, 3});
+        % m.exogenous('K_$1', 1.0, {1, 2, 3});
+        % m.endogenous('Y_$1', 2.0, {1, 2, 3});
+        % % Sets: Y_1=2.0, Y_2=2.0, Y_3=2.0
+        %
+        % % Implicit loops with TeX names (note: texname comes before index array)
+        % m.add('C_$1', 'C_$1 = Y_$1 - I_$1', {'FR', 'DE', 'IT'});
+        % m.exogenous('I_$1', 0.2, {'FR', 'DE', 'IT'});
+        % m.endogenous('Y_$1', 1.0, {'FR', 'DE', 'IT'});
+        % m.endogenous('C_$1', 0.8, 'texname', 'C^{$1}', {'FR', 'DE', 'IT'});
+        % % Creates: C_FR, C_DE, C_IT with TeX names C^{FR}, C^{DE}, C^{IT}
+        %
+        % % Multiple indices with TeX formatting (note: key/value pairs before index arrays)
+        % Countries = {'FR', 'DE'};
+        % Sectors = {1, 2};
+        % m.add('Y_$1_$2', 'Y_$1_$2 = A_$1_$2*K_$1_$2', Countries, Sectors);
+        % m.exogenous('A_$1_$2', 1.0, Countries, Sectors);
+        % m.exogenous('K_$1_$2', 1.0, Countries, Sectors);
+        % m.endogenous('Y_$1_$2', 1.0, ...
+        %              'long_name', 'Output for $1 sector $2', ...
+        %              'texname', 'Y_{$1,$2}', ...
+        %              Countries, Sectors);
+        % % Sets values and attributes for: Y_FR_1, Y_FR_2, Y_DE_1, Y_DE_2
             % Validate that ename is a non-empty row char array
             validateattributes(ename, {'char'}, {'nonempty', 'row'}, 'endogenous', 'ename');
 
-            % Validate symbol name for reserved names
-            modBuilder.validate_symbol_name(ename, 'endogenous')
-
-            % Check that ename is defined as an endogenous variable (has an equation)
-            if ~ismember(ename, o.equations(:,modBuilder.EQ_COL_NAME))
-                error('Symbol "%s" is not an endogenous variable.', ename)
-            end
-
-            if nargin<3 || isempty(evalue)
-                if isempty(o.var(ismember(o.var(:,modBuilder.COL_NAME), ename), modBuilder.COL_VALUE))
-                    % Set default value
-                    evalue = NaN;
+            % Check if endogenous name contains implicit loop indices (e.g., 'y_$1_$2')
+            inames = unique(regexp(ename, '\$\d*', 'match'));
+            if not(isempty(inames))
+                % Delegate to common implicit loop handler
+                if nargin < 3 || isempty(evalue)
+                    % No value provided
+                    o = o.handle_implicit_loops(ename, 'endogenous', varargin{:});
                 else
-                    % Endogenous variable already has a value (long run level), keep it.
-                    evalue = o.var{ismember(o.var(:,modBuilder.COL_NAME), ename), modBuilder.COL_VALUE};
-                end
-            end
-
-            [long_name, texname] = modBuilder.set_optional_fields('endogenous', ename, varargin{:});
-            ide = ismember(o.var(:,modBuilder.COL_NAME), ename);
-            if any(ide) % The endogenous variable is already defined
-                o.var{ide,modBuilder.COL_VALUE} = evalue;
-                if not(isempty(long_name))
-                    o.var{ide,modBuilder.COL_LONG_NAME} = long_name;
-                end
-                if not(isempty(texname))
-                    o.var{ide,modBuilder.COL_TEX_NAME} = texname;
+                    % Value provided
+                    o = o.handle_implicit_loops(ename, 'endogenous', evalue, varargin{:});
                 end
             else
-                o.var{length(ide)+1,modBuilder.COL_NAME} = ename;
-                o.var{length(ide)+1,modBuilder.COL_VALUE} = evalue;
-                o.var{length(ide)+1,modBuilder.COL_LONG_NAME} = long_name;
-                o.var{length(ide)+1,modBuilder.COL_TEX_NAME} = texname;
+                % Validate symbol name for reserved names (only for non-template names)
+                modBuilder.validate_symbol_name(ename, 'endogenous')
+
+                % Check that ename is defined as an endogenous variable (has an equation)
+                if ~ismember(ename, o.equations(:,modBuilder.EQ_COL_NAME))
+                    error('Symbol "%s" is not an endogenous variable.', ename)
+                end
+
+                if nargin<3 || isempty(evalue)
+                    if isempty(o.var(ismember(o.var(:,modBuilder.COL_NAME), ename), modBuilder.COL_VALUE))
+                        % Set default value
+                        evalue = NaN;
+                    else
+                        % Endogenous variable already has a value (long run level), keep it.
+                        evalue = o.var{ismember(o.var(:,modBuilder.COL_NAME), ename), modBuilder.COL_VALUE};
+                    end
+                end
+
+                [long_name, texname] = modBuilder.set_optional_fields('endogenous', ename, varargin{:});
+                ide = ismember(o.var(:,modBuilder.COL_NAME), ename);
+                if any(ide) % The endogenous variable is already defined
+                    o.var{ide,modBuilder.COL_VALUE} = evalue;
+                    if not(isempty(long_name))
+                        o.var{ide,modBuilder.COL_LONG_NAME} = long_name;
+                    end
+                    if not(isempty(texname))
+                        o.var{ide,modBuilder.COL_TEX_NAME} = texname;
+                    end
+                else
+                    o.var{length(ide)+1,modBuilder.COL_NAME} = ename;
+                    o.var{length(ide)+1,modBuilder.COL_VALUE} = evalue;
+                    o.var{length(ide)+1,modBuilder.COL_LONG_NAME} = long_name;
+                    o.var{length(ide)+1,modBuilder.COL_TEX_NAME} = texname;
+                end
+                % Remove ename from the list of untyped symbols
+                o.symbols = setdiff(o.symbols, ename);
             end
-            % Remove ename from the list of untyped symbols
-            o.symbols = setdiff(o.symbols, ename);
         end % function
 
         function o = remove(o, eqname)
