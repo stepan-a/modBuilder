@@ -36,7 +36,6 @@ if not(isempty(model.symbols))
     error()
 end
 
-model.updatesymboltables();
 
 model.remove('a');
 

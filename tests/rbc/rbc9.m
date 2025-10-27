@@ -32,7 +32,6 @@ end
 model.exogenous('e', 0);
 model.exogenous('u', 0);
 
-model.updatesymboltables();
 
 %
 % Create two models. The first one for output, consumption, hours and physical capital stock, where a and b are treated

@@ -6,7 +6,6 @@ Sectors = num2cell(1:5);
 model.add('Y_$1', 'Y_$1 = A_$1*K_$1', Sectors);
 model.parameter('A_$1', 1.0, Sectors);
 model.exogenous('K_$1', 1.0, Sectors);
-model.updatesymboltables();
 
 if ~isequal(model.size('endogenous'), 5)
     error('Initial setup: should have 5 endogenous variables');
@@ -42,7 +41,6 @@ Sectors = num2cell(1:3);
 model.add('Y_$1_$2', 'Y_$1_$2 = A_$1_$2*K_$1_$2', Countries, Sectors);
 model.parameter('A_$1_$2', 1.0, Countries, Sectors);
 model.exogenous('K_$1_$2', 1.0, Countries, Sectors);
-model.updatesymboltables();
 
 if ~isequal(model.size('endogenous'), 9)  % 3 countries × 3 sectors
     error('Initial setup: should have 9 endogenous variables');
@@ -91,7 +89,6 @@ Countries = {'FR', 'DE'};
 model.add('C_$1', 'C_$1 = Y_$1 - I_$1', Countries);
 model.exogenous('Y_$1', 1.0, Countries);
 model.exogenous('I_$1', 0.2, Countries);
-model.updatesymboltables();
 
 if ~isequal(model.size('endogenous'), 2)
     error('Initial setup: should have 2 endogenous variables');
@@ -110,7 +107,6 @@ fprintf('Test 3 passed: Remove all with implicit loop\n');
 model = modBuilder();
 model.add('Y_$1_$2', 'Y_$1_$2 = A_$1_$2', {'FR', 'DE'}, {1, 2});
 model.parameter('A_$1_$2', 1.0, {'FR', 'DE'}, {1, 2});
-model.updatesymboltables();
 
 try
     % Try to remove with wrong number of index arrays (should have 2, providing 1)
@@ -129,7 +125,6 @@ Countries = {'FR', 'DE', 'IT', 'ES'};
 model.add('GDP_$1', 'GDP_$1 = C_$1 + I_$1', Countries);
 model.exogenous('C_$1', 1.0, Countries);
 model.exogenous('I_$1', 0.3, Countries);
-model.updatesymboltables();
 
 if ~isequal(model.size('endogenous'), 4)
     error('Initial setup: should have 4 endogenous variables');

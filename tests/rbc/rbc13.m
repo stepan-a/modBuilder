@@ -29,7 +29,6 @@ end
 model.exogenous('e', 0);
 model.exogenous('u', 0);
 
-model.updatesymboltables();
 
 model.endogenous('a', 0);
 model.endogenous('b', 0);

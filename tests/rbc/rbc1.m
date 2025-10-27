@@ -34,7 +34,6 @@ if not(isempty(model.symbols))
     error()
 end
 
-model.updatesymboltables();
 
 % Test the summary method
 fprintf('Testing summary method:\n');

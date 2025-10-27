@@ -3,7 +3,6 @@
 m = modBuilder();
 m.add('c', 'c = alpha*k');
 m.parameter('alpha', 0.33);
-m.updatesymboltables();
 
 % Rename parameter
 m.rename('alpha', 'beta');

@@ -6,7 +6,6 @@ m.add('y', 'y = c + i');
 m.add('i', 'i = delta*k');
 m.parameter('w', 1.5);
 m.parameter('delta', 0.1);
-m.updatesymboltables();
 
 % Find all equations containing 'c'
 % This will print output to console

@@ -27,7 +27,6 @@ end
 
 model.exogenous('e', 0);
 
-model.updatesymboltables();
 
 eqarp = 'y =';
 for lag=1:6
@@ -37,7 +36,6 @@ eqarp = sprintf('%s e', eqarp);
 
 model.change('y', eqarp);
 
-model.updatesymboltables();
 
 if not(length(model.symbols)==1) || not(isequal(model.symbols{1},'rho6'))
     error('Missing one symbol.')

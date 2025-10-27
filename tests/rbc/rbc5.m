@@ -36,7 +36,6 @@ if not(isempty(model.symbols))
     error()
 end
 
-model.updatesymboltables();
 
 model.rm('a', 'b');
 

@@ -4,7 +4,6 @@ m = modBuilder();
 m.add('c', 'c = alpha*k + epsilon');
 m.parameter('alpha', 0.33);
 m.exogenous('epsilon', 0);
-m.updatesymboltables();
 
 % Check symbol types
 [type, id] = typeof(m, 'alpha');    % Returns 'parameter'

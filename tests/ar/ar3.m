@@ -28,7 +28,6 @@ end
 
 model.exogenous('e', 0);
 
-model.updatesymboltables();
 
 eqarp = 'y =';
 for lag=1:4
@@ -36,11 +35,9 @@ for lag=1:4
 end
 eqarp = sprintf('%s e', eqarp);
 
-model.updatesymboltables();
 
 model.change('y', eqarp);
 
-model.updatesymboltables();
 
 
 if not(isempty(model.symbols))

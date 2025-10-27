@@ -34,7 +34,6 @@ if not(isempty(model.symbols))
     error()
 end
 
-model.updatesymboltables();
 
 if ~strcmp(model.params{1,1}, 'alpha')
     error('Test failed')

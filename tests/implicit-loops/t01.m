@@ -14,4 +14,3 @@ for i=1:numel(Countries)
     end
 end
 
-model.updatesymboltables()

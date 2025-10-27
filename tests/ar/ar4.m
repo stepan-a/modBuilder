@@ -20,11 +20,9 @@ model.parameter('rho1', .3);
 model.parameter('rho2', .8);
 model.parameter('rho3', .1);
 
-model.updatesymboltables();
 
 model.change('y', 'y = rho1*y(-1) + ey');
 
-model.updatesymboltables();
 
 
 if not(isempty(model.symbols))

@@ -15,7 +15,6 @@ model.parameter('rho1', .3);
 model.parameter('rho2', .8);
 model.parameter('rho3', .1);
 
-model.updatesymboltables();
 
 model('rho1') = .2;
 

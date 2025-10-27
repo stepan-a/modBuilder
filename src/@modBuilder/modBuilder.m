@@ -104,6 +104,12 @@ classdef modBuilder<handle
         % Updated automatically by update_symbol_map() after structural changes
         % Provides significant performance improvement over linear search
         symbol_map = []
+
+        % Flag indicating if symbol tables (T) need updating
+        % true = tables are stale and need updating
+        % false = tables are up-to-date
+        % Automatically managed by modification and read methods
+        tables_dirty = false
     end
 
 
@@ -1290,6 +1296,9 @@ classdef modBuilder<handle
             o.symbols = setdiff(o.symbols, o.var(:,modBuilder.COL_NAME));
             o.symbols = setdiff(o.symbols, o.symbols(cellfun(@o.issymbol, o.symbols)));
             o.tags.(varname).name = varname;
+
+            % Mark symbol tables as dirty (need updating)
+            o.tables_dirty = true;
         end % function
 
         function o = tag(o, eqname, tagname, value)
@@ -1418,6 +1427,8 @@ classdef modBuilder<handle
                         if not(isempty(texname))
                             o.params{length(idp)+1,modBuilder.COL_TEX_NAME} = texname;
                         end
+                        % Mark symbol tables as dirty (type conversion)
+                        o.tables_dirty = true;
                     else
                         % Symbol pname has no predefined type.
                         o.params{length(idp)+1,modBuilder.COL_NAME} = pname;
@@ -1521,6 +1532,8 @@ classdef modBuilder<handle
                         if not(isempty(texname))
                             o.varexo{length(idx)+1,modBuilder.COL_TEX_NAME} = texname;
                         end
+                        % Mark symbol tables as dirty (type conversion)
+                        o.tables_dirty = true;
                     else
                         o.varexo{length(idx)+1,modBuilder.COL_NAME} = xname;
                         o.varexo{length(idx)+1,modBuilder.COL_VALUE} = xvalue;
@@ -1694,6 +1707,11 @@ classdef modBuilder<handle
             % Validate that eqname is a non-empty row char array
             validateattributes(eqname, {'char'}, {'nonempty', 'row'}, 'remove', 'eqname');
 
+            % Auto-update symbol tables if needed
+            if o.tables_dirty
+                o = o.updatesymboltables();
+            end
+
             % Check if equation name contains implicit loop indices (e.g., 'Y_$1_$2')
             inames = unique(regexp(eqname, '\$\d*', 'match'));
             if not(isempty(inames))
@@ -1769,7 +1787,9 @@ classdef modBuilder<handle
                 end
             end
             o.var(ismember(o.var(:,modBuilder.COL_NAME), eqname),:) = [];
-            o.updatesymboltables();
+
+            % Mark symbol tables as dirty (need updating)
+            o.tables_dirty = true;
         end % function
 
         function o = rm(o, varargin)
@@ -1817,6 +1837,12 @@ classdef modBuilder<handle
         %
         % % Rename endogenous variable
         % m.rename('c', 'consumption');
+
+            % Auto-update symbol tables if needed
+            if o.tables_dirty
+                o = o.updatesymboltables();
+            end
+
             [type, id] = o.typeof(oldsymbol);
             switch type
               case 'parameter'
@@ -1851,6 +1877,9 @@ classdef modBuilder<handle
                 o.equations{i,modBuilder.EQ_COL_EXPR} = regexprep(o.equations{i,modBuilder.EQ_COL_EXPR}, ['(?<!\w)' oldsymbol  '(?!\w)'], newsymbol);
                 o.T.equations.(o.equations{i,modBuilder.EQ_COL_NAME}) = modBuilder.replaceincell(o.T.equations.(o.equations{i,modBuilder.EQ_COL_NAME}), oldsymbol, newsymbol);
             end
+
+            % Mark symbol tables as dirty (need updating)
+            o.tables_dirty = true;
         end
 
         function o = write(o, basename)
@@ -2014,6 +2043,9 @@ classdef modBuilder<handle
             for i=1:length(var_names)
                 o.T.var.(var_names{i}) = unique(o.T.var.(var_names{i}));
             end
+
+            % Mark tables as clean (up-to-date)
+            o.tables_dirty = false;
         end % function
 
         function b = isparameter(o, name)
@@ -2138,6 +2170,12 @@ classdef modBuilder<handle
         %
         % OUTPUTS:
         % - b         [logical]      scalar
+
+            % Auto-update symbol tables if needed
+            if o.tables_dirty
+                o = o.updatesymboltables();
+            end
+
             if o.isparameter(name)
                 b = length(o.T.params.(name))>1;
             elseif o.isexogenous(name)
@@ -2172,6 +2210,12 @@ classdef modBuilder<handle
         % % Output: Endogenous variable c appears in 2 equations:
         % %         [c]  c = w*h
         % %         [y]  y = c + i
+
+            % Auto-update symbol tables if needed
+            if o.tables_dirty
+                o = o.updatesymboltables();
+            end
+
             if o.isparameter(name)
                 symboltype = 'Parameter';
                 eqnames = o.T.params.(name);
@@ -2335,6 +2379,12 @@ classdef modBuilder<handle
         %
         % OUTPUTS:
         % - o           [modBuilder]    updated object
+
+            % Auto-update symbol tables if needed
+            if o.tables_dirty
+                o = o.updatesymboltables();
+            end
+
             ie = ismember(o.var(:,modBuilder.COL_NAME), varname);
             if not(any(ie))
                 error('"%s" is not a known endogenous variable.', varname)
@@ -2363,6 +2413,9 @@ classdef modBuilder<handle
             % Update tags
             o.tags.(varexoname) = o.tags.(varname);
             o.tags = rmfield(o.tags, varname);
+
+            % Mark symbol tables as dirty (need updating)
+            o.tables_dirty = true;
         end % function
 
         function p = copy(o)
@@ -2395,6 +2448,8 @@ classdef modBuilder<handle
             p.equations = o.equations;
             p.T = o.T;
             p.tags = o.tags;
+            p.tables_dirty = o.tables_dirty;
+            p.symbol_map = o.symbol_map;
         end
 
         function b = eq(o, p)
@@ -2413,6 +2468,15 @@ classdef modBuilder<handle
             if ~isa(o, 'modBuilder') || ~isa(p, 'modBuilder')
                 error('Cannot compare modBuilder object with an object from another class.')
             end
+
+            % Auto-update symbol tables if needed for both objects
+            if o.tables_dirty
+                o = o.updatesymboltables();
+            end
+            if p.tables_dirty
+                p = p.updatesymboltables();
+            end
+
             b = true;
             if not(modBuilder.isequalcell(o.params, p.params))
                 b = false;
@@ -2528,6 +2592,9 @@ classdef modBuilder<handle
                 end
             end
             o.T.equations.(varname) = ntokens;
+
+            % Mark symbol tables as dirty (need updating)
+            o.tables_dirty = true;
         end
 
         function o = subs(o, expr1, expr2, eqname)
@@ -2706,7 +2773,9 @@ classdef modBuilder<handle
                 end
                 o.T.equations.(eqname) = Symbols;
             end
-            o.updatesymboltables;
+
+            % Mark symbol tables as dirty (need updating)
+            o.tables_dirty = true;
         end % function
 
         function p = extract(o, varargin)
@@ -2811,8 +2880,14 @@ classdef modBuilder<handle
         % - resid        [double]       scalar, evaluation of LHS-RHS
         %
         % REMARKS:
-        % If the equation does not contain an ‘=’ symbol — and thus no LHS or RHS — the expression is evaluated as the left-hand
+        % If the equation does not contain an '=' symbol — and thus no LHS or RHS — the expression is evaluated as the left-hand
         % side (lhs) and its residual (resid), while the right-hand side (rhs) is set to 0.
+
+            % Auto-update symbol tables if needed
+            if o.tables_dirty
+                o = o.updatesymboltables();
+            end
+
             if nargin<3
                 printflag = false;
             end
@@ -2898,6 +2973,12 @@ classdef modBuilder<handle
         % - Uses Newton's method via solvers.newton
         % - All other symbols must have known values
         % - Updates the calibration value of sname in o.params, o.varexo, or o.var
+
+            % Auto-update symbol tables if needed
+            if o.tables_dirty
+                o = o.updatesymboltables();
+            end
+
             if not(ismember(sname, o.T.equations.(eqname)))
                 if o.isendogenous(sname)
                     if not(ismember(eqname, o.T.var.(sname)))
@@ -2979,6 +3060,12 @@ classdef modBuilder<handle
         % - o('eq1', 'eq2') extracts equations by name
         % - o.varname extracts equation or calls method
         % - Enables natural syntax like: submodel = model('consumption', 'investment')
+
+            % Auto-update symbol tables if accessing T property
+            if isequal(S(1).type, '.') && isequal(S(1).subs, 'T') && o.tables_dirty
+                o = o.updatesymboltables();
+            end
+
             if isequal(S(1).type, '()')
                 p = o.extract(S(1).subs{:});
                     S = modBuilder.shiftS(S, 1);

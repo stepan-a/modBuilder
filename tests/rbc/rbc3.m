@@ -34,7 +34,6 @@ if not(isempty(model.symbols))
     error()
 end
 
-model.updatesymboltables();
 
 m0 = copy(model);
 
@@ -55,7 +54,6 @@ m1 = copy(model);
 model.add('a', 'a = rho*a(-1)+tau*b(-1) + e');
 model.exogenous('e', 0);
 
-model.updatesymboltables();
 
 rm2c = @(x) [x(:,1) x(:,3:4)];
 

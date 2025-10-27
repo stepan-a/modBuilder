@@ -40,7 +40,6 @@ model.endogenous('c', 1);
 model.endogenous('h', 1);
 model.endogenous('y', 1);
 
-model.updatesymboltables();
 
 evaleq = model.evaluate('a');
 

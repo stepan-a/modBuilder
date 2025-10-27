@@ -3,7 +3,6 @@
 m = modBuilder();
 m.add('c', 'c = alpha*k');
 m.parameter('alpha', 0.33);
-m.updatesymboltables();
 
 % Create a copy to experiment with
 m2 = m.copy();

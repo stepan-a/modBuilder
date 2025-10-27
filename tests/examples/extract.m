@@ -9,7 +9,6 @@ m.parameter('delta', 0.1);
 % Type remaining symbols
 m.exogenous('h', NaN);
 m.exogenous('k', NaN);
-m.updatesymboltables();
 
 % Extract only consumption and output equations
 submodel = m.extract('c', 'y');

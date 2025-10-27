@@ -35,7 +35,6 @@ if not(isempty(model.symbols))
     error()
 end
 
-model.updatesymboltables();
 
 m0 = copy(model);
 

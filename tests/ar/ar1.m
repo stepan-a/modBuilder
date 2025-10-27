@@ -25,7 +25,6 @@ end
 
 model1.exogenous('e', 0);
 
-model1.updatesymboltables();
 
 model2 = copy(model1);
 

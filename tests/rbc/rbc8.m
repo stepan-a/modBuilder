@@ -31,7 +31,6 @@ end
 model.exogenous('e', 0);
 model.exogenous('u', 0);
 
-model.updatesymboltables();
 
 MODEL = model('y', 'c', 'h', 'k');
 
