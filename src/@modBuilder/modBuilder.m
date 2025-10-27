@@ -2647,8 +2647,6 @@ classdef modBuilder<handle
                 end
                 o.T.equations.(eqname) = Symbols;
             end
-            % Trim preallocated array to actual size
-            list_of_unknown_symbols = list_of_unknown_symbols(1:unknown_count);
             o.updatesymboltables;
         end % function
 
