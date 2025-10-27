@@ -185,11 +185,9 @@ classdef modBuilder<handle
             else
                 value = NaN;  % Default value for parameter/exogenous
             end
-            value_provided = false;
             remaining = varargin;
             if numel(remaining) > 0 && ~iscell(remaining{1}) && ~ischar(remaining{1})
                 value = remaining{1};
-                value_provided = true;
                 remaining = remaining(2:end);
             end
 
