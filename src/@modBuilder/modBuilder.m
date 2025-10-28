@@ -1301,7 +1301,7 @@ classdef modBuilder<handle
             o.tables_dirty = true;
         end % function
 
-        function o = tag(o, eqname, tagname, value)
+        function o = tag(o, eqname, tagname, value, varargin)
         % Add or change an equation tag in model o.
         %
         % INPUTS:
@@ -1309,15 +1309,88 @@ classdef modBuilder<handle
         % - eqname      [char]         1×n array, name of an equation
         % - tagname     [char]         1×m array, name of the tag
         % - value       [char]         1×p array, tag value
+        % - ...
         %
         % OUTPUTS:
         % - o           [modBuilder]   updated object
         %
         % REMARKS:
-        % This method cannot change the name of an equation, tagname=='name' will raise an error.
+        % - This method cannot change the name of an equation, tagname=='name' will raise an error.
+        % - If eqname contains indices (e.g. 'Y_$1_$2'), then tags are added for all combinations
+        %   of values provided as cell arrays of index values in varargin.
+        % - The value argument should contain the same indices as eqname.
+        % - The tagname argument is not indexed.
+        % - If implicit loops are used (eqname contains indices), the number of index value arrays
+        %   must match the number of indices in eqname.
+        %
+        % EXAMPLES:
+        % m = modBuilder();
+        % m.add('Y', 'Y = A*K');
+        % m.parameter('A', 1.0);
+        % m.exogenous('K', 1.0);
+        % m.tag('Y', 'desc', 'Production function');
+        %
+        % % Implicit loops - tag multiple equations
+        % m2 = modBuilder();
+        % m2.add('Y_$1', 'Y_$1 = A_$1*K_$1', {1, 2, 3});
+        % m2.parameter('A_$1', 1.0, {1, 2, 3});
+        % m2.exogenous('K_$1', 1.0, {1, 2, 3});
+        % m2.tag('Y_$1', 'desc', 'Production function for sector $1', {1, 2, 3});
+        %
+        % % Multiple indices
+        % Countries = {'FR', 'DE'};
+        % Sectors = {1, 2};
+        % m3 = modBuilder();
+        % m3.add('Y_$1_$2', 'Y_$1_$2 = A_$1_$2*K_$1_$2', Countries, Sectors);
+        % m3.parameter('A_$1_$2', 1.0, Countries, Sectors);
+        % m3.exogenous('K_$1_$2', 1.0, Countries, Sectors);
+        % m3.tag('Y_$1_$2', 'desc', 'Production for $1 in sector $2', Countries, Sectors);
             if strcmp(tagname, 'name')
                 error('Method tag cannot be used to change the name of an equation. Instead, use the rename method to change the name of an endogenous variable.')
             end
+
+            % Check if equation name contains implicit loop indices (e.g., 'Y_$1_$2')
+            inames = unique(regexp(eqname, '\$\d*', 'match'));
+            if not(isempty(inames))
+                % Implicit loop: expand and tag all matching equations
+                nindices = numel(inames);
+
+                % Validate number of index arrays
+                if not(isequal(numel(varargin), nindices))
+                    error('The number of indices in the equation name is %u, but values for %u indices are provided.', ...
+                          nindices, numel(varargin))
+                end
+
+                % Check that indices are uniform (all integers or all strings for each index)
+                [allint, ~] = modBuilder.check_indices_values(varargin);
+
+                % Compute Cartesian product of index values
+                mIndex = table2cell(combinations(varargin{:}));
+
+                % Prepare template for sprintf (replace $1, $2, etc. with %u or %s)
+                tmp_eqname = eqname;
+                tmp_value = value;
+                for i=nindices:-1:1
+                    if allint(i)
+                        tmp_eqname = strrep(tmp_eqname, sprintf('$%u',i), '%u');
+                        tmp_value = strrep(tmp_value, sprintf('$%u',i), '%u');
+                    else
+                        tmp_eqname = strrep(tmp_eqname, sprintf('$%u',i), '%s');
+                        tmp_value = strrep(tmp_value, sprintf('$%u',i), '%s');
+                    end
+                end
+
+                % Tag equations for all combinations
+                for i=1:size(mIndex, 1)
+                    id = mIndex(i,:);
+                    name = sprintf(tmp_eqname, id{:});
+                    val = sprintf(tmp_value, id{:});
+                    % Recursively call tag for each expanded name
+                    o = o.tag(name, tagname, val);
+                end
+                return;
+            end
+
             o.tags.(eqname).(tagname) = value;
         end % function
 

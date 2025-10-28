@@ -64,6 +64,7 @@ listoftests = [
   'rename/rbc2.m',
   'tag/rbc1.m',
   'tag/rbc2.m',
+  'tag/t01.m',
   'implicit-loops/t01.m',
   'implicit-loops/t02.m',
   'implicit-loops/t03.m',
@@ -96,6 +97,7 @@ listoftests = [
   'examples/copy.m',
   'examples/extract.m',
   'examples/merge.m',
+  'examples/tag.m',
 ]
 
 listoffailingtests = [
