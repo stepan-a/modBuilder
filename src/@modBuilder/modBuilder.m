@@ -91,12 +91,18 @@ classdef modBuilder < handle
     properties (Constant, Access = private)
         % Reserved function names that cannot be used as symbol names
         % These are MATLAB/Octave built-in functions and Dynare-specific functions
-        % Used by getsymbols() to filter out functions and by validate_symbol_name() to reject reserved names
-        RESERVED_NAMES = {'log', 'log10', 'ln', 'exp', 'sqrt', 'cbrt', 'abs', 'sign', ...
-                          'sin', 'cos', 'tan', 'asin', 'acos', 'atan', ...
-                          'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh', ...
-                          'min', 'max', 'normcdf', 'normpdf', 'erf', ...
-                          'diff', 'adl', 'EXPECTATIONS', 'STEADY_STATE'}
+        % Used by getsymbols() to filter out functions
+        DYNARE_RESERVED_NAMES = {'log', 'log10', 'ln', 'exp', 'sqrt', 'cbrt', 'abs', 'sign', ...
+                                 'sin', 'cos', 'tan', 'asin', 'acos', 'atan', ...
+                                 'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh', ...
+                                 'min', 'max', 'normcdf', 'normpdf', 'erf', ...
+                                 'diff', 'adl', 'EXPECTATIONS', 'STEADY_STATE'}
+
+        % Complete list of reserved names: Dynare's built-in functions + properties + methods Computed once
+        % when class is loaded by calling compute_all_reserved_names()
+        % Used by validate_symbol_name() to prevent conflicts with
+        % class interface
+        ALL_RESERVED_NAMES = modBuilder.compute_all_reserved_names()
     end
 
     properties (Access = private)
@@ -674,15 +680,52 @@ classdef modBuilder < handle
             % Validate that sname is a non-empty row char array
             validateattributes(sname, {'char'}, {'nonempty', 'row'}, method_name, 'symbol name');
 
-            % Check for reserved names
-            if ismember(sname, modBuilder.RESERVED_NAMES)
-                error('%s: Symbol name "%s" is a reserved function name.', method_name, sname);
+            % Check for reserved names (built-in functions + properties + methods)
+            if ismember(sname, modBuilder.ALL_RESERVED_NAMES)
+                error('%s: Symbol name "%s" is reserved (conflicts with modBuilder property/method or built-in function).', method_name, sname);
             end
         end
 
     end
 
     methods(Static, Access = private)
+
+        function reserved = compute_all_reserved_names()
+        % Compute complete list of reserved names (called once when class loads)
+        %
+        % OUTPUTS:
+        % - reserved [cell array] Complete list of reserved symbol names
+        %
+        % REMARKS:
+        % - Includes DYNARE_RESERVED_NAMES (Dynare's built-in functions)
+        % - Includes all property names from modBuilder class
+        % - Includes all public method names from modBuilder class
+        % - This prevents symbol names from conflicting with class interface
+        % - Called automatically when ALL_RESERVED_NAMES constant is initialized
+
+            % Start with built-in reserved names
+            reserved = modBuilder.DYNARE_RESERVED_NAMES;
+
+            % Get metaclass information
+            mc = ?modBuilder;
+
+            % Add all property names
+            for i = 1:length(mc.PropertyList)
+                reserved{end+1} = mc.PropertyList(i).Name;
+            end
+
+            % Add all public method names (excluding constructor)
+            for i = 1:length(mc.MethodList)
+                method = mc.MethodList(i);
+                % Only add public methods (exclude constructor)
+                if strcmp(method.Access, 'public') && ~strcmp(method.Name, 'modBuilder')
+                    reserved{end+1} = method.Name;
+                end
+            end
+
+            % Make unique in case of duplicates
+            reserved = unique(reserved);
+        end
 
         function skipline(n)
         % Print n blank lines to the console
@@ -788,7 +831,7 @@ classdef modBuilder < handle
             % Filter out the numbers, punctuation.
             tokens(cellfun(@(x) all(isstrprop(x, 'digit')+isstrprop(x, 'punct')), tokens)) = [];
             % Filter out reserved functions and operators
-            tokens(cellfun(@(x) ismember(x, modBuilder.RESERVED_NAMES), tokens)) = [];
+            tokens(cellfun(@(x) ismember(x, modBuilder.DYNARE_RESERVED_NAMES), tokens)) = [];
             % Filter out empty elements.
             tokens(cellfun(@(x) all(isempty(x)), tokens)) = [];
             % Remove duplicates
