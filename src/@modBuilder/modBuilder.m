@@ -3222,7 +3222,7 @@ classdef modBuilder < handle
         end % function
 
         function o = subsasgn(o,S,B)
-        % Overload subsasgn to enable custom assignment: o('symbol') = value or equation
+        % Overload subsasgn: o.symbol = value (set values) or o('var') = 'eq' (change equations)
         %
         % INPUTS:
         % - o    [modBuilder]
@@ -3233,56 +3233,64 @@ classdef modBuilder < handle
         % - o    [modBuilder]     updated object
         %
         % REMARKS:
-        % - o('param') = 0.5 sets parameter value
-        % - o('var') = 'new_equation' changes equation
-        % - o('endovar') = 1.0 sets steady state value
+        % - o.param = 0.5 sets parameter value
+        % - o.exovar = 1.0 sets exogenous variable value
+        % - o.endovar = 2.0 sets endogenous variable steady state value
+        % - o('endovar') = 'new_equation' changes equation (only for endogenous variables)
             if length(S)>1
                 error('Wrong assignment.')
             end
-            if isequal(S(1).type, '()')
-                if ischar(S(1).subs{1})
-                    try
-                        [type, id] = typeof(o, S(1).subs{1});
-                    catch
-                        % Character array S(1).subs{1} is neither a parameter name, endogenous or
-                        % exogenous variable name.
-                        error('Wrong index (unknown symbol).')
-                    end
-                    switch type
-                      case 'parameter'
-                        if isnumeric(B) && isscalar(B) && isreal(B)
-                            % Change parameter value.
-                            o.params{id,modBuilder.COL_VALUE} = B;
-                        else
-                            error('Can only assign a real scalar number to a parameter.')
-                        end
-                      case 'exogenous'
-                        if isnumeric(B) && isscalar(B) && isreal(B)
-                            % Change exogenous variable value.
-                            o.varexo{id,modBuilder.COL_VALUE} = B;
-                        else
-                            error('Can only assign a real scalar number to an exogenous variable.')
-                        end
-                      case 'endogenous'
-                        if ischar(B)
-                            % Change equation.
-                            o.change(S(1).subs{1}, B);
-                        else
-                            % Assign a value to an endogenous variable.
-                            if isnumeric(B) && isscalar(B) && isreal(B)
-                                o.var{id,modBuilder.COL_VALUE} = B;
-                            else
-                                error('Can only assign a real scalar number to an endogenous variable.')
-                            end
-                        end
-                      otherwise
-                        error('Wrong assignment.')
-                    end
-                else
-                    error('Wrong assignment (index must be a character array, a known symbol).')
+
+            if isequal(S(1).type, '.')
+                % Dot notation: o.symbol = value
+                % Only numeric assignments allowed with dot notation
+                if ~(isnumeric(B) && isscalar(B) && isreal(B))
+                    error('Can only assign a real scalar number using dot notation. Use o(''var'') = ''equation'' to change equations.')
                 end
+
+                try
+                    [type, id] = typeof(o, S(1).subs);
+                catch
+                    error('Unknown symbol ''%s''. Cannot assign to non-existent symbol.', S(1).subs);
+                end
+
+                switch type
+                  case 'parameter'
+                    o.params{id,modBuilder.COL_VALUE} = B;
+                  case 'exogenous'
+                    o.varexo{id,modBuilder.COL_VALUE} = B;
+                  case 'endogenous'
+                    o.var{id,modBuilder.COL_VALUE} = B;
+                  otherwise
+                    error('Wrong assignment.');
+                end
+
+            elseif isequal(S(1).type, '()')
+                % Parentheses notation: o('endovar') = 'equation'
+                % Only for changing equations (endogenous variables only)
+                if ~ischar(S(1).subs{1})
+                    error('Wrong assignment (index must be a character array, a variable name).')
+                end
+
+                try
+                    [type, id] = typeof(o, S(1).subs{1});
+                catch
+                    error('Wrong index (unknown symbol).')
+                end
+
+                if ~strcmp(type, 'endogenous')
+                    error('Can only change equations for endogenous variables. Use o.%s = value to set parameter/exogenous values.', S(1).subs{1});
+                end
+
+                if ~ischar(B)
+                    error('Can only assign equation strings with parentheses. Use o.%s = value to set steady state values.', S(1).subs{1});
+                end
+
+                % Change equation
+                o.change(S(1).subs{1}, B);
+
             else
-                error('Wrong assignment (cannot index with . or {}).')
+                error('Wrong assignment (cannot index with {}).')
             end
         end % function
 

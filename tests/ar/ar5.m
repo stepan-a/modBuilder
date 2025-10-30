@@ -16,19 +16,19 @@ model.parameter('rho2', .8);
 model.parameter('rho3', .1);
 
 
-model('rho1') = .2;
+model.rho1 = .2;
 
 if model.params{ismember(model.params(:,1), 'rho1'),2}~=.2
     error('Parameter assignment did not work.')
 end
 
-model('ey') = .2;
+model.ey = .2;
 
 if model.varexo{ismember(model.varexo(:,1), 'ey'),2}~=.2
     error('Exogenous variable assignment did not work.')
 end
 
-model('y') = .2;
+model.y = .2;
 
 if model.var{ismember(model.var(:,1), 'y'),2}~=.2
     error('Endogenous variable assignment did not work.')
