@@ -40,15 +40,15 @@ m0 = copy(model);
 m0.rename('k', 'PhysicalCapital');
 m0.rename('alpha', 'ALPHA');
 
-if ~strcmp(m0.y.equations{2}, 'y = exp(a)*(PhysicalCapital(-1)^ALPHA)*(h^(1-ALPHA))')
+if ~strcmp(m0{'y'}.equations{2}, 'y = exp(a)*(PhysicalCapital(-1)^ALPHA)*(h^(1-ALPHA))')
     error('Test of rename method failed (y).')
 end
 
-if ~strcmp(m0.PhysicalCapital.equations{2}, '1/beta = ((exp(b)*c)/(exp(b(+1))*c(+1)))*(exp(b(+1))*ALPHA*y(+1)/PhysicalCapital+(1-deltak))')
+if ~strcmp(m0{'PhysicalCapital'}.equations{2}, '1/beta = ((exp(b)*c)/(exp(b(+1))*c(+1)))*(exp(b(+1))*ALPHA*y(+1)/PhysicalCapital+(1-deltak))')
     error('Test of rename method failed (PhysicalCapital).')
 end
 
-if ~strcmp(m0.h.equations{2}, 'c*theta*h^(1+psi)=(1-ALPHA)*y')
+if ~strcmp(m0{'h'}.equations{2}, 'c*theta*h^(1+psi)=(1-ALPHA)*y')
     error('Test of rename method failed (h).')
 end
 

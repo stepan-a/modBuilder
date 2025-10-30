@@ -39,7 +39,7 @@ m0 = copy(model);
 
 m0.subs('b(-1)', 'a(-2)', 'a');
 
-if ~strcmp(m0.a.equations{2}, 'a = rho*a(-1)+tau*a(-2) + e')
+if ~strcmp(m0{'a'}.equations{2}, 'a = rho*a(-1)+tau*a(-2) + e')
     error('Test of subs method failed.')
 end
 

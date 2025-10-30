@@ -1,4 +1,4 @@
-classdef modBuilder<handle
+classdef modBuilder < handle
 
 % Class for creating interactively a mod file.
 
@@ -3120,56 +3120,105 @@ classdef modBuilder<handle
         end
 
         function p = subsref(o, S)
-        % Overload subsref to enable custom indexing: o('eqname') extracts equation, o.method() calls method
+        % Overload subsref: o{'eq'} extracts equation, o.x returns parameter/variable value
         %
         % INPUTS:
         % - o    [modBuilder]
         % - S    [struct]         subscript structure from MATLAB
         %
         % OUTPUTS:
-        % - p    [varies]         extracted submodel, property value, or method result
+        % - p    [varies]         extracted submodel, property value, parameter/variable value, or method result
         %
         % REMARKS:
-        % - o('eq1', 'eq2') extracts equations by name
-        % - o.varname extracts equation or calls method
-        % - Enables natural syntax like: submodel = model('consumption', 'investment')
+        % - o{'eq1'} or o{'eq1', 'eq2', ...} extracts equations by name using curly braces
+        % - o.x returns the value of parameter or variable x (or calls method x)
+        % - o('eq1', 'eq2', ...) also extracts equations for backward compatibility
 
             % Auto-update symbol tables if accessing T property
             if isequal(S(1).type, '.') && isequal(S(1).subs, 'T') && o.tables_dirty
                 o = o.updatesymboltables();
             end
 
-            if isequal(S(1).type, '()')
+            if isequal(S(1).type, '{}')
+                % o{'eq1', 'eq2', ...} - extract equations using curly braces
                 p = o.extract(S(1).subs{:});
-                    S = modBuilder.shiftS(S, 1);
+                S = modBuilder.shiftS(S, 1);
+            elseif isequal(S(1).type, '()')
+                % o('eq1', 'eq2', ...) - extract equations using parentheses (backward compatibility)
+                p = o.extract(S(1).subs{:});
+                S = modBuilder.shiftS(S, 1);
             elseif isequal(S(1).type, '.')
-                if ~ismember(S(1).subs, {metaclass(o).PropertyList.Name})
-                    if isscalar(S)
-                        if ismember(S(1).subs, o.equations(:,modBuilder.EQ_COL_NAME))
-                            p = o.extract(S(1).subs);
-                        else
-                            p = feval(S(1).subs, o);
-                        end
-                        S = modBuilder.shiftS(S, 1);
-                    else
-                        if ismember(S(1).subs, o.equations(:,modBuilder.EQ_COL_NAME))
-                            p = o.extract(S(1).subs);
-                            S = modBuilder.shiftS(S, 1);
-                        else
-                            p = feval(S(1).subs, o, S(2).subs{:});
-                            S = modBuilder.shiftS(S, 2);
-                        end
-                    end
-                else
+                % o.x - access property, get parameter/variable value, or call method
+                if ismember(S(1).subs, {metaclass(o).PropertyList.Name})
+                    % It's a property - return property value
                     p = o.(S(1).subs);
                     S = modBuilder.shiftS(S, 1);
+                else
+                    % Not a property - check if it's a parameter or variable
+                    try
+                        [type, id] = typeof(o, S(1).subs);
+                        % It's a known symbol - return its value
+                        switch type
+                            case 'parameter'
+                                p = o.params{id, modBuilder.COL_VALUE};
+                            case 'endogenous'
+                                p = o.var{id, modBuilder.COL_VALUE};
+                            case 'exogenous'
+                                p = o.varexo{id, modBuilder.COL_VALUE};
+                            otherwise
+                                error('Unknown symbol type: %s', type);
+                        end
+                        S = modBuilder.shiftS(S, 1);
+                    catch
+                        % Not a known symbol - try method call
+                        if isscalar(S)
+                            p = feval(S(1).subs, o);
+                            S = modBuilder.shiftS(S, 1);
+                        elseif isequal(S(2).type, '()')
+                            % Method call with arguments: o.method(args)
+                            p = feval(S(1).subs, o, S(2).subs{:});
+                            S = modBuilder.shiftS(S, 2);
+                        else
+                            % Unknown symbol and not a method call - error
+                            error('Reference to non-existent field or method ''%s''.', S(1).subs);
+                        end
+                    end
                 end
-            else
-                error('Indexing a modBuilder object with {} is not allowed.')
             end
             if ~isempty(S)
-                p = subsref(p, S);
+                % Handle remaining indexing operations
+                % If result is a modBuilder, call subsref recursively
+                % Otherwise, use builtin subsref for cell arrays, structs, etc.
+                if isa(p, 'modBuilder')
+                    p = subsref(p, S);
+                else
+                    p = builtin('subsref', p, S);
+                end
             end
+        end % function
+
+        function n = numArgumentsFromSubscript(obj, s, indexingContext)
+        % Determine number of output arguments expected from subscripted reference
+        %
+        % INPUTS:
+        % - obj              [modBuilder]
+        % - s                [struct]            subscript structure from MATLAB
+        % - indexingContext  [IndexingContext]   Statement or Expression context
+        %
+        % OUTPUTS:
+        % - n                [integer]           number of expected outputs
+        %
+        % REMARKS:
+        % This method is called by MATLAB before subsref to determine how many
+        % outputs to expect from the indexing operation. Always returning 1 tells
+        % MATLAB that all indexing operations return exactly one output, which
+        % prevents "Too many output arguments" errors in chained indexing.
+
+            % Always return 1 output argument for all indexing
+            % operations This includes o{'eq'}, o('eq'), o.property,
+            % and chained operations We will see later if we need to
+            % consider cases where we return more than one output.
+            n = 1;
         end % function
 
         function o = subsasgn(o,S,B)

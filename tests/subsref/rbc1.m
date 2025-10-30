@@ -50,6 +50,6 @@ if ~strcmp(model.T.params.alpha{1}, 'y')
     error('Test failed')
 end
 
-if ~strcmp(model('k').T.var.k{1}, 'k')
+if ~strcmp(model{'k'}.T.var.k{1}, 'k')
     error('Test failed')
 end

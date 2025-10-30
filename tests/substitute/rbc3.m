@@ -40,14 +40,14 @@ m0 = copy(model);
 
 m0.substitute('(?<!\w)k(?!\w)', 'PhysicalCapital');
 
-if ~strcmp(m0.c.equations{2}, 'PhysicalCapital = exp(b)*(y-c)+(1-deltak)*PhysicalCapital(-1)')
+if ~strcmp(m0{'c'}.equations{2}, 'PhysicalCapital = exp(b)*(y-c)+(1-deltak)*PhysicalCapital(-1)')
     error('Test of substitute method failed.')
 end
 
-if ~strcmp(m0.PhysicalCapital.equations{2}, '1/beta = ((exp(b)*c)/(exp(b(+1))*c(+1)))*(exp(b(+1))*alpha*y(+1)/PhysicalCapital+(1-deltak))')
+if ~strcmp(m0{'PhysicalCapital'}.equations{2}, '1/beta = ((exp(b)*c)/(exp(b(+1))*c(+1)))*(exp(b(+1))*alpha*y(+1)/PhysicalCapital+(1-deltak))')
     error('Test of substitute method failed.')
 end
 
-if ~strcmp(m0.y.equations{2}, 'y = exp(a)*(PhysicalCapital(-1)^alpha)*(h^(1-alpha))')
+if ~strcmp(m0{'y'}.equations{2}, 'y = exp(a)*(PhysicalCapital(-1)^alpha)*(h^(1-alpha))')
     error('Test of substitute method failed.')
 end

@@ -39,11 +39,11 @@ m0 = copy(model);
 
 m0.substitute('b\(-1\)', 'a(-2)');
 
-if ~strcmp(m0.a.equations{2}, 'a = rho*a(-1)+tau*a(-2) + e')
+if ~strcmp(m0{'a'}.equations{2}, 'a = rho*a(-1)+tau*a(-2) + e')
     error('Test of substitute method failed.')
 end
 
-if ~strcmp(m0.b.equations{2}, 'b = tau*a(-1)+rho*a(-2) + u')
+if ~strcmp(m0{'b'}.equations{2}, 'b = tau*a(-1)+rho*a(-2) + u')
     error('Test of substitute method failed.')
 end
 
@@ -55,6 +55,6 @@ m1 = copy(m0);
 
 m1.substitute('tau', '(1-rho)', 'b');
 
-if ~strcmp(m1.b.equations{2}, 'b = (1-rho)*a(-1)+rho*a(-2) + u')
+if ~strcmp(m1{'b'}.equations{2}, 'b = (1-rho)*a(-1)+rho*a(-2) + u')
     error('Test of substitute method failed.')
 end
