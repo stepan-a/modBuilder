@@ -1789,11 +1789,11 @@ classdef modBuilder < handle
         % - o          [modBuilder]      updated object
         %
         % REMARKS:
-        % [1] Clears symbol_map to force typeof() to use linear search during removals
-        % [2] This prevents stale index references after deletions
-        % [3] If eqname contains indices (e.g. 'Y_$1_$2'), then equations are removed for all combinations of values provided
-        %     as cell arrays of index values in varargin.
-        % [4] If implicit loops are used (eqname contains indices), the number of index value arrays must match the number of indices in eqname.
+        % - Clears symbol_map to force typeof() to use linear search during removals
+        % - This prevents stale index references after deletions
+        % - If eqname contains indices (e.g. 'Y_$1_$2'), then equations are removed for all combinations of values provided
+        %   as cell arrays of index values in varargin.
+        % - If implicit loops are used (eqname contains indices), the number of index value arrays must match the number of indices in eqname.
         %
         % EXAMPLES:
         % m = modBuilder();
