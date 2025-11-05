@@ -1914,8 +1914,10 @@ classdef modBuilder < handle
         % INPUTS:
         % - o          [modBuilder]
         % - eqname1    [char]            name of an equation (endogenous variable)
-        % - eqname2    [char]            name of another equation
-        % - …          [char]            additional equation names
+        % - eqname2    [char]            name of another equation (optional)
+        % - ...        [char]            additional equation names (optional)
+        % - idx1       [numeric/char]    first index values for implicit loops (if equation names contain $)
+        % - ...        [numeric/char]    additional index values (if needed)
         %
         % OUTPUTS:
         % - o          [modBuilder]      updated object
@@ -1923,12 +1925,68 @@ classdef modBuilder < handle
         % REMARKS:
         % - This is a convenience method that calls remove() for each equation
         % - Duplicate equation names are handled automatically
-            if not(all(cellfun(@(x) ischar(x) && isrow(x), varargin)))
-                error('All input arguments must be row char arrays (equation names).')
+        % - Supports implicit loops: if equation names contain $ placeholders (e.g., 'eq$1'),
+        %   the last arguments should be index values that will be expanded
+        % - When using implicit loops with multiple equations, all equation names must
+        %   contain the same index placeholders
+        %
+        % EXAMPLES:
+        % m = modBuilder();
+        % m.add('c', 'c = alpha*k');
+        % m.add('y', 'y = k^alpha');
+        %
+        % % Remove multiple equations
+        % m.rm('c', 'y');
+        %
+        % % Remove indexed equations with implicit loop
+        % m.rm('eq$1', 1:3);  % Removes eq1, eq2, eq3
+        %
+        % % Remove multiple indexed equations
+        % m.rm('eq$1', 'var$1', 1:2);  % Removes eq1, var1, eq2, var2
+            eqnames = varargin(1); % First equation to be removed.
+            if not(ischar(eqnames{1}) && isrow(eqnames{1}))
+                error('First input argument must be a row char array (equation name).')
             end
-            eqnames = unique(varargin);
-            for i=1:length(eqnames)
-                o.remove(eqnames{i});
+            % Is the first equation name indexed?
+            inames = unique(regexp(eqnames{1}, '\$\d*', 'match'));
+            if not(isempty(inames))
+                nindices = numel(inames);
+                % Check that the last nindices arguments are index values
+                idValues = varargin(end-nindices+1:end);
+                try
+                    [allint, ~] = modBuilder.check_indices_values(idValues);
+                catch
+                    error('Last %u arguments are not valid indices values.', nindices)
+                end
+                % Is there more than one indexed equation name?
+                if length(varargin) > nindices + 1
+                    eqnames = varargin(1:end-nindices);
+                end
+                if length(eqnames) > 1
+                    % Remove duplicates
+                    eqnames = unique(eqnames);
+                    % Check that all equation names contain the same indices
+                    for i=2:length(eqnames)
+                        tmp = unique(regexp(eqnames{i}, '\$\d*', 'match'));
+                        if not(isempty(setxor(inames, tmp)))
+                            error('All indexed equation names must contain the same indices.')
+                        end
+                    end
+                end
+                % Call remove method (which will expand the indices internally)
+                for i=1:length(eqnames)
+                    o.remove(eqnames{i}, idValues{:});
+                end
+            else
+                % No implicit loops, simply call remove for each equation name
+                if not(all(cellfun(@(x) ischar(x) && isrow(x), varargin)))
+                    error('All input arguments must be row char arrays (equation names).')
+                end
+                % Remove duplicates
+                eqnames = unique(varargin);
+                for i=1:length(eqnames)
+                    o.remove(eqnames{i});
+                end
             end
         end
 
