@@ -2540,7 +2540,7 @@ classdef modBuilder < handle
         end
 
 
-        function o = flip(o, varname, varexoname)
+        function o = flip(o, varname, varexoname, varargin)
         % Flip types of varname (initially an endogenous variable)
         % and varexoname (initially an exogenous variable). After the
         % change, the number of endogenous variables is the same, we
@@ -2549,45 +2549,120 @@ classdef modBuilder < handle
         % INPUTS:
         % - o           [modBuilder]
         % - varname     [char]          1×n array, name of the variable to be exogenized
-        % - varexo      [char]          1×m array, name of the variable to be endogenized
+        % - varexoname  [char]          1×m array, name of the variable to be endogenized
+        % - idx1        [cell/numeric]  index values for implicit loops (optional)
+        % - idx2        [cell/numeric]  additional index values (optional)
+        % - ...
         %
         % OUTPUTS:
         % - o           [modBuilder]    updated object
-
+        %
+        % REMARKS:
+        % - If varname and varexoname contain $ placeholders (e.g., 'Y_$1', 'X_$1'),
+        %   the method will flip all matching pairs using implicit loop expansion
+        % - Both variable names must contain the same index placeholders
+        % - The number of index value arrays must match the number of indices
+        %
+        % EXAMPLES:
+        % m = modBuilder();
+        % m.add('y', 'y = a*k');
+        % m.parameter('a', 0.33);
+        % m.exogenous('k', 1.0);
+        %
+        % % Simple flip
+        % m.flip('y', 'k');  % k becomes endogenous, y becomes exogenous
+        %
+        % % Implicit loop - flip multiple pairs
+        % m2 = modBuilder();
+        % m2.add('Y_$1', 'Y_$1 = A_$1*K_$1', {1, 2, 3});
+        % m2.parameter('A_$1', 1.0, {1, 2, 3});
+        % m2.exogenous('K_$1', 1.0, {1, 2, 3});
+        % m2.flip('Y_$1', 'K_$1', {1, 3});  % Flips Y_1↔K_1 and Y_3↔K_3
+        %
+        % % Multiple indices
+        % m3 = modBuilder();
+        % Countries = {'FR', 'DE'};
+        % Sectors = {1, 2};
+        % m3.add('Y_$1_$2', 'Y_$1_$2 = A_$1_$2*K_$1_$2', Countries, Sectors);
+        % m3.parameter('A_$1_$2', 1.0, Countries, Sectors);
+        % m3.exogenous('K_$1_$2', 1.0, Countries, Sectors);
+        % m3.flip('Y_$1_$2', 'K_$1_$2', {'FR'}, {1, 2});  % Flips Y_FR_1↔K_FR_1 and Y_FR_2↔K_FR_2
+            % Validate inputs
+            validateattributes(varname, {'char'}, {'nonempty', 'row'}, 'flip', 'varname');
+            validateattributes(varexoname, {'char'}, {'nonempty', 'row'}, 'flip', 'varexoname');
             % Auto-update symbol tables if needed
             if o.tables_dirty
                 o = o.updatesymboltables();
             end
-
-            ie = ismember(o.var(:,modBuilder.COL_NAME), varname);
-            if not(any(ie))
-                error('"%s" is not a known endogenous variable.', varname)
+            % Check if variable names contain implicit loop indices
+            inames_var = unique(regexp(varname, '\$\d*', 'match'));
+            inames_varexo = unique(regexp(varexoname, '\$\d*', 'match'));
+            if not(isempty(inames_var)) || not(isempty(inames_varexo))
+                % Implicit loop mode
+                % Validate that both names have the same indices
+                if not(isempty(setxor(inames_var, inames_varexo)))
+                    error('Both variable names must contain the same index placeholders. Found %s in varname and %s in varexoname.', ...
+                          strjoin(inames_var, ', '), strjoin(inames_varexo, ', '))
+                end
+                nindices = numel(inames_var);
+                % Validate number of index arrays
+                if not(isequal(numel(varargin), nindices))
+                    error('The number of indices in the variable names is %u, but values for %u indices are provided.', ...
+                          nindices, numel(varargin))
+                end
+                % Check that indices are uniform
+                [allint, ~] = modBuilder.check_indices_values(varargin);
+                % Compute Cartesian product of index values
+                mIndex = table2cell(combinations(varargin{:}));
+                % Prepare templates for sprintf
+                tmp_varname = varname;
+                tmp_varexoname = varexoname;
+                for i=nindices:-1:1
+                    if allint(i)
+                        tmp_varname = strrep(tmp_varname, sprintf('$%u',i), '%u');
+                        tmp_varexoname = strrep(tmp_varexoname, sprintf('$%u',i), '%u');
+                    else
+                        tmp_varname = strrep(tmp_varname, sprintf('$%u',i), '%s');
+                        tmp_varexoname = strrep(tmp_varexoname, sprintf('$%u',i), '%s');
+                    end
+                end
+                % Flip all matching pairs using recursion
+                for i=1:size(mIndex,1)
+                    current_varname = sprintf(tmp_varname, mIndex{i,:});
+                    current_varexoname = sprintf(tmp_varexoname, mIndex{i,:});
+                    o = o.flip(current_varname, current_varexoname);
+                end
+            else
+                % Simple flip (no implicit loops) - base case
+                ie = ismember(o.var(:,modBuilder.COL_NAME), varname);
+                if not(any(ie))
+                    error('"%s" is not a known endogenous variable.', varname)
+                end
+                ix = ismember(o.varexo(:,modBuilder.COL_NAME), varexoname);
+                if not(any(ix))
+                    error('"%s" is not a known exogenous variable.', varexoname)
+                end
+                % Copy variables
+                o.var = [o.var; {varexoname o.varexo{ix,modBuilder.COL_VALUE} o.varexo{ix,modBuilder.COL_LONG_NAME} o.varexo{ix,modBuilder.COL_TEX_NAME}}];
+                o.varexo = [o.varexo; {varname o.var{ie,modBuilder.COL_VALUE} o.var{ie,modBuilder.COL_LONG_NAME} o.var{ie,modBuilder.COL_TEX_NAME}}];
+                % Remove variables
+                o.var(ie,:) = [];
+                o.varexo(ix,:) = [];
+                % Update symbol tables
+                o.T.var.(varexoname) = o.T.varexo.(varexoname);
+                o.T.varexo.(varname) = o.T.var.(varname);
+                o.T.varexo = rmfield(o.T.varexo, varexoname);
+                o.T.var = rmfield(o.T.var, varname);
+                o.T.equations.(varexoname) = o.T.equations.(varname);
+                o.T.equations = rmfield(o.T.equations, varname);
+                mask = strcmp(varexoname, o.T.equations.(varexoname));
+                o.T.equations.(varexoname){mask} = varname;
+                % Associate new endogenous variable to an equation (the one previously associated with varname)
+                o.equations{strcmp(varname, o.equations(:,modBuilder.EQ_COL_NAME)),modBuilder.EQ_COL_NAME} = varexoname;
+                % Update tags
+                o.tags.(varexoname) = o.tags.(varname);
+                o.tags = rmfield(o.tags, varname);
             end
-            ix = ismember(o.varexo(:,modBuilder.COL_NAME), varexoname);
-            if not(any(ix))
-                error('"%s" is not a known exogenous variable.', varexoname)
-            end
-            % Copy variables
-            o.var = [o.var; {varexoname o.varexo{ix,modBuilder.COL_VALUE} o.varexo{ix,modBuilder.COL_LONG_NAME} o.varexo{ix,modBuilder.COL_TEX_NAME}}];
-            o.varexo = [o.varexo; {varname o.var{ie,modBuilder.COL_VALUE} o.var{ie,modBuilder.COL_LONG_NAME} o.var{ie,modBuilder.COL_TEX_NAME}}];
-            % Remove variables
-            o.var(ie,:) = [];
-            o.varexo(ix,:) = [];
-            % Update symbol tables
-            o.T.var.(varexoname) = o.T.varexo.(varexoname);
-            o.T.varexo.(varname) = o.T.var.(varname);
-            o.T.varexo = rmfield(o.T.varexo, varexoname);
-            o.T.var = rmfield(o.T.var, varname);
-            o.T.equations.(varexoname) = o.T.equations.(varname);
-            o.T.equations = rmfield(o.T.equations, varname);
-            mask = strcmp(varexoname, o.T.equations.(varexoname));
-            o.T.equations.(varexoname){mask} = varname;
-            % Associate new endogenous variable to an equation (the one previously associated with varname)
-            o.equations{strcmp(varname, o.equations(:,modBuilder.EQ_COL_NAME)),modBuilder.EQ_COL_NAME} = varexoname;
-            % Update tags
-            o.tags.(varexoname) = o.tags.(varname);
-            o.tags = rmfield(o.tags, varname);
-
             % Mark symbol tables as dirty (need updating)
             o.tables_dirty = true;
         end % function

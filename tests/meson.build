@@ -66,6 +66,9 @@ listoftests = [
   'rm/t02.m',
   'rm/t03.m',
   'rm/t04.m',
+  'flip/t01.m',
+  'flip/t02.m',
+  'flip/t03.m',
   'tag/rbc1.m',
   'tag/rbc2.m',
   'tag/t01.m',
@@ -104,6 +107,7 @@ listoftests = [
   'examples/merge.m',
   'examples/tag.m',
   'examples/rm.m',
+  'examples/flip.m',
 ]
 
 listoffailingtests = [
