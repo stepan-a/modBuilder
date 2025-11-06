@@ -161,7 +161,7 @@ classdef modBuilder < handle
                 o.symbol_map(o.var{i, modBuilder.COL_NAME}) = ...
                     struct('type', 'endogenous', 'idx', i);
             end
-        end
+        end % function
 
         function o = handle_implicit_loops(o, symbol_name, symbol_type, varargin)
         % Generic handler for symbols with implicit loops (indices like $1, $2)
@@ -321,7 +321,7 @@ classdef modBuilder < handle
                         error('Unsupported symbol type: "%s".', symbol_type)
                 end
             end
-        end
+        end % function
 
         function validate_merge_compatibility(o, p)
         % Validate that two models can be merged
@@ -342,7 +342,7 @@ classdef modBuilder < handle
                 error('Models to be merged cannot contain common endogenous variables. Check variable(s)%s.', ...
                       sprintf(' %s', commonvariables{:}))
             end
-        end
+        end % function
 
         function q_params = merge_parameters(o, p)
         % Merge parameters from two models
@@ -407,7 +407,7 @@ classdef modBuilder < handle
                 q_params{i,modBuilder.COL_TEX_NAME} = p.params{idx,modBuilder.COL_TEX_NAME};
                 i = i+1;
             end
-        end
+        end % function
 
         function [q_var, q_varexo] = merge_variables(o, p)
         % Merge endogenous and exogenous variables from two models
@@ -492,7 +492,7 @@ classdef modBuilder < handle
                     q_varexo{i,modBuilder.COL_TEX_NAME} = o.varexo{idx,modBuilder.COL_TEX_NAME};
                 end
             end
-        end
+        end % function
 
         function q = merge_symbol_tables(o, p, q)
         % Merge symbol tables from two models
@@ -521,7 +521,7 @@ classdef modBuilder < handle
             q.T.var = modBuilder.mergeStructs(o.T.var, p.T.var);
             q.T.equations = modBuilder.mergeStructs(o.T.equations, p.T.equations);
             q.tags = modBuilder.mergeStructs(o.tags, p.tags);
-        end
+        end % function
 
         function o = updatesymboltable(o, type)
         % Update fields under o.T. These fields map symbols (parameter, endogenous and exogenous variables) with equations.
@@ -544,8 +544,11 @@ classdef modBuilder < handle
             switch type
               case 'parameters'
                 for i=1:o.size(type)
+
                     for j=1:o.size('endogenous') % The number of endogenous variables is equal to the number of equations by construction.
+
                         if any(matches(o.T.equations.(o.equations{j,modBuilder.EQ_COL_NAME}), o.params{i,modBuilder.COL_NAME}))
+
                             if isfield(o.T.params, o.params{i,modBuilder.COL_NAME})
                                 o.T.params.(o.params{i,modBuilder.COL_NAME}) = horzcat(o.T.params.(o.params{i,modBuilder.COL_NAME}), o.equations(j,modBuilder.EQ_COL_NAME));
                             else
@@ -554,10 +557,14 @@ classdef modBuilder < handle
                         end
                     end
                 end
+
               case 'exogenous'
                 for i=1:o.size(type)
+
                     for j=1:o.size('endogenous')
+
                         if any(matches(o.T.equations.(o.equations{j,modBuilder.EQ_COL_NAME}), o.varexo{i,modBuilder.COL_NAME}))
+
                             if isfield(o.T.varexo, o.varexo{i,modBuilder.COL_NAME})
                                 o.T.varexo.(o.varexo{i,modBuilder.COL_NAME}) = horzcat(o.T.varexo.(o.varexo{i,modBuilder.COL_NAME}), o.equations(j,modBuilder.EQ_COL_NAME));
                             else
@@ -566,19 +573,24 @@ classdef modBuilder < handle
                         end
                     end
                 end
+
               case 'endogenous'
                 for i=1:o.size(type)
                     o.T.var.(o.var{i,modBuilder.COL_NAME}) = o.var(i,modBuilder.COL_NAME);
                 end
+
                 for i=1:o.size(type)
+
                     for j=1:o.size(type)
+
                         if any(matches (o.T.equations.(o.var{j,modBuilder.COL_NAME}), o.var{i,modBuilder.COL_NAME}))
                             o.T.var.(o.var{i,modBuilder.COL_NAME}) = horzcat(o.T.var.(o.var{i,modBuilder.COL_NAME}), o.var(j,modBuilder.COL_NAME));
                         end
                     end
+
                     o.T.var.(o.var{i,modBuilder.COL_NAME}) = unique(o.T.var.(o.var{i,modBuilder.COL_NAME}));
                 end
-            end % switch
+            end
         end % function
 
     end % methods
@@ -609,7 +621,7 @@ classdef modBuilder < handle
                 error('Unknown type (%s). Valid types are: %s', ...
                       type, strjoin(modBuilder.VALID_TYPES, ', '))
             end
-        end
+        end % function
 
         function validate_equation_syntax(equation)
         % Validate equation string syntax for common errors
@@ -653,7 +665,7 @@ classdef modBuilder < handle
             if contains(equation, '--')
                 warning('Equation contains "--". This may be unintended. Equation: "%s"', equation)
             end
-        end
+        end % function
 
         function validate_symbol_name(sname, method_name)
         % Validate that symbol name is a non-empty string and not a reserved function name
@@ -684,7 +696,7 @@ classdef modBuilder < handle
             if ismember(sname, modBuilder.ALL_RESERVED_NAMES)
                 error('%s: Symbol name "%s" is reserved (conflicts with modBuilder property/method or built-in function).', method_name, sname);
             end
-        end
+        end % function
 
     end
 
@@ -725,7 +737,7 @@ classdef modBuilder < handle
 
             % Make unique in case of duplicates
             reserved = unique(reserved);
-        end
+        end % function
 
         function skipline(n)
         % Print n blank lines to the console
@@ -736,7 +748,7 @@ classdef modBuilder < handle
                 n = 1;
             end
             for i=1:n, fprintf('\n'), end
-        end
+        end % function
 
         function dprintf(format, varargin)
         % Display formatted output using fprintf and disp combination
@@ -749,7 +761,7 @@ classdef modBuilder < handle
             else
                 disp(fprintf(format));
             end
-        end
+        end % function
 
         function str = printlist(names)
         % Convert a cell array of names to a space-separated string ending with semicolon
@@ -761,7 +773,7 @@ classdef modBuilder < handle
         % - str      [char]    formatted string: " name1 name2 name3;"
             str = sprintf(' %s', names{:});
             str = sprintf('%s;', str);
-        end
+        end % function
 
         function printlist2(fid, type, Table)
         % Write formatted variable/parameter declarations to a file with optional metadata
@@ -808,7 +820,7 @@ classdef modBuilder < handle
                 end
             end
             fprintf(fid, ';\n\n');
-        end
+        end % function
 
         function S = shiftS(S,n)
         % Removes the first n elements of a one dimensional cell array.
@@ -817,7 +829,7 @@ classdef modBuilder < handle
             else
                 S = {};
             end
-        end
+        end % function
 
         function tokens = getsymbols(expr)
         % Extract symbols from an expression
@@ -870,7 +882,7 @@ classdef modBuilder < handle
             else
                 error('Second columns of cell arays must contain only numerics or only characters.')
             end
-        end
+        end % function
 
         function b = isequalsymboltable(o, p, type)
         % Test if two tables of symbols are identical.
@@ -899,7 +911,7 @@ classdef modBuilder < handle
                     return
                 end
             end
-        end
+        end % function
 
         function S = mergeStructs(S1, S2)
         % Merge two structures.
@@ -938,7 +950,7 @@ classdef modBuilder < handle
                     end
                 end
             end
-        end
+        end % function
 
         function [long_name, texname] = set_optional_fields(type, sname, varargin)
         % Parse optional 'long_name' and 'texname' arguments from varargin
@@ -970,7 +982,7 @@ classdef modBuilder < handle
                     end
                 end
             end
-        end
+        end % function
 
         function C = replaceincell(C, oldword, newword)
         % Replace all occurrences of oldword with newword in a cell array
@@ -986,7 +998,7 @@ classdef modBuilder < handle
             if any(s)
                 C{strcmp(oldword, C)} = newword;
             end
-        end
+        end % function
 
         function [allint, allstr] = check_indices_values(IndicesValues)
         % Validate that index values are uniformly typed (all integers or all strings)
@@ -1018,7 +1030,7 @@ classdef modBuilder < handle
                     error('Values for index $%u should be pass as a cell array.', i)
                 end
             end
-        end
+        end % function
 
     end % methods
 
@@ -1032,7 +1044,9 @@ classdef modBuilder < handle
         %
         % OUTPUTS:
         % - o  [modBuilder]
+
             if isstruct(s)
+
                 if isfield(s, 'params') && isfield(s, 'varexo') && isfield(s, 'var') ...
                         && isfield(s, 'symbols') && isfield(s, 'equations') && isfield(s, 'T') ...
                         && isfield(s, 'date')
@@ -1050,7 +1064,7 @@ classdef modBuilder < handle
             else
                 o = s;
             end
-        end
+        end % function
 
     end % methods
 
@@ -1074,6 +1088,7 @@ classdef modBuilder < handle
         %
         % OUTPUTS:
         % - o              [modBuilder]            new modBuilder object
+
             if nargin==1 && isdatetime(varargin{1})
                 o.date = varargin{1};
             elseif nargin==0
@@ -1082,6 +1097,7 @@ classdef modBuilder < handle
                     (nargin==4 && isstruct(varargin{1}) && isstruct(varargin{2}) && ischar(varargin{3}) && isfile(varargin{3}) && ischar(varargin{4}))
                 M_ = varargin{1};
                 oo_ = varargin{2};
+
                 %
                 % Load parameters
                 %
@@ -1089,18 +1105,22 @@ classdef modBuilder < handle
                 o.params = cell(n, 4);
                 o.params(:,modBuilder.COL_NAME) = M_.param_names;
                 o.params(:,modBuilder.COL_VALUE) = num2cell(M_.params);
+
                 for i=1:n
+
                     if isequal(M_.param_names{i}, M_.param_names_long{i})
                         o.params{i,modBuilder.COL_LONG_NAME} = '';
                     else
                         o.params{i,modBuilder.COL_LONG_NAME} = M_.param_names_long{i};
                     end
+
                     if isequal(M_.param_names{i}, M_.param_names_tex{i})
                         o.params{i,modBuilder.COL_TEX_NAME} = '';
                     else
                         o.params{i,modBuilder.COL_TEX_NAME} = M_.param_names_tex{i};
                     end
                 end
+
                 %
                 % Load exogenous variables
                 %
@@ -1108,57 +1128,72 @@ classdef modBuilder < handle
                 o.varexo = cell(n, 4);
                 o.varexo(:,modBuilder.COL_NAME) = M_.exo_names;
                 o.varexo(:,modBuilder.COL_VALUE) = num2cell(oo_.exo_steady_state);
+
                 for i=1:n
+
                     if isequal(M_.exo_names{i}, M_.exo_names_long{i})
                         o.varexo{i,modBuilder.COL_LONG_NAME} = '';
                     else
                         o.varexo{i,modBuilder.COL_LONG_NAME} = M_.exo_names_long{i};
                     end
+
                     if isequal(M_.exo_names{i}, M_.exo_names_tex{i})
                         o.varexo{i,modBuilder.COL_TEX_NAME} = '';
                     else
                         o.varexo{i,modBuilder.COL_TEX_NAME} = M_.exo_names_tex{i};
                     end
                 end
+
                 %
                 % Read equations, set list of equations and endogenous variables.
                 %
                 JSON = readstruct(varargin{3});
+
                 if nargin==4
                     equationtagname = varargin{4};
                 else
                     equationtagname = 'name';
                 end
+
                 n = length(JSON.model);
                 o.equations = cell(n, 2);
                 o.var = cell(n, 4);
+
                 for i=1:n
                     equation = JSON.model(i);
+
                     if not(isfield(equation, 'tags'))
                         error('Each equation must have a tag %s (to associate an endogenous variable).', equationtagname)
                     end
+
                     o.equations{i,modBuilder.EQ_COL_EXPR} = sprintf('%s = %s', equation.lhs, equation.rhs);
+
                     if ismember(equation.tags.(equationtagname), M_.endo_names)
                         o.var{i,modBuilder.COL_NAME} = char(equation.tags.(equationtagname));
                         o.equations{i,modBuilder.EQ_COL_NAME} = o.var{i,modBuilder.COL_NAME};
                         id = strcmp(equation.tags.((equationtagname)), M_.endo_names);
                         o.var{i,modBuilder.COL_VALUE} = oo_.steady_state(id);
+
                         if isequal(o.var{i,modBuilder.COL_NAME}, M_.endo_names_long{id})
                             o.var{i,modBuilder.COL_LONG_NAME} = '';
                         else
                             o.var{i,modBuilder.COL_LONG_NAME} = M_.endo_names_long{id};
                         end
+
                         if isequal(o.var{i,modBuilder.COL_NAME}, M_.endo_names_tex{id})
                             o.var{i,modBuilder.COL_TEX_NAME} = '';
                         else
                             o.var{i,modBuilder.COL_TEX_NAME} = M_.endo_names_tex{id};
                         end
+
                         o.T.equations.(equation.tags.((equationtagname))) = modBuilder.getsymbols(o.equations{i,modBuilder.EQ_COL_EXPR});
                         o.symbols = unique(horzcat(o.symbols, o.T.equations.(equation.tags.((equationtagname)))));
                         o.T.equations.(equation.tags.(equationtagname)) = setdiff(o.T.equations.(equation.tags.((equationtagname))), equation.tags.((equationtagname)));
                         o.tags.(o.var{i,modBuilder.COL_NAME}).name = o.var{i,modBuilder.COL_NAME};
+
                         % Do we need to populate o.tags with other equation tags?
                         FieldNames = setdiff(fieldnames(o.tags.(o.var{i,modBuilder.COL_NAME})), {equationtagname, 'name'});
+
                         % Equation tag name cannot be used if fourth argument is used.
                         for j=1:numel(FieldNames)
                             o.tags.(o.var{i,modBuilder.COL_NAME}).(FieldNames{j}) = char(equation.tags.(FieldNames{j}));
@@ -1167,19 +1202,22 @@ classdef modBuilder < handle
                         error('The name (equation tag) of an equation should be an endogenous variable.')
                     end
                 end
+
                 o.updatesymboltables();
                 o.symbols = setdiff(o.symbols, fields(o.T.params));
                 o.symbols = setdiff(o.symbols, fields(o.T.varexo));
                 o.symbols = setdiff(o.symbols, fields(o.T.var));
+
                 if not(isempty(o.symbols))
                     warning('unknown symbols:%s.', modBuilder.printlist(o.symbols))
                 end
+
                 %
                 % Set date
                 %
                 o.date = datetime;
             end
-        end
+        end % function
 
         function listofsymbols = getallsymbols(o)
         % Return a cell array with all the symbols in a model.
@@ -1193,7 +1231,7 @@ classdef modBuilder < handle
             for i=1:o.size('equations')
                 listofsymbols = union(listofsymbols, o.getsymbols(o.equations{i,modBuilder.EQ_COL_EXPR}));
             end
-        end
+        end % function
 
         function  n = size(o, type)
         % Return the number of parameters, endogenous variables, exogenous variables, or equations
@@ -1218,7 +1256,7 @@ classdef modBuilder < handle
               case 'equations'
                 n = size(o.equations, 1);
             end
-        end
+        end % function
 
         function o = add(o, varname, equation, varargin)
         % Add an equation to the model and associate an endogenous variable
@@ -1252,24 +1290,32 @@ classdef modBuilder < handle
             validateattributes(equation, {'char'}, {'nonempty', 'row'}, 'add', 'equation');
 
             number_of_loops = length(varargin);
+
             if not(number_of_loops)
                 o = addeq(o, varname, equation);
             else
                 indices = unique(regexp(equation, '\$[0-9]*', 'match'));
+
                 % Check the number of indices (for loops)
                 if ~isequal(numel(indices), number_of_loops)
                     error('The expected number of indices in the equation is %u but the equation has %u indices.', number_of_loops, numel(indices))
                 end
+
                 inames = regexp(varname, '\$[0-9]*', 'match');
+
                 if not(isequal(numel(indices), numel(inames))) || ~isempty(setdiff(indices, inames)) || ~isempty(setdiff(inames, indices))
                     error('This case of implicit loops is not covered. Indices must be the same in the equation and in varname.')
                 end
+
                 % Check that the indices are uniform.
                 [allint, allstr] = modBuilder.check_indices_values(varargin);
+
                 % Compute Cartesian product of set of values
                 mIndex = table2cell(combinations(varargin{:}));
+
                 % Prepare
                 Name = varname;
+
                 for i=number_of_loops:-1:1
                     if allint(i)
                         Name = strrep(Name, sprintf('$%u',i), '%u');
@@ -1279,10 +1325,12 @@ classdef modBuilder < handle
                         % Equation = strrep(Equation, sprintf('$%u',i), '%s');
                     end
                 end
+
                 for i=1:size(mIndex,1)
                     id = mIndex(i,:);
                     NAME = sprintf(Name, id{:});
                     Equation = equation;
+
                     for j=number_of_loops:-1:1
                         if allstr(j)
                             Equation = strrep(Equation, sprintf('$%u', j), id{j});
@@ -1290,6 +1338,7 @@ classdef modBuilder < handle
                             Equation = strrep(Equation, sprintf('$%u', j), num2str(id{j}));
                         end
                     end
+
                     o.add(NAME, Equation);
                 end
             end
@@ -1323,16 +1372,20 @@ classdef modBuilder < handle
             if any(ismember(o.equations(:,modBuilder.EQ_COL_NAME), varname))
                 error('Variable "%s" already has an equation. Use the change method if you really want to redefine the equation for "%s".', varname, varname)
             end
+
             id = size(o.equations, 1)+1;
             o.equations{id,modBuilder.EQ_COL_NAME} = varname;
             o.equations{id,modBuilder.EQ_COL_EXPR} = equation;
             o.var{id,modBuilder.COL_NAME} = varname;
             o.var{id,modBuilder.COL_VALUE} = NaN;
+
             id = strcmp(varname, o.varexo(:,modBuilder.COL_NAME));
+
             if any(id)
                 % The new equation is introducing an endogenous variable replacing an exogenous variable.
                 o.varexo(id,:) = [];
             end
+
             o.T.equations.(varname) = modBuilder.getsymbols(equation);
             o.symbols = horzcat(o.symbols, o.T.equations.(varname));
             o.T.equations.(varname) = setdiff(o.T.equations.(varname), varname);
@@ -1394,6 +1447,7 @@ classdef modBuilder < handle
 
             % Check if equation name contains implicit loop indices (e.g., 'Y_$1_$2')
             inames = unique(regexp(eqname, '\$\d*', 'match'));
+
             if not(isempty(inames))
                 % Implicit loop: expand and tag all matching equations
                 nindices = numel(inames);
@@ -1413,6 +1467,7 @@ classdef modBuilder < handle
                 % Prepare template for sprintf (replace $1, $2, etc. with %u or %s)
                 tmp_eqname = eqname;
                 tmp_value = value;
+
                 for i=nindices:-1:1
                     if allint(i)
                         tmp_eqname = strrep(tmp_eqname, sprintf('$%u',i), '%u');
@@ -1428,6 +1483,7 @@ classdef modBuilder < handle
                     id = mIndex(i,:);
                     name = sprintf(tmp_eqname, id{:});
                     val = sprintf(tmp_value, id{:});
+
                     % Recursively call tag for each expanded name
                     o = o.tag(name, tagname, val);
                 end
@@ -1494,17 +1550,20 @@ classdef modBuilder < handle
         %             'texname', '\rho_{$1,$2}', ...
         %             Countries, Sectors);
         % % Creates: rho_FR_1, rho_FR_2, rho_DE_1, ... with appropriate TeX names
+
             % Validate that pname is a non-empty row char array
             validateattributes(pname, {'char'}, {'nonempty', 'row'}, 'parameter', 'pname');
 
             % Check if parameter name contains implicit loop indices (e.g., 'beta_$1_$2')
             inames = unique(regexp(pname, '\$\d*', 'match'));
+
             if not(isempty(inames))
                 % Delegate to common implicit loop handler
                 o = o.handle_implicit_loops(pname, 'parameter', varargin{:});
             else
                 % Validate symbol name for reserved names (only for non-template names)
                 modBuilder.validate_symbol_name(pname, 'parameter')
+
                 if ~(ismember(pname, o.symbols) || ismember(pname, o.varexo(:,modBuilder.COL_NAME)) || ismember(pname, o.params(:,modBuilder.COL_NAME)))
                     if ismember(pname, o.var(:,modBuilder.COL_NAME))
                         error('An endogenous variable cannot be converted into a parameter.')
@@ -1512,37 +1571,48 @@ classdef modBuilder < handle
                         error('Symbol "%s" does not appear in the model.', pname)
                     end
                 end
+
                 if nargin<3 || isempty(varargin{1})
                     % Set default value
                     pvalue = NaN;
                 else
                     pvalue = varargin{1};
                 end
+
                 [long_name, texname] = modBuilder.set_optional_fields('parameter', pname, varargin{2:end});
+
                 idp = ismember(o.params(:,modBuilder.COL_NAME), pname);
+
                 if any(idp) % The parameter is already defined
                     o.params{idp, modBuilder.COL_VALUE} = pvalue;
+
                     if not(isempty(long_name))
                         o.params{idp,modBuilder.COL_LONG_NAME} = long_name;
                     end
+
                     if not(isempty(texname))
                         o.params{idp,modBuilder.COL_TEX_NAME} = texname;
                     end
                 else
                     idx = ismember(o.varexo(:,modBuilder.COL_NAME), pname);
+
                     if any(idx)
                         % pname is an exogenous variable, we change its type to parameter.
                         o.params(length(idp)+1,:) = o.varexo(idx,:);
                         o.varexo(idx,:) = [];
+
                         if not(isnan(pvalue))
                             o.params{length(idp)+1,modBuilder.COL_VALUE} = pvalue;
                         end
+
                         if not(isempty(long_name))
                             o.params{length(idp)+1,modBuilder.COL_LONG_NAME} = long_name;
                         end
+
                         if not(isempty(texname))
                             o.params{length(idp)+1,modBuilder.COL_TEX_NAME} = texname;
                         end
+
                         % Mark symbol tables as dirty (type conversion)
                         o.tables_dirty = true;
                     else
@@ -1553,6 +1623,7 @@ classdef modBuilder < handle
                         o.params{length(idp)+1,modBuilder.COL_TEX_NAME} = texname;
                     end
                 end
+
                 % Remove pname from the list of untyped symbols
                 o.symbols = setdiff(o.symbols, pname);
             end
@@ -1599,17 +1670,20 @@ classdef modBuilder < handle
         %             'texname', 'K^{$1}_{$2}', ...
         %             Countries, Sectors);
         % % Creates: K_FR_1, K_FR_2, K_FR_3, K_DE_1, ... with appropriate TeX names
+
             % Validate that xname is a non-empty row char array
             validateattributes(xname, {'char'}, {'nonempty', 'row'}, 'exogenous', 'xname');
 
             % Check if exogenous name contains implicit loop indices (e.g., 'epsilon_$1_$2')
             inames = unique(regexp(xname, '\$\d*', 'match'));
+
             if not(isempty(inames))
                 % Delegate to common implicit loop handler
                 o = o.handle_implicit_loops(xname, 'exogenous', varargin{:});
             else
                 % Validate symbol name for reserved names (only for non-template names)
                 modBuilder.validate_symbol_name(xname, 'exogenous')
+
                 if ~(ismember(xname, o.symbols) || ismember(xname, o.varexo(:,modBuilder.COL_NAME)) || ismember(xname, o.params(:,modBuilder.COL_NAME)))
                     if ismember(xname, o.var(:,modBuilder.COL_NAME))
                         error('An endogenous variable cannot be converted into an exogenous variable. Please remove the equation associated to the endogenous variable.')
@@ -1617,37 +1691,48 @@ classdef modBuilder < handle
                         error('Symbol "%s" does not appear in the model.', xname)
                     end
                 end
+
                 if nargin<3 || isempty(varargin{1})
                     % Set default value
                     xvalue = NaN;
                 else
                     xvalue = varargin{1};
                 end
+
                 [long_name, texname] = modBuilder.set_optional_fields('exogenous', xname, varargin{2:end});
+
                 idx = ismember(o.varexo(:,modBuilder.COL_NAME), xname);
+
                 if any(idx) % The exogenous variable is already defined
                     o.varexo{idx,modBuilder.COL_VALUE} = xvalue;
+
                     if not(isempty(long_name))
                         o.varexo{idx,modBuilder.COL_LONG_NAME} = long_name;
                     end
+
                     if not(isempty(texname))
                         o.varexo{idx,modBuilder.COL_TEX_NAME} = texname;
                     end
                 else
                     idp = ismember(o.params(:,modBuilder.COL_NAME), xname);
+
                     if any(idp)
                         % pname is a parameter, we change its type to exogenous variable.
                         o.varexo(length(idx)+1,:) = o.params(idp,:);
                         o.params(idp,:) = [];
+
                         if not(isnan(xvalue))
                             o.varexo{length(idx)+1,modBuilder.COL_VALUE} = xvalue;
                         end
+
                         if not(isempty(long_name))
                             o.varexo{length(idx)+1,modBuilder.COL_LONG_NAME} = long_name;
                         end
+
                         if not(isempty(texname))
                             o.varexo{length(idx)+1,modBuilder.COL_TEX_NAME} = texname;
                         end
+
                         % Mark symbol tables as dirty (type conversion)
                         o.tables_dirty = true;
                     else
@@ -1657,6 +1742,7 @@ classdef modBuilder < handle
                         o.varexo{length(idx)+1,modBuilder.COL_TEX_NAME} = texname;
                     end
                 end
+
                 % Remove xname from the list of untyped symbols
                 o.symbols = setdiff(o.symbols, xname);
             end
@@ -1723,11 +1809,13 @@ classdef modBuilder < handle
         %              'texname', 'Y_{$1,$2}', ...
         %              Countries, Sectors);
         % % Sets values and attributes for: Y_FR_1, Y_FR_2, Y_DE_1, Y_DE_2
+
             % Validate that ename is a non-empty row char array
             validateattributes(ename, {'char'}, {'nonempty', 'row'}, 'endogenous', 'ename');
 
             % Check if endogenous name contains implicit loop indices (e.g., 'y_$1_$2')
             inames = unique(regexp(ename, '\$\d*', 'match'));
+
             if not(isempty(inames))
                 % Delegate to common implicit loop handler
                 if nargin < 3 || isempty(evalue)
@@ -1757,12 +1845,16 @@ classdef modBuilder < handle
                 end
 
                 [long_name, texname] = modBuilder.set_optional_fields('endogenous', ename, varargin{:});
+
                 ide = ismember(o.var(:,modBuilder.COL_NAME), ename);
+
                 if any(ide) % The endogenous variable is already defined
                     o.var{ide,modBuilder.COL_VALUE} = evalue;
+
                     if not(isempty(long_name))
                         o.var{ide,modBuilder.COL_LONG_NAME} = long_name;
                     end
+
                     if not(isempty(texname))
                         o.var{ide,modBuilder.COL_TEX_NAME} = texname;
                     end
@@ -1772,6 +1864,7 @@ classdef modBuilder < handle
                     o.var{length(ide)+1,modBuilder.COL_LONG_NAME} = long_name;
                     o.var{length(ide)+1,modBuilder.COL_TEX_NAME} = texname;
                 end
+
                 % Remove ename from the list of untyped symbols
                 o.symbols = setdiff(o.symbols, ename);
             end
@@ -1824,17 +1917,20 @@ classdef modBuilder < handle
             validateattributes(eqname, {'char'}, {'nonempty', 'row'}, 'remove', 'eqname');
 
             % Auto-update symbol tables if needed
+
             if o.tables_dirty
                 o = o.updatesymboltables();
             end
 
             % Check if equation name contains implicit loop indices (e.g., 'Y_$1_$2')
             inames = unique(regexp(eqname, '\$\d*', 'match'));
+
             if not(isempty(inames))
                 % Implicit loop: expand and remove all matching equations
                 nindices = numel(inames);
 
                 % Validate number of index arrays
+
                 if not(isequal(numel(varargin), nindices))
                     error('The number of indices in the equation name is %u, but values for %u indices are provided.', ...
                           nindices, numel(varargin))
@@ -1848,7 +1944,9 @@ classdef modBuilder < handle
 
                 % Prepare template for sprintf (replace $1, $2, etc. with %u or %s)
                 tmp_name = eqname;
+
                 for i=nindices:-1:1
+
                     if allint(i)
                         tmp_name = strrep(tmp_name, sprintf('$%u',i), '%u');
                     else
@@ -1857,12 +1955,14 @@ classdef modBuilder < handle
                 end
 
                 % Remove equations for all combinations
+
                 for i=1:size(mIndex, 1)
                     id = mIndex(i,:);
                     name = sprintf(tmp_name, id{:});
                     % Recursively call remove for each expanded name
                     o = o.remove(name);
                 end
+
                 return;
             end
 
@@ -1870,20 +1970,28 @@ classdef modBuilder < handle
             o.symbol_map = [];
 
             ide = ismember(o.equations(:,modBuilder.EQ_COL_NAME), eqname);
+
             if not(any(ide))
                 error('Unknown equation "%s".', eqname)
             end
+
             o.equations(ide,:) = [];
             o.tags = rmfield(o.tags, eqname);
+
             for i=1:length(o.T.equations.(eqname))
                 symname = o.T.equations.(eqname){i};
+
                 % Skip unknown symbols (they're in symbols list and will be cleaned up elsewhere)
+
                 if ~o.issymbol(symname)
                     continue
                 end
+
                 [type, id] = o.typeof(symname);
+
                 if not(o.appear_in_more_than_one_equation(symname))
                     % The symbol does not appear in other equations, we can safely remove it
+
                     switch type
                       case 'parameter'
                         o.params(id,:) = [];
@@ -1896,10 +2004,14 @@ classdef modBuilder < handle
                     end % switch
                 end % if
             end
+
             o.T.equations = rmfield(o.T.equations, eqname);
+
             % Check if eqname exists in T.var before accessing (might not if tables not fully initialized)
+
             if isfield(o.T.var, eqname)
                 o.T.var.(eqname) = setdiff(o.T.var.(eqname), eqname); % Remove reference to the equation defining eqname.
+
                 if not(isempty(o.T.var.(eqname)))
                     % If the variable eqname is referenced in another equation, it must be converted to an exogenous variable.
                     o.varexo = [o.varexo; o.var(ismember(o.var(:,modBuilder.COL_NAME), eqname),:)];
@@ -1907,6 +2019,7 @@ classdef modBuilder < handle
                     o.T.var = rmfield(o.T.var, eqname);
                 end
             end
+
             o.var(ismember(o.var(:,modBuilder.COL_NAME), eqname),:) = [];
 
             % Mark symbol tables as dirty (need updating)
@@ -1996,7 +2109,7 @@ classdef modBuilder < handle
                     o.remove(eqnames{i});
                 end
             end
-        end
+        end % function
 
         function o = rename(o, oldsymbol, newsymbol)
         % Rename a symbol.
@@ -2026,15 +2139,18 @@ classdef modBuilder < handle
             end
 
             [type, id] = o.typeof(oldsymbol);
+
             switch type
               case 'parameter'
                 o.params{id,modBuilder.COL_NAME} = newsymbol;
                 o.T.params.(newsymbol) = o.T.params.(oldsymbol);
                 o.T.params = rmfield(o.T.params, oldsymbol);
+
               case 'exogenous'
                 o.varexo{id,modBuilder.COL_NAME} = newsymbol;
                 o.T.varexo.(newsymbol) = o.T.varexo.(oldsymbol);
                 o.T.varexo = rmfield(o.T.varexo, oldsymbol);
+
               case 'endogenous'
                 o.var{id,modBuilder.COL_NAME} = newsymbol;
                 o.equations{strcmp(oldsymbol, o.equations(:,modBuilder.EQ_COL_NAME)),modBuilder.EQ_COL_NAME} = newsymbol;
@@ -2045,16 +2161,20 @@ classdef modBuilder < handle
                 o.tags.(newsymbol) = o.tags.(oldsymbol);
                 o.tags = rmfield(o.tags, oldsymbol);
                 o.tags.(newsymbol).name = newsymbol;
+
                 for i=1:o.size('parameters')
                     o.T.params.(o.params{i,modBuilder.COL_NAME}) = modBuilder.replaceincell(o.T.params.(o.params{i,modBuilder.COL_NAME}), oldsymbol, newsymbol);
                 end
+
                 for i=1:o.size('exogenous')
                     o.T.varexo.(o.varexo{i,modBuilder.COL_NAME}) = modBuilder.replaceincell(o.T.varexo.(o.varexo{i,modBuilder.COL_NAME}), oldsymbol, newsymbol);
                 end
+
                 for i=1:o.size('endogenous')
                     o.T.var.(o.var{i,modBuilder.COL_NAME}) = modBuilder.replaceincell(o.T.var.(o.var{i,modBuilder.COL_NAME}), oldsymbol, newsymbol);
                 end
             end
+
             for i=1:o.size('equations')
                 o.equations{i,modBuilder.EQ_COL_EXPR} = regexprep(o.equations{i,modBuilder.EQ_COL_EXPR}, ['(?<!\w)' oldsymbol  '(?!\w)'], newsymbol);
                 o.T.equations.(o.equations{i,modBuilder.EQ_COL_NAME}) = modBuilder.replaceincell(o.T.equations.(o.equations{i,modBuilder.EQ_COL_NAME}), oldsymbol, newsymbol);
@@ -2062,7 +2182,7 @@ classdef modBuilder < handle
 
             % Mark symbol tables as dirty (need updating)
             o.tables_dirty = true;
-        end
+        end % function
 
         function o = write(o, basename)
         % Write model in a mod file.
@@ -2081,7 +2201,9 @@ classdef modBuilder < handle
         %
         % % Write to file 'mymodel.mod'
         % m.write('mymodel');
+
             fid = fopen(sprintf('%s.mod', basename), 'w');
+
             %
             % Print list of endogenous variables
             %
@@ -2090,6 +2212,7 @@ classdef modBuilder < handle
             else
                 modBuilder.printlist2(fid, 'endogenous', o.var);
             end
+
             %
             % Print list of exogenous variables
             %
@@ -2098,6 +2221,7 @@ classdef modBuilder < handle
             else
                 modBuilder.printlist2(fid, 'exogenous', o.varexo);
             end
+
             %
             % Print list of fprintf
             %
@@ -2106,39 +2230,49 @@ classdef modBuilder < handle
             else
                 modBuilder.printlist2(fid, 'parameters', o.params);
             end
+
             %
             % Print calibration if any
             %
             % Find all calibrated parameters at once (vectorized operation)
             calibrated_idx = ~cellfun(@isnan, o.params(:, modBuilder.COL_VALUE));
             calibrated_params = o.params(calibrated_idx, :);
+
             % Write in batch
             for i=1:size(calibrated_params, 1)
                 fprintf(fid, '%s = %f;\n', ...
                         calibrated_params{i, modBuilder.COL_NAME}, ...
                         calibrated_params{i, modBuilder.COL_VALUE});
             end
+
             fprintf(fid, '\n');
+
             %
             % Print model block
             %
             fprintf(fid, 'model;\n\n');
+
             for i=1:o.size('endogenous')
                 Tags = o.tags.(o.equations{i,modBuilder.EQ_COL_NAME});
                 tagnames = fieldnames(Tags);
+
                 if isequal(numel(tagnames), 1)
                     fprintf(fid, '[name = ''%s'']\n', Tags.name);
                 else
                     fprintf(fid, '[name = ''%s''', Tags.name);
                     tagnames = setdiff(tagnames, 'name');
+
                     while ~isempty(tagnames)
                         fprintf(fid, ', %s = ''%s''', tagnames{1}, Tags.(tagnames{1}));
                         tagnames = setdiff(tagnames, tagnames{1});
                     end
+
                     fprintf(fid, ']\n');
                 end
+
                 fprintf(fid, '%s;\n\n', o.equations{i,modBuilder.EQ_COL_EXPR});
             end
+
             fprintf(fid, 'end;\n');
             fclose(fid);
         end % function
@@ -2159,7 +2293,7 @@ classdef modBuilder < handle
             s.equations = o.equations;
             s.T = o.T;
             s.date = o.date;
-        end
+        end % function
 
         function o = updatesymboltables(o)
         % Update fields under o.T using optimized single-pass algorithm
@@ -2185,9 +2319,11 @@ classdef modBuilder < handle
             for i=1:size(o.params, 1)
                 o.T.params.(o.params{i, modBuilder.COL_NAME}) = cell(1, 0);
             end
+
             for i=1:size(o.varexo, 1)
                 o.T.varexo.(o.varexo{i, modBuilder.COL_NAME}) = cell(1, 0);
             end
+
             % For endogenous variables, initialize with the variable itself (its own equation)
             for i=1:size(o.var, 1)
                 o.T.var.(o.var{i, modBuilder.COL_NAME}) = o.var(i, modBuilder.COL_NAME);
@@ -2200,12 +2336,15 @@ classdef modBuilder < handle
             for j=1:size(o.equations, 1)
                 eqname = o.equations{j, modBuilder.EQ_COL_NAME};
                 Symbols = o.T.equations.(eqname);
+
                 % For each symbol in equation, determine its type and add equation reference
                 for k=1:length(Symbols)
                     sym = Symbols{k};
+
                     % O(1) lookup instead of O(n) ismember
                     if o.symbol_map.isKey(sym)
                         sym_info = o.symbol_map(sym);
+
                         switch sym_info.type
                           case 'parameter'
                             o.T.params.(sym){end+1} = eqname;
@@ -2215,6 +2354,7 @@ classdef modBuilder < handle
                             o.T.var.(sym){end+1} = eqname;
                         end
                     end
+
                     % Note: symbols not in symbol_map are ignored (could be untyped)
                 end
             end
@@ -2222,6 +2362,7 @@ classdef modBuilder < handle
             % Ensure unique entries for endogenous variables
             % (Parameters and exogenous are already unique since each appears once per equation)
             var_names = fieldnames(o.T.var);
+
             for i=1:length(var_names)
                 o.T.var.(var_names{i}) = unique(o.T.var.(var_names{i}));
             end
@@ -2326,22 +2467,28 @@ classdef modBuilder < handle
 
             % Fallback to O(n) linear search
             id = ismember(o.params(:,modBuilder.COL_NAME), name);
+
             if any(id)
                 type = 'parameter';
                 return
             end
+
             id = ismember(o.varexo(:,modBuilder.COL_NAME), name);
+
             if any(id)
                 type = 'exogenous';
                 return
             end
+
             id = ismember(o.var(:,modBuilder.COL_NAME), name);
+
             if any(id)
                 type = 'endogenous';
                 return
             end
+
             error('Unknown type for symbol "%s".', name)
-        end
+        end % function
 
         function b = appear_in_more_than_one_equation(o, name)
         % Return true iff a symbol appears in more than one equation.
@@ -2411,22 +2558,27 @@ classdef modBuilder < handle
                 symboltype = 'Unknown';
                 eqnames = {};
             end
+
             modBuilder.skipline()
+
             if strcmp(symboltype, 'Unknown')
                 fprintf('Symbol %s does not appear in any of the equations.\n', name);
                 modBuilder.skipline()
             else
                 n = length(eqnames);
+
                 if n>1
                     fprintf('%s %s appears in %u equations:\n', symboltype, name, n);
                 else
                     fprintf('%s %s appears in one equation:\n', symboltype, name);
                 end
+
                 for i=1:n
                     equation = o.equations(strcmp(eqnames{i}, o.equations(:,modBuilder.EQ_COL_NAME)),2);
                     modBuilder.skipline()
                     fprintf('[%s]\t\t%s\n', o.tags.(eqnames{i}).name, equation{1});
                 end
+
                 modBuilder.skipline()
             end
         end % function
@@ -2464,6 +2616,7 @@ classdef modBuilder < handle
 
             % Count calibrated and uncalibrated parameters
             n_params = o.size('parameters');
+
             if n_params > 0
                 n_params_calibrated = sum(~cellfun(@isnan, o.params(:, modBuilder.COL_VALUE)));
                 n_params_uncalibrated = n_params - n_params_calibrated;
@@ -2482,7 +2635,7 @@ classdef modBuilder < handle
             end
 
             fprintf('\n');
-        end
+        end % function
 
 
         function tbl = table(o, type)
@@ -2527,25 +2680,29 @@ classdef modBuilder < handle
                 % Process LongName and TeXName, replacing empty with 'NA'
                 longnames_cell = cell(size(data, 1), 1);
                 texnames_cell = cell(size(data, 1), 1);
+
                 for i = 1:size(data, 1)
+
                     if isempty(data{i, modBuilder.COL_LONG_NAME})
                         longnames_cell{i} = 'NA';
                     else
                         longnames_cell{i} = data{i, modBuilder.COL_LONG_NAME};
                     end
+
                     if isempty(data{i, modBuilder.COL_TEX_NAME})
                         texnames_cell{i} = 'NA';
                     else
                         texnames_cell{i} = data{i, modBuilder.COL_TEX_NAME};
                     end
                 end
+
                 longnames = categorical(longnames_cell);
                 texnames = categorical(texnames_cell);
 
                 tbl = table(names, values, longnames, texnames, ...
                            'VariableNames', {'Name', 'Value', 'LongName', 'TeXName'});
             end
-        end
+        end % function
 
 
         function o = flip(o, varname, varexoname, varargin)
@@ -2595,37 +2752,52 @@ classdef modBuilder < handle
         % m3.parameter('A_$1_$2', 1.0, Countries, Sectors);
         % m3.exogenous('K_$1_$2', 1.0, Countries, Sectors);
         % m3.flip('Y_$1_$2', 'K_$1_$2', {'FR'}, {1, 2});  % Flips Y_FR_1↔K_FR_1 and Y_FR_2↔K_FR_2
+
             % Validate inputs
             validateattributes(varname, {'char'}, {'nonempty', 'row'}, 'flip', 'varname');
             validateattributes(varexoname, {'char'}, {'nonempty', 'row'}, 'flip', 'varexoname');
+
             % Auto-update symbol tables if needed
+
             if o.tables_dirty
                 o = o.updatesymboltables();
             end
+
             % Check if variable names contain implicit loop indices
             inames_var = unique(regexp(varname, '\$\d*', 'match'));
             inames_varexo = unique(regexp(varexoname, '\$\d*', 'match'));
+
             if not(isempty(inames_var)) || not(isempty(inames_varexo))
                 % Implicit loop mode
+
                 % Validate that both names have the same indices
+
                 if not(isempty(setxor(inames_var, inames_varexo)))
                     error('Both variable names must contain the same index placeholders. Found %s in varname and %s in varexoname.', ...
                           strjoin(inames_var, ', '), strjoin(inames_varexo, ', '))
                 end
+
                 nindices = numel(inames_var);
+
                 % Validate number of index arrays
+
                 if not(isequal(numel(varargin), nindices))
                     error('The number of indices in the variable names is %u, but values for %u indices are provided.', ...
                           nindices, numel(varargin))
                 end
+
                 % Check that indices are uniform
                 [allint, ~] = modBuilder.check_indices_values(varargin);
+
                 % Compute Cartesian product of index values
                 mIndex = table2cell(combinations(varargin{:}));
+
                 % Prepare templates for sprintf
                 tmp_varname = varname;
                 tmp_varexoname = varexoname;
+
                 for i=nindices:-1:1
+
                     if allint(i)
                         tmp_varname = strrep(tmp_varname, sprintf('$%u',i), '%u');
                         tmp_varexoname = strrep(tmp_varexoname, sprintf('$%u',i), '%u');
@@ -2634,7 +2806,9 @@ classdef modBuilder < handle
                         tmp_varexoname = strrep(tmp_varexoname, sprintf('$%u',i), '%s');
                     end
                 end
+
                 % Flip all matching pairs using recursion
+
                 for i=1:size(mIndex,1)
                     current_varname = sprintf(tmp_varname, mIndex{i,:});
                     current_varexoname = sprintf(tmp_varexoname, mIndex{i,:});
@@ -2643,19 +2817,25 @@ classdef modBuilder < handle
             else
                 % Simple flip (no implicit loops) - base case
                 ie = ismember(o.var(:,modBuilder.COL_NAME), varname);
+
                 if not(any(ie))
                     error('"%s" is not a known endogenous variable.', varname)
                 end
+
                 ix = ismember(o.varexo(:,modBuilder.COL_NAME), varexoname);
+
                 if not(any(ix))
                     error('"%s" is not a known exogenous variable.', varexoname)
                 end
+
                 % Copy variables
                 o.var = [o.var; {varexoname o.varexo{ix,modBuilder.COL_VALUE} o.varexo{ix,modBuilder.COL_LONG_NAME} o.varexo{ix,modBuilder.COL_TEX_NAME}}];
                 o.varexo = [o.varexo; {varname o.var{ie,modBuilder.COL_VALUE} o.var{ie,modBuilder.COL_LONG_NAME} o.var{ie,modBuilder.COL_TEX_NAME}}];
+
                 % Remove variables
                 o.var(ie,:) = [];
                 o.varexo(ix,:) = [];
+
                 % Update symbol tables
                 o.T.var.(varexoname) = o.T.varexo.(varexoname);
                 o.T.varexo.(varname) = o.T.var.(varname);
@@ -2665,12 +2845,15 @@ classdef modBuilder < handle
                 o.T.equations = rmfield(o.T.equations, varname);
                 mask = strcmp(varexoname, o.T.equations.(varexoname));
                 o.T.equations.(varexoname){mask} = varname;
+
                 % Associate new endogenous variable to an equation (the one previously associated with varname)
                 o.equations{strcmp(varname, o.equations(:,modBuilder.EQ_COL_NAME)),modBuilder.EQ_COL_NAME} = varexoname;
+
                 % Update tags
                 o.tags.(varexoname) = o.tags.(varname);
                 o.tags = rmfield(o.tags, varname);
             end
+
             % Mark symbol tables as dirty (need updating)
             o.tables_dirty = true;
         end % function
@@ -2707,7 +2890,7 @@ classdef modBuilder < handle
             p.tags = o.tags;
             p.tables_dirty = o.tables_dirty;
             p.symbol_map = o.symbol_map;
-        end
+        end % function
 
         function b = eq(o, p)
         % Test equality of two modBuilder objects (overloads == operator)
@@ -2730,54 +2913,66 @@ classdef modBuilder < handle
             if o.tables_dirty
                 o = o.updatesymboltables();
             end
+
             if p.tables_dirty
                 p = p.updatesymboltables();
             end
 
             b = true;
+
             if not(modBuilder.isequalcell(o.params, p.params))
                 b = false;
                 return
             end
+
             if not(modBuilder.isequalcell(o.varexo, p.varexo))
                 b = false;
                 return
             end
+
             if not(modBuilder.isequalcell(o.var, p.var))
                 b = false;
                 return
             end
+
             if not(isequal(sort(o.symbols), sort(p.symbols)))
                 b = false;
                 return
             end
+
             if not(modBuilder.isequalcell(o.equations, p.equations))
                 b = false;
                 return
             end
+
             for i=1:o.size('equations')
+
                 if not(isequal(o.tags.(o.equations{i,modBuilder.EQ_COL_NAME}), p.tags.(o.equations{i,modBuilder.EQ_COL_NAME})))
                     b = false;
                     return
                 end
             end
+
             if not(modBuilder.isequalsymboltable(o, p, 'params'))
                 b = false;
                 return
             end
+
             if not(modBuilder.isequalsymboltable(o, p, 'varexo'))
                 b = false;
                 return
             end
+
             if not(modBuilder.isequalsymboltable(o, p, 'var'))
                 b = false;
                 return
             end
+
             if not(modBuilder.isequalsymboltable(o, p, 'equations'))
                 b = false;
                 return
             end
-        end
+        end % function
 
         function o = change(o, varname, equation)
         % Replace an existing equation in the model
@@ -2815,27 +3010,36 @@ classdef modBuilder < handle
             modBuilder.validate_equation_syntax(equation)
 
             warning('off','backtrace')
+
             ide = ismember(o.equations(:,modBuilder.EQ_COL_NAME), varname);
+
             if not(any(ide))
                 error('There is no equation for "%s".', varname)
             end
+
             o.equations{ide,modBuilder.EQ_COL_EXPR} = equation;
             otokens = o.T.equations.(varname);
             ntokens = setdiff(modBuilder.getsymbols(equation), varname);
             o.symbols = [o.symbols, ntokens];
+
             % Remove symbols that are already known. If o.symbols is empty, it indicates that the updated equation introduces no
             % new symbols. Otherwise, a warning is issued, and the user is expected to provide types for the new symbols.
             o.symbols = setdiff(o.symbols, [o.params(:,modBuilder.COL_NAME); o.varexo(:,modBuilder.COL_NAME); o.var(:,modBuilder.COL_NAME)]);
+
             if not(isempty(o.symbols))
                 % TODO: should remaining symbols be declared as exogenous variables by default?
                 warning('Untyped symbol(s):%s.', sprintf(' %s', o.symbols{:}))
             end
+
             % Do we need to remove some symbols (parameters or exogenous variables)?
             list_of_symbols_potentially_to_be_removed = setdiff(otokens, ntokens);
+
             for i=1:length(list_of_symbols_potentially_to_be_removed)
+
                 if not(o.appear_in_more_than_one_equation(list_of_symbols_potentially_to_be_removed{i}))
                     % Remove parameter/variable if it does not appear in another equation.
                     [type, id] = o.typeof(list_of_symbols_potentially_to_be_removed{i});
+
                     switch type
                       case 'parameter'
                         o.params(id,:) = [];
@@ -2848,11 +3052,12 @@ classdef modBuilder < handle
                     end
                 end
             end
+
             o.T.equations.(varname) = ntokens;
 
             % Mark symbol tables as dirty (need updating)
             o.tables_dirty = true;
-        end
+        end % function
 
         function o = subs(o, expr1, expr2, varargin)
         % Substitute expr1 by expr2 in equation eqname (use strrep).
@@ -2905,9 +3110,12 @@ classdef modBuilder < handle
             % Parse arguments: extract char args first, then index values
             eqname = [];
             char_count = 0;
+
             for i = 1:length(varargin)
+
                 if ischar(varargin{i}) && isrow(varargin{i})
                     char_count = char_count + 1;
+
                     if char_count == 1
                         eqname = varargin{i};
                     else
@@ -2917,6 +3125,7 @@ classdef modBuilder < handle
                     break;
                 end
             end
+
             index_values = varargin(char_count+1:end);
 
             % Check for implicit loop indices in expressions
@@ -2924,6 +3133,7 @@ classdef modBuilder < handle
             inames_expr2 = unique(regexp(expr2, '\$\d*', 'match'));
 
             % Validate that both expressions have the same indices
+
             if not(isempty(setxor(inames_expr1, inames_expr2)))
                 error('Both expressions must contain the same index placeholders. Found %s in expr1 and %s in expr2.', ...
                       strjoin(inames_expr1, ', '), strjoin(inames_expr2, ', '))
@@ -2931,22 +3141,27 @@ classdef modBuilder < handle
 
             if isempty(inames_expr1)
                 % Base case: no implicit loops
+
                 if ~isempty(index_values)
                     error('No $ placeholders in expressions, but index values provided.')
                 end
+
                 o = o.substitution(expr1, expr2, eqname, true);
                 return
             end
 
             % Implicit loop mode: collect all unique indices
             inames_eq = [];
+
             if ~isempty(eqname)
                 inames_eq = unique(regexp(eqname, '\$\d*', 'match'));
             end
+
             all_indices = unique([inames_expr1, inames_eq]);
             nindices_total = numel(all_indices);
 
             % Validate number of index values
+
             if length(index_values) ~= nindices_total
                 error('Expected %d index value arrays (for indices %s), but got %d.', ...
                       nindices_total, strjoin(all_indices, ', '), length(index_values))
@@ -2968,7 +3183,9 @@ classdef modBuilder < handle
             % Prepare templates for sprintf
             tmp_expr1 = expr1;
             tmp_expr2 = expr2;
+
             for i=numel(inames_expr1):-1:1
+
                 if expr_allint(i)
                     tmp_expr1 = strrep(tmp_expr1, inames_expr1{i}, '%u');
                     tmp_expr2 = strrep(tmp_expr2, inames_expr1{i}, '%u');
@@ -2979,8 +3196,10 @@ classdef modBuilder < handle
             end
 
             % Handle eqname expansion
+
             if isempty(eqname)
                 % Apply to all equations
+
                 for i=1:size(mIndex_expr,1)
                     current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
                     current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
@@ -2988,6 +3207,7 @@ classdef modBuilder < handle
                 end
             elseif isempty(inames_eq)
                 % eqname has no placeholders
+
                 for i=1:size(mIndex_expr,1)
                     current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
                     current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
@@ -3001,7 +3221,9 @@ classdef modBuilder < handle
 
                 % Prepare template for eqname
                 tmp_eqname = eqname;
+
                 for i=numel(inames_eq):-1:1
+
                     if eq_allint(i)
                         tmp_eqname = strrep(tmp_eqname, inames_eq{i}, '%u');
                     else
@@ -3010,8 +3232,10 @@ classdef modBuilder < handle
                 end
 
                 % For each equation, substitute all expression combinations
+
                 for j=1:size(mIndex_eq,1)
                     current_eqname = sprintf(tmp_eqname, mIndex_eq{j,:});
+
                     for i=1:size(mIndex_expr,1)
                         current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
                         current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
@@ -3047,9 +3271,12 @@ classdef modBuilder < handle
             % Parse arguments: extract char args first, then index values
             eqname = [];
             char_count = 0;
+
             for i = 1:length(varargin)
+
                 if ischar(varargin{i}) && isrow(varargin{i})
                     char_count = char_count + 1;
+
                     if char_count == 1
                         eqname = varargin{i};
                     else
@@ -3059,6 +3286,7 @@ classdef modBuilder < handle
                     break;
                 end
             end
+
             index_values = varargin(char_count+1:end);
 
             % Check for implicit loop indices in expr1 only
@@ -3069,15 +3297,18 @@ classdef modBuilder < handle
             if isempty(inames_expr1)
                 % Base case: no implicit loops in expr1
                 % Any $ in expr2 is treated as regex syntax (backreferences)
+
                 if ~isempty(index_values)
                     error('No $ placeholders in expr1, but index values provided.')
                 end
+
                 o = o.substitution(expr1, expr2, eqname, false);
                 return
             end
 
             % Implicit loop mode: validate that expr2 has the same indices as expr1
             inames_expr2 = unique(regexp(expr2, '\$\d*', 'match'));
+
             if not(isempty(setxor(inames_expr1, inames_expr2)))
                 error('Both expressions must contain the same index placeholders. Found %s in expr1 and %s in expr2.', ...
                       strjoin(inames_expr1, ', '), strjoin(inames_expr2, ', '))
@@ -3085,13 +3316,16 @@ classdef modBuilder < handle
 
             % Implicit loop mode: collect all unique indices
             inames_eq = [];
+
             if ~isempty(eqname)
                 inames_eq = unique(regexp(eqname, '\$\d*', 'match'));
             end
+
             all_indices = unique([inames_expr1, inames_eq]);
             nindices_total = numel(all_indices);
 
             % Validate number of index values
+
             if length(index_values) ~= nindices_total
                 error('Expected %d index value arrays (for indices %s), but got %d.', ...
                       nindices_total, strjoin(all_indices, ', '), length(index_values))
@@ -3113,7 +3347,9 @@ classdef modBuilder < handle
             % Prepare templates for sprintf
             tmp_expr1 = expr1;
             tmp_expr2 = expr2;
+
             for i=numel(inames_expr1):-1:1
+
                 if expr_allint(i)
                     tmp_expr1 = strrep(tmp_expr1, inames_expr1{i}, '%u');
                     tmp_expr2 = strrep(tmp_expr2, inames_expr1{i}, '%u');
@@ -3124,8 +3360,10 @@ classdef modBuilder < handle
             end
 
             % Handle eqname expansion
+
             if isempty(eqname)
                 % Apply to all equations
+
                 for i=1:size(mIndex_expr,1)
                     current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
                     current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
@@ -3133,6 +3371,7 @@ classdef modBuilder < handle
                 end
             elseif isempty(inames_eq)
                 % eqname has no placeholders
+
                 for i=1:size(mIndex_expr,1)
                     current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
                     current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
@@ -3146,7 +3385,9 @@ classdef modBuilder < handle
 
                 % Prepare template for eqname
                 tmp_eqname = eqname;
+
                 for i=numel(inames_eq):-1:1
+
                     if eq_allint(i)
                         tmp_eqname = strrep(tmp_eqname, inames_eq{i}, '%u');
                     else
@@ -3155,8 +3396,10 @@ classdef modBuilder < handle
                 end
 
                 % For each equation, substitute all expression combinations
+
                 for j=1:size(mIndex_eq,1)
                     current_eqname = sprintf(tmp_eqname, mIndex_eq{j,:});
+
                     for i=1:size(mIndex_expr,1)
                         current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
                         current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
@@ -3185,6 +3428,7 @@ classdef modBuilder < handle
         % - Automatically uses rename() if substitution affects a symbol across all equations
         % - Updates symbol tables after substitution
         % - Warns about new unknown symbols introduced by substitution
+
             if usestrrep
                 % Is it safe to use the subs method?
                 if o.issymbol(expr1)
@@ -3205,14 +3449,17 @@ classdef modBuilder < handle
                     error('You did not provide a valid regular expression.')
                 end
             end
+
             % Where does the substitution should be done?
             if isempty(eqname)
                 % Apply the change to all the equations
                 eqnames = o.equations(:,modBuilder.EQ_COL_NAME);
             else
+
                 if ischar(eqname)
                     eqnames = {eqname};
                 else
+
                     if iscellstr(eqname)
                         eqnames = eqname(:);
                     else
@@ -3220,13 +3467,16 @@ classdef modBuilder < handle
                     end
                 end
             end
+
             if ~usestrrep
                 % Test that the regular expression matches only one expression in all the selected equations.
                 matches = {};
+
                 for i=1:numel(eqnames)
                     id = strcmp(eqnames{i}, o.equations(:,modBuilder.EQ_COL_NAME));
                     matches = union(matches, unique(regexp(o.equations{id,modBuilder.EQ_COL_EXPR}, expr1, 'match')));
                 end
+
                 if isempty(matches)
                     % No match found - issue warning and return without modification
                     backtrace_state = warning('query', 'backtrace');
@@ -3240,30 +3490,37 @@ classdef modBuilder < handle
                     expr0 = matches{1};
                 end
             end
+
             % Can we use the rename method (is the substitution for a symbol in all the equations where it appears)?
             userename = false;
+
             if ~usestrrep && o.issymbol(expr0)
+
                 if isequal(numel(eqnames), o.size('equations'))
                     userename = true;
                 else
                     % Does the matched symbol appear in other equations?
                     eqnames_ = setdiff(o.equations(:,modBuilder.EQ_COL_NAME), eqnames);
                     matches = {};
+
                     for i=1:numel(eqnames_)
                         id = strcmp(eqnames_{i}, o.equations(:,modBuilder.EQ_COL_NAME));
                         matches = union(matches, unique(regexp(o.equations{id,modBuilder.EQ_COL_EXPR}, expr1, 'match')));
                     end
+
                     if isempty(matches)
                         % expr1 does not appear in any other equation, we can safely use the rename method
                         userename = true;
                     end
                 end
             end
+
             if userename
                 % We can safely use the rename method.
                 o.rename(expr0, expr2);
                 return
             end
+
             % Preallocate with reasonable max size (optimize for common case)
             list_of_unknown_symbols = cell(1, numel(eqnames) * 5); % Assume max 5 new symbols per equation
             unknown_count = 0;
@@ -3272,11 +3529,13 @@ classdef modBuilder < handle
                 eqname = eqnames{i};
                 select = strcmp(eqname, o.equations(:,modBuilder.EQ_COL_NAME));
                 original_eq = o.equations{select,modBuilder.EQ_COL_EXPR};
+
                 if usestrrep
                     o.equations(select,modBuilder.EQ_COL_EXPR) = strrep(o.equations(select,modBuilder.EQ_COL_EXPR), expr1, expr2);
                 else
                     o.equations(select,modBuilder.EQ_COL_EXPR) = regexprep(o.equations(select,modBuilder.EQ_COL_EXPR), expr1, expr2);
                 end
+
                 % Check if any change was made
                 if strcmp(original_eq, o.equations{select,modBuilder.EQ_COL_EXPR})
                     % No substitution occurred - pattern not found
@@ -3290,13 +3549,19 @@ classdef modBuilder < handle
                     warning(backtrace_state.state, 'backtrace');
                     continue; % Skip to next equation
                 end
+
                 % Validate the modified equation syntax
                 modBuilder.validate_equation_syntax(o.equations{select,modBuilder.EQ_COL_EXPR})
+
                 Symbols = modBuilder.getsymbols(o.equations{select,modBuilder.EQ_COL_EXPR});
                 newsyms = setdiff(Symbols, o.T.equations.(eqname)); % New symbols in updated equation
+
                 if ~isempty(newsyms)
+
                     for j=1:length(newsyms)
+
                         if ~o.issymbol(newsyms{j})
+
                             if ~ismember(newsyms{j}, list_of_unknown_symbols(1:unknown_count))
                                 modBuilder.dprintf('Symbol %s is unknown, you need to provide a type (parameter, endogenous or exogenous variable).', newsyms{j})
                                 unknown_count = unknown_count + 1;
@@ -3305,11 +3570,16 @@ classdef modBuilder < handle
                         end
                     end
                 end
+
                 delsyms = setdiff(o.T.equations.(eqname), Symbols); % Deleted symbols in updated equation
+
                 if ~isempty(delsyms)
+
                     for j=1:length(delsyms)
                         [type, id] = o.typeof(delsyms{j});
+
                         if ~o.appear_in_more_than_one_equation(delsyms{j})
+
                             switch type
                               case 'parameter'
                                 modBuilder.dprintf('Parameter %s will be removed).', delsyms{j})
@@ -3326,6 +3596,7 @@ classdef modBuilder < handle
                         end
                     end
                 end
+
                 o.T.equations.(eqname) = Symbols;
             end
 
@@ -3364,15 +3635,19 @@ classdef modBuilder < handle
         % % Extract only consumption and output equations
         % submodel = m.extract('c', 'y');
         % % submodel has 2 equations, w parameter, but not delta
+
             p = copy(o);
+
             if not(all(ismember(varargin, p.equations(:,modBuilder.EQ_COL_NAME))))
                 error('Equation(s) missing for:%s.', modBuilder.printlist(varargin(~ismember(varargin, p.equations(:,modBuilder.EQ_COL_NAME)))))
             end
+
             eqnames = setdiff(p.equations(:,modBuilder.EQ_COL_NAME), varargin);
+
             if ~isempty(eqnames)
                 p.rm(eqnames{:});
             end
-        end
+        end % function
 
         function q = merge(o, p)
         % Merge two models into a single larger model
@@ -3426,7 +3701,7 @@ classdef modBuilder < handle
 
             % Update symbol tables for the merged model
             q.updatesymboltables();
-        end
+        end % function
 
         function evaleq = evaluate(o, eqname, printflag)
         % Evaluate an equation.
@@ -3453,22 +3728,26 @@ classdef modBuilder < handle
             if nargin<3
                 printflag = false;
             end
+
             %
             % Initialise outputs
             %
             evaleq.lhs = NaN;
             evaleq.rhs = NaN;
             evaleq.resid = NaN;
+
             %
             % Get static version of the equation
             %
             eq = @(x) isequal(x, eqname);
             eqID = cellfun(eq, o.equations(:,modBuilder.EQ_COL_NAME));
             equation = regexprep(o.equations{eqID,modBuilder.EQ_COL_EXPR}, '(\w+)\([+-]?\d+\)', '$1');
+
             %
             % Is there an equal symbol? If not we just evaluate the expression and return resid.
             %
             LHSRHS = strsplit(equation, '=');
+
             if isscalar(LHSRHS)
                 LHS = LHSRHS{1};
                 RHS = '0';
@@ -3478,14 +3757,17 @@ classdef modBuilder < handle
             else
                 error('An equation cannot have more than one equal (=) symbol.')
             end
+
             %
             % Evaluate the equation
             %
             Symbols = o.T.equations.(eqname);
             Symbols = [Symbols, eqname];
+
             for i=1:length(Symbols)
                 symbol = Symbols{i};
                 [type, id] = o.typeof(symbol);
+
                 switch type
                   case 'parameter'
                     LHS = regexprep(LHS, ['\<', symbol, '\>'], num2str(o.params{id,modBuilder.COL_VALUE}, 15));
@@ -3500,23 +3782,27 @@ classdef modBuilder < handle
                     error('Unknown symbol type.')
                 end
             end
+
             evaleq.lhs = eval(LHS);
             evaleq.rhs = eval(RHS);
             evaleq.resid = evaleq.lhs-evaleq.rhs;
+
             if printflag
                 modBuilder.skipline()
                 modBuilder.dprintf('Static equation: %s', equation);
                 modBuilder.skipline()
                 modBuilder.dprintf('LHS:             %f', evaleq.lhs);
                 modBuilder.dprintf('RHS:             %f', evaleq.rhs);
+
                 if evaleq.resid<0
                     modBuilder.dprintf('residual:       %f', evaleq.resid);
                 else
                     modBuilder.dprintf('residual:        %f', evaleq.resid);
                 end
+
                 modBuilder.skipline()
             end
-        end
+        end % function
 
         function o = solve(o, eqname, sname, sinit)
         % Numerically solve an equation for a symbol (parameter, endogenous, or exogenous)
@@ -3542,7 +3828,9 @@ classdef modBuilder < handle
             end
 
             if not(ismember(sname, o.T.equations.(eqname)))
+
                 if o.isendogenous(sname)
+
                     if not(ismember(eqname, o.T.var.(sname)))
                         error('Symbol "%s" does not appear in equation "%s".', sname, eqname)
                     end
@@ -3550,23 +3838,27 @@ classdef modBuilder < handle
                     error('Symbol "%s" does not appear in equation "%s".', sname, eqname)
                 end
             end
+
             %
             % Get static version of the equation
             %
             eq = @(x) isequal(x, eqname);
             eqID = cellfun(eq, o.equations(:,modBuilder.EQ_COL_NAME));
             equation = regexprep(o.equations{eqID,modBuilder.EQ_COL_EXPR}, '(\w+)\([+-]?\d+\)', '$1');
+
             %
             % List of known symbols
             %
             knownsymbols = o.T.equations.(eqname);
             knownsymbols = setdiff([knownsymbols, eqname], sname);
+
             %
             % Replace the known symbols with their respective values.
             %
             for i=1:length(knownsymbols)
                 symbol = knownsymbols{i};
                 [type, id] = o.typeof(symbol);
+
                 switch type
                   case 'parameter'
                     equation = regexprep(equation, ['\<', symbol, '\>'], num2str(o.params{id,modBuilder.COL_VALUE}, 15));
@@ -3578,11 +3870,13 @@ classdef modBuilder < handle
                     error('Unknown symbol type.')
                 end
             end
+
             %
             % Set anonymous function
             %
             equation = regexprep(equation, ['\<', sname, '\>'], 'x');
             LHSRHS = strsplit(equation, '=');
+
             if isscalar(LHSRHS)
                 equation = sprintf('@(x) %s', LHSRHS{1});
             elseif length(LHSRHS)==2
@@ -3590,12 +3884,15 @@ classdef modBuilder < handle
             else
                 error('An equation cannot have more than one equal (=) symbol.')
             end
+
             f = str2func(equation);
+
             %
             % Set initial guess for the unknown symbol
             %
             [x, ~, ~] = solvers.newton(f, sinit, 1e-6, 100);
             [type, id] = o.typeof(sname);
+
             switch type
               case 'parameter'
                 o.params{id,modBuilder.COL_VALUE} = x;
@@ -3606,7 +3903,7 @@ classdef modBuilder < handle
               otherwise
                 error('Unknown symbol type.')
             end
-        end
+        end % function
 
         function p = subsref(o, S)
         % Overload subsref: o{'eq'} extracts equation, o.x returns parameter/variable value
@@ -3646,6 +3943,7 @@ classdef modBuilder < handle
                     % Not a property - check if it's a parameter or variable
                     try
                         [type, id] = typeof(o, S(1).subs);
+
                         % It's a known symbol - return its value
                         switch type
                             case 'parameter'
@@ -3657,6 +3955,7 @@ classdef modBuilder < handle
                             otherwise
                                 error('Unknown symbol type: %s', type);
                         end
+
                         S = modBuilder.shiftS(S, 1);
                     catch
                         % Not a known symbol - try method call
@@ -3674,6 +3973,7 @@ classdef modBuilder < handle
                     end
                 end
             end
+
             if ~isempty(S)
                 % Handle remaining indexing operations
                 % If result is a modBuilder, call subsref recursively
@@ -3726,6 +4026,7 @@ classdef modBuilder < handle
         % - o.exovar = 1.0 sets exogenous variable value
         % - o.endovar = 2.0 sets endogenous variable steady state value
         % - o('endovar') = 'new_equation' changes equation (only for endogenous variables)
+
             if length(S)>1
                 error('Wrong assignment.')
             end

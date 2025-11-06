@@ -13,9 +13,10 @@ classdef autoDiff1
             if nargin<2
                 dx = 1;
             end
+
             o.x = x;
             o.dx = dx;
-        end
+        end % function
 
         %
         % Arithmetics
@@ -25,31 +26,32 @@ classdef autoDiff1
         % Overload the + binary operator.
             [o, p] = autoDiff1.convert(o, p);
             q = autoDiff1(o.x + p.x, o.dx + p.dx);
-        end
+        end % function
 
         function q = minus(o, p)
         % Overload the -  binary operator.
             [o, p] = autoDiff1.convert(o, p);
             q = autoDiff1(o.x - p.x, o.dx - p.dx);
-        end
+        end % function
 
         function q = mtimes(o, p)
         % Overload the * binary operator.
             [o, p] = autoDiff1.convert(o, p);
             q = autoDiff1(o.x*p.x, o.dx*p.x + o.x*p.dx);
-        end
+        end % function
 
         function q = mrdivide(o, p)
             % Overload the / binary operator.
             [o, p] = autoDiff1.convert(o, p);
             q = autoDiff1(o.x/p.x, (o.dx*p.x - p.dx*o.x)/(p.x^2));
-        end
+        end % function
 
         function q = mpower(o, p)
         % Overload the ^ binary operator.
             if isa(o, 'autoDiff1') && isnumeric(p)
                 q = autoDiff1(o.x^p, p*o.dx*o.x^(p-1));
             elseif isnumeric(o) && isa(p, 'autoDiff1')
+
                 if o>0
                     tmp = o^p.x;
                     q = autoDiff1(tmp, log(o)*tmp*p.dx);
@@ -57,6 +59,7 @@ classdef autoDiff1
                     error('Domain error: base must be positive.')
                 end
             elseif isa(o, 'autoDiff1') && isa(p, 'autoDiff1')
+
                 if o.x>0
                     tmp = o.x^p.x;
                     q = autoDiff1(tmp, tmp*(p.dx*log(o.x)+p.x*o.dx/o.x ));
@@ -64,7 +67,7 @@ classdef autoDiff1
                     error('Domain error: base must be positive.')
                 end
             end
-        end
+        end % function
 
         %
         % Special mathematical functions
@@ -74,7 +77,7 @@ classdef autoDiff1
         % Overload the exponential function.
             tmp = exp(o.x);
             q = autoDiff1(tmp, tmp*o.dx);
-        end
+        end % function
 
         function q = log(o)
         % Overload the natural logarithm function.
@@ -83,7 +86,7 @@ classdef autoDiff1
             else
                 error('Domain error: argument must be positive.')
             end
-        end
+        end % function
 
         function q = log10(o)
         % Overload the base 10 logarithm function.
@@ -92,7 +95,7 @@ classdef autoDiff1
             else
                 error('Domain error: argument must be positive.')
             end
-        end
+        end % function
 
         function q = sqrt(o)
         % Overload the square root function.
@@ -102,7 +105,7 @@ classdef autoDiff1
             else
                 error('Domain error: argument must be positive.')
             end
-        end
+        end % function
 
         function q = cbrt(o)
         % Overload the cubic root function.
@@ -112,11 +115,12 @@ classdef autoDiff1
             else
                 error('Domain error: argument must be nonzero.')
             end
-        end
+        end % function
 
         function q = sign(o)
         % Overload the sign function.
             if abs(o.x)>0
+
                 if o.x>0
                     q = autoDiff1(1, 0);
                 else
@@ -146,7 +150,7 @@ classdef autoDiff1
                 % manual).
                 error('Domain error: argument must be nonzero.')
             end
-        end
+        end % function
 
         function q = abs(o)
         % Overload the absolute value function.
@@ -155,27 +159,28 @@ classdef autoDiff1
             else
                 q = autoDiff1(0, NaN); % Should we throw an error instead? We could also consider a smooth approximation.
             end
-        end
+        end % function
 
         function q = sin(o)
         % Overload the sine function.
             q  = autoDiff1(sin(o.x), cos(o.x)*o.dx);
-        end
+        end % function
 
         function q = cos(o)
         % Overload the cosine function.
             q = autoDiff1(cos(o.x), -sin(o.x)*o.dx);
-        end
+        end % function
 
         function q = tan(o)
         % Overload the tangent function.
             n = (o.x - pi/2)/pi;
+
             if abs(n - round(n)) > 1e-15
                 q = autoDiff1(tan(o.x), o.dx/cos(o.x)^2);
             else
                 error('Domain error: tan(x) has asymptotes if x = pi/2+n*pi (n is an integer).')
             end
-        end
+        end % function
 
         function q = asin(o)
         % Overload the inverse sine function.
@@ -184,7 +189,7 @@ classdef autoDiff1
             else
                 error('Domain error: argument must be less than one in absolute value.')
             end
-        end
+        end % function
 
         function q = acos(o)
         % Overload the inverse cosine function.
@@ -193,33 +198,33 @@ classdef autoDiff1
             else
                 error('Domain error: argument must be less than one in absolute value.')
             end
-        end
+        end % function
 
         function q = atan(o)
         % Overload the inverse tangent function.
             q = autoDiff1(atan(o.x), o.dx/(1+o.x^2));
-        end
+        end % function
 
         function q = sinh(o)
         % Overload the hyperbolic sine function.
             q  = autoDiff1(sinh(o.x), cosh(o.x)*o.dx);
-        end
+        end % function
 
         function q = cosh(o)
         % Overload the hyperbolic cosine function.
             q = autoDiff1(cosh(o.x), sinh(o.x)*o.dx);
-        end
+        end % function
 
         function q = tanh(o)
         % Overload the hyperbolic tangent function.
             tmp = tanh(o.x);
             q = autoDiff1(tmp, (1-tmp^2)*o.dx);
-        end
+        end % function
 
         function q = asinh(o)
         % Overload the inverse hyperbolic sine function.
             q  = autoDiff1(asinh(o.x), o.dx/sqrt(1+o.x^2));
-        end
+        end % function
 
         function q = acosh(o)
         % Overload the inverse hyperbolic cosine function.
@@ -228,7 +233,7 @@ classdef autoDiff1
             else
                 error('Domain error: argument must be greater than 1.')
             end
-        end
+        end % function
 
         function q = atanh(o)
         % Overload the inverse hyperbolic tangent function.
@@ -237,7 +242,7 @@ classdef autoDiff1
             else
                 error('Domain error: argument must be smaller than 1.')
             end
-        end
+        end % function
 
         function q = max(o, p)
         % Overload the max function.
@@ -248,7 +253,7 @@ classdef autoDiff1
             else
                 error('Domain error: non differentiable when both arguments are equal.')
             end
-        end
+        end % function
 
         function q = min(o, p)
         % Overload the min function.
@@ -259,59 +264,63 @@ classdef autoDiff1
             else
                 error('Domain error: non differentiable when both arguments are equal.')
             end
-        end
+        end % function
 
         function q = normcdf(o, mu, sigma)
         % Overload the normcdf function.
             if nargin<3
                 sigma = 1;
             end
+
             if nargin<2
                 mu = 0;
             end
+
             q = autoDiff1(normcdf(o.x, mu, sigma), normpdf(o.x, mu, sigma)*o.dx/sigma);
-        end
+        end % function
 
         function q = normpdf(o, mu, sigma)
         % Overload the normpdf function.
             if nargin<3
                 sigma = 1;
             end
+
             if nargin<2
                 mu = 0;
             end
+
             q = autoDiff1(normpdf(o.x, mu, sigma), -(o.x-mu)*normpdf(o.x, mu, sigma)*o.dx/sigma^2);
-        end
+        end % function
 
         function q = erf(o)
             % Overload the erf function.
             q = autoDiff1(erf(o.x), (2.0/sqrt(pi))*exp(-o.x^2)*o.dx);
-        end
+        end % function
 
         function q = erfc(o)
             % Overload the erfc function.
             q = autoDiff1(erfc(o.x), -(2.0/sqrt(pi))*exp(-o.x^2)*o.dx);
-        end
+        end % function
 
         function b = lt(o, p)
         % Overload the < operator.
             b = autoDiff1.compare_op(o, p, @lt);
-        end
+        end % function
 
         function b = le(o, p)
         % Overload the <= operator.
             b = autoDiff1.compare_op(o, p, @le);
-        end
+        end % function
 
         function b = gt(o, p)
         % Overload the > operator.
             b = autoDiff1.compare_op(o, p, @gt);
-        end
+        end % function
 
         function b = ge(o, p)
         % Overload the >= operator.
             b = autoDiff1.compare_op(o, p, @ge);
-        end
+        end % function
 
     end
 
@@ -330,10 +339,11 @@ classdef autoDiff1
             if isnumeric(a)
                 a = autoDiff1(a, 0);
             end
+
             if isnumeric(b)
                 b = autoDiff1(b, 0);
             end
-        end
+        end % function
 
         function b = compare_op(o, p, op)
         % Helper for comparison operators.
@@ -354,7 +364,7 @@ classdef autoDiff1
             else
                 error('Type error.')
             end
-        end
+        end % function
 
     end % methods
 
