@@ -57,9 +57,19 @@ listoftests = [
   'subsref/rbc1.m',
   'subs/rbc1.m',
   'subs/rbc2.m',
+  'subs/t01.m',
+  'subs/t02.m',
+  'subs/t03.m',
+  'subs/t04.m',
+  'subs/t05.m',
   'substitute/rbc1.m',
   'substitute/rbc2.m',
   'substitute/rbc3.m',
+  'substitute/t01.m',
+  'substitute/t02.m',
+  'substitute/t03.m',
+  'substitute/t04.m',
+  'substitute/t05.m',
   'rename/rbc1.m',
   'rename/rbc2.m',
   'rm/t01.m',
@@ -108,6 +118,8 @@ listoftests = [
   'examples/tag.m',
   'examples/rm.m',
   'examples/flip.m',
+  'examples/subs.m',
+  'examples/substitute.m',
 ]
 
 listoffailingtests = [

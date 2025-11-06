@@ -1876,8 +1876,13 @@ classdef modBuilder < handle
             o.equations(ide,:) = [];
             o.tags = rmfield(o.tags, eqname);
             for i=1:length(o.T.equations.(eqname))
-                [type, id] = o.typeof(o.T.equations.(eqname){i});
-                if not(o.appear_in_more_than_one_equation(o.T.equations.(eqname){i}))
+                symname = o.T.equations.(eqname){i};
+                % Skip unknown symbols (they're in symbols list and will be cleaned up elsewhere)
+                if ~o.issymbol(symname)
+                    continue
+                end
+                [type, id] = o.typeof(symname);
+                if not(o.appear_in_more_than_one_equation(symname))
                     % The symbol does not appear in other equations, we can safely remove it
                     switch type
                       case 'parameter'
@@ -1943,6 +1948,9 @@ classdef modBuilder < handle
         %
         % % Remove multiple indexed equations
         % m.rm('eq$1', 'var$1', 1:2);  % Removes eq1, var1, eq2, var2
+            if isempty(varargin)
+                error('rm method requires at least one equation name.')
+            end
             eqnames = varargin(1); % First equation to be removed.
             if not(ischar(eqnames{1}) && isrow(eqnames{1}))
                 error('First input argument must be a row char array (equation name).')
@@ -2846,44 +2854,316 @@ classdef modBuilder < handle
             o.tables_dirty = true;
         end
 
-        function o = subs(o, expr1, expr2, eqname)
+        function o = subs(o, expr1, expr2, varargin)
         % Substitute expr1 by expr2 in equation eqname (use strrep).
         %
         % INPUTS:
         % - o           [modBuilder]
-        % - expr1       [char]         1×n array, expression
-        % - expr2       [char]         1×m array, expression
-        % - eqname      [char]         1×p array, name of an equation
+        % - expr1       [char]         1×n array, expression (may contain $ placeholders)
+        % - expr2       [char]         1×m array, expression (may contain $ placeholders)
+        % - eqname      [char]         equation name (optional, may contain $ placeholders)
+        % - idx1        [cell/numeric] index values for placeholders (required if $ present)
+        % - idx2        [cell/numeric] additional index values
+        % - ...
         %
         % OUTPUTS:
-        % - o           [modBuilder]   updated object (with new equation)
+        % - o           [modBuilder]   updated object
         %
         % REMARKS:
-        % If last argument is not provided, expr1 is substituted by expr2 in all the model.
-            if nargin<4
-                eqname = [];
+        % - All char arguments (expr1, expr2, eqname) come first, then all index value arrays
+        % - If eqname is not provided, expr1 is substituted by expr2 in all equations
+        % - expr1 and expr2 must contain the same index placeholders
+        % - eqname can reuse indices from expressions or introduce new ones
+        % - Indices shared between expressions and eqname only need values provided once
+        %
+        % EXAMPLES:
+        % % Simple substitution (backward compatible)
+        % m.subs('alpha', 'beta', 'Y');
+        %
+        % % Implicit loop: substitute in all equations
+        % m.subs('(alpha_$1+0)', 'beta_$1', {1, 2, 3});
+        %
+        % % Implicit loop: substitute in specific equation
+        % m.subs('(alpha_$1+0)', 'beta_$1', 'Y', {1, 2});
+        %
+        % % Reuse indices from expressions in eqname
+        % m.subs('alpha_$1_$2', 'beta_$1_$2', 'Y_$1', {'FR', 'DE'}, {1, 2});
+        % % Y_$1 reuses $1 from expressions
+        %
+        % % New index in eqname
+        % m.subs('alpha_$1', 'beta_$1', 'Y_$2', {1, 2, 3}, {'A', 'B'});
+        % % $1 for expressions, $2 is new for eqname
+        %
+        % % Mix of reused and new indices
+        % m.subs('alpha_$1_$2', 'beta_$1_$2', 'Y_$1_$3', {'FR'}, {1, 2}, {'North', 'South'});
+        % % $1, $2 for expressions; $3 is new for eqname
+
+            % Validate inputs
+            validateattributes(expr1, {'char'}, {'nonempty', 'row'}, 'subs', 'expr1');
+            validateattributes(expr2, {'char'}, {'nonempty', 'row'}, 'subs', 'expr2');
+
+            % Parse arguments: extract char args first, then index values
+            eqname = [];
+            char_count = 0;
+            for i = 1:length(varargin)
+                if ischar(varargin{i}) && isrow(varargin{i})
+                    char_count = char_count + 1;
+                    if char_count == 1
+                        eqname = varargin{i};
+                    else
+                        error('Only one equation name (char argument) allowed after expr1 and expr2.')
+                    end
+                else
+                    break;
+                end
             end
-            o = substitution(o, expr1, expr2, eqname, true);
+            index_values = varargin(char_count+1:end);
+
+            % Check for implicit loop indices in expressions
+            inames_expr1 = unique(regexp(expr1, '\$\d*', 'match'));
+            inames_expr2 = unique(regexp(expr2, '\$\d*', 'match'));
+
+            % Validate that both expressions have the same indices
+            if not(isempty(setxor(inames_expr1, inames_expr2)))
+                error('Both expressions must contain the same index placeholders. Found %s in expr1 and %s in expr2.', ...
+                      strjoin(inames_expr1, ', '), strjoin(inames_expr2, ', '))
+            end
+
+            if isempty(inames_expr1)
+                % Base case: no implicit loops
+                if ~isempty(index_values)
+                    error('No $ placeholders in expressions, but index values provided.')
+                end
+                o = o.substitution(expr1, expr2, eqname, true);
+                return
+            end
+
+            % Implicit loop mode: collect all unique indices
+            inames_eq = [];
+            if ~isempty(eqname)
+                inames_eq = unique(regexp(eqname, '\$\d*', 'match'));
+            end
+            all_indices = unique([inames_expr1, inames_eq]);
+            nindices_total = numel(all_indices);
+
+            % Validate number of index values
+            if length(index_values) ~= nindices_total
+                error('Expected %d index value arrays (for indices %s), but got %d.', ...
+                      nindices_total, strjoin(all_indices, ', '), length(index_values))
+            end
+
+            % Validate all index values
+            [allint, ~] = modBuilder.check_indices_values(index_values);
+
+            % Build mapping from index placeholder to its values
+            index_map = containers.Map(all_indices, index_values);
+
+            % Extract values for expression indices
+            expr_values = cellfun(@(x) index_map(x), inames_expr1, 'UniformOutput', false);
+            expr_allint = cellfun(@(x) allint(strcmp(all_indices, x)), inames_expr1);
+
+            % Compute Cartesian product of expression indices
+            mIndex_expr = table2cell(combinations(expr_values{:}));
+
+            % Prepare templates for sprintf
+            tmp_expr1 = expr1;
+            tmp_expr2 = expr2;
+            for i=numel(inames_expr1):-1:1
+                if expr_allint(i)
+                    tmp_expr1 = strrep(tmp_expr1, inames_expr1{i}, '%u');
+                    tmp_expr2 = strrep(tmp_expr2, inames_expr1{i}, '%u');
+                else
+                    tmp_expr1 = strrep(tmp_expr1, inames_expr1{i}, '%s');
+                    tmp_expr2 = strrep(tmp_expr2, inames_expr1{i}, '%s');
+                end
+            end
+
+            % Handle eqname expansion
+            if isempty(eqname)
+                % Apply to all equations
+                for i=1:size(mIndex_expr,1)
+                    current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
+                    current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
+                    o = o.subs(current_expr1, current_expr2);
+                end
+            elseif isempty(inames_eq)
+                % eqname has no placeholders
+                for i=1:size(mIndex_expr,1)
+                    current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
+                    current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
+                    o = o.subs(current_expr1, current_expr2, eqname);
+                end
+            else
+                % eqname has placeholders
+                eq_values = cellfun(@(x) index_map(x), inames_eq, 'UniformOutput', false);
+                eq_allint = cellfun(@(x) allint(strcmp(all_indices, x)), inames_eq);
+                mIndex_eq = table2cell(combinations(eq_values{:}));
+
+                % Prepare template for eqname
+                tmp_eqname = eqname;
+                for i=numel(inames_eq):-1:1
+                    if eq_allint(i)
+                        tmp_eqname = strrep(tmp_eqname, inames_eq{i}, '%u');
+                    else
+                        tmp_eqname = strrep(tmp_eqname, inames_eq{i}, '%s');
+                    end
+                end
+
+                % For each equation, substitute all expression combinations
+                for j=1:size(mIndex_eq,1)
+                    current_eqname = sprintf(tmp_eqname, mIndex_eq{j,:});
+                    for i=1:size(mIndex_expr,1)
+                        current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
+                        current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
+                        o = o.subs(current_expr1, current_expr2, current_eqname);
+                    end
+                end
+            end
         end % function
 
-        function o = substitute(o, expr1, expr2, eqname)
+        function o = substitute(o, expr1, expr2, varargin)
         % Substitute expr1 by expr2 in equation eqname (use regexprep).
         %
         % INPUTS:
         % - o           [modBuilder]
-        % - expr1       [char]         1×n array, expression
-        % - expr2       [char]         1×m array, expression
-        % - eqname      [char]         1×p array, name of an equation
+        % - expr1       [char]         1×n array, expression (may contain $ placeholders)
+        % - expr2       [char]         1×m array, expression (may contain $ placeholders)
+        % - eqname      [char]         equation name (optional, may contain $ placeholders)
+        % - idx1        [cell/numeric] index values for placeholders (required if $ present)
+        % - idx2        [cell/numeric] additional index values
+        % - ...
         %
         % OUTPUTS:
-        % - o           [modBuilder]   updated object (with new equation)
+        % - o           [modBuilder]   updated object
         %
         % REMARKS:
-        % If last argument is not provided, expr1 is substituted by expr2 in all the model.
-            if nargin<4
-                eqname = [];
+        % - Same as subs() but uses regex pattern matching (regexprep) instead of literal (strrep)
+        % - All char arguments come first, then all index value arrays
+
+            % Validate inputs
+            validateattributes(expr1, {'char'}, {'nonempty', 'row'}, 'substitute', 'expr1');
+            validateattributes(expr2, {'char'}, {'nonempty', 'row'}, 'substitute', 'expr2');
+
+            % Parse arguments: extract char args first, then index values
+            eqname = [];
+            char_count = 0;
+            for i = 1:length(varargin)
+                if ischar(varargin{i}) && isrow(varargin{i})
+                    char_count = char_count + 1;
+                    if char_count == 1
+                        eqname = varargin{i};
+                    else
+                        error('Only one equation name (char argument) allowed after expr1 and expr2.')
+                    end
+                else
+                    break;
+                end
             end
-            o = substitution(o, expr1, expr2, eqname, false);
+            index_values = varargin(char_count+1:end);
+
+            % Check for implicit loop indices in expr1 only
+            % Note: expr2 may contain $ for regex backreferences (e.g., $1), which is allowed
+            % We only check expr1 to determine if this is an implicit loop
+            inames_expr1 = unique(regexp(expr1, '\$\d*', 'match'));
+
+            if isempty(inames_expr1)
+                % Base case: no implicit loops in expr1
+                % Any $ in expr2 is treated as regex syntax (backreferences)
+                if ~isempty(index_values)
+                    error('No $ placeholders in expr1, but index values provided.')
+                end
+                o = o.substitution(expr1, expr2, eqname, false);
+                return
+            end
+
+            % Implicit loop mode: validate that expr2 has the same indices as expr1
+            inames_expr2 = unique(regexp(expr2, '\$\d*', 'match'));
+            if not(isempty(setxor(inames_expr1, inames_expr2)))
+                error('Both expressions must contain the same index placeholders. Found %s in expr1 and %s in expr2.', ...
+                      strjoin(inames_expr1, ', '), strjoin(inames_expr2, ', '))
+            end
+
+            % Implicit loop mode: collect all unique indices
+            inames_eq = [];
+            if ~isempty(eqname)
+                inames_eq = unique(regexp(eqname, '\$\d*', 'match'));
+            end
+            all_indices = unique([inames_expr1, inames_eq]);
+            nindices_total = numel(all_indices);
+
+            % Validate number of index values
+            if length(index_values) ~= nindices_total
+                error('Expected %d index value arrays (for indices %s), but got %d.', ...
+                      nindices_total, strjoin(all_indices, ', '), length(index_values))
+            end
+
+            % Validate all index values
+            [allint, ~] = modBuilder.check_indices_values(index_values);
+
+            % Build mapping from index placeholder to its values
+            index_map = containers.Map(all_indices, index_values);
+
+            % Extract values for expression indices
+            expr_values = cellfun(@(x) index_map(x), inames_expr1, 'UniformOutput', false);
+            expr_allint = cellfun(@(x) allint(strcmp(all_indices, x)), inames_expr1);
+
+            % Compute Cartesian product of expression indices
+            mIndex_expr = table2cell(combinations(expr_values{:}));
+
+            % Prepare templates for sprintf
+            tmp_expr1 = expr1;
+            tmp_expr2 = expr2;
+            for i=numel(inames_expr1):-1:1
+                if expr_allint(i)
+                    tmp_expr1 = strrep(tmp_expr1, inames_expr1{i}, '%u');
+                    tmp_expr2 = strrep(tmp_expr2, inames_expr1{i}, '%u');
+                else
+                    tmp_expr1 = strrep(tmp_expr1, inames_expr1{i}, '%s');
+                    tmp_expr2 = strrep(tmp_expr2, inames_expr1{i}, '%s');
+                end
+            end
+
+            % Handle eqname expansion
+            if isempty(eqname)
+                % Apply to all equations
+                for i=1:size(mIndex_expr,1)
+                    current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
+                    current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
+                    o = o.substitute(current_expr1, current_expr2);
+                end
+            elseif isempty(inames_eq)
+                % eqname has no placeholders
+                for i=1:size(mIndex_expr,1)
+                    current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
+                    current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
+                    o = o.substitute(current_expr1, current_expr2, eqname);
+                end
+            else
+                % eqname has placeholders
+                eq_values = cellfun(@(x) index_map(x), inames_eq, 'UniformOutput', false);
+                eq_allint = cellfun(@(x) allint(strcmp(all_indices, x)), inames_eq);
+                mIndex_eq = table2cell(combinations(eq_values{:}));
+
+                % Prepare template for eqname
+                tmp_eqname = eqname;
+                for i=numel(inames_eq):-1:1
+                    if eq_allint(i)
+                        tmp_eqname = strrep(tmp_eqname, inames_eq{i}, '%u');
+                    else
+                        tmp_eqname = strrep(tmp_eqname, inames_eq{i}, '%s');
+                    end
+                end
+
+                % For each equation, substitute all expression combinations
+                for j=1:size(mIndex_eq,1)
+                    current_eqname = sprintf(tmp_eqname, mIndex_eq{j,:});
+                    for i=1:size(mIndex_expr,1)
+                        current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
+                        current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
+                        o = o.substitute(current_expr1, current_expr2, current_eqname);
+                    end
+                end
+            end
         end % function
 
         function o = substitution(o, expr1, expr2, eqname, usestrrep)
@@ -2909,7 +3189,12 @@ classdef modBuilder < handle
                 % Is it safe to use the subs method?
                 if o.issymbol(expr1)
                     warning('It is not safe to use the subs method to change a symbol. I switch to the substitute method with a regular expression. If the change applies to all the equations you could also use the rename method.')
-                    o.substitute(['(?<!\w)' expr1  '(?!\w)'], expr2, eqname);
+                    % Use MATLAB word boundaries \< and \> to match whole words only
+                    if isempty(eqname)
+                        o.substitute(['\<' expr1  '\>'], expr2);
+                    else
+                        o.substitute(['\<' expr1  '\>'], expr2, eqname);
+                    end
                     return
                 end
             else
@@ -2942,7 +3227,14 @@ classdef modBuilder < handle
                     id = strcmp(eqnames{i}, o.equations(:,modBuilder.EQ_COL_NAME));
                     matches = union(matches, unique(regexp(o.equations{id,modBuilder.EQ_COL_EXPR}, expr1, 'match')));
                 end
-                if length(matches)>1
+                if isempty(matches)
+                    % No match found - issue warning and return without modification
+                    backtrace_state = warning('query', 'backtrace');
+                    warning('off', 'backtrace');
+                    warning('Pattern "%s" not found in equation(s): %s', expr1, strjoin(eqnames, ', '));
+                    warning(backtrace_state.state, 'backtrace');
+                    return
+                elseif length(matches)>1
                     error('The provided regular expression matches more than one expression in the equation(s).')
                 else
                     expr0 = matches{1};
@@ -2979,10 +3271,24 @@ classdef modBuilder < handle
             for i=1:numel(eqnames)
                 eqname = eqnames{i};
                 select = strcmp(eqname, o.equations(:,modBuilder.EQ_COL_NAME));
+                original_eq = o.equations{select,modBuilder.EQ_COL_EXPR};
                 if usestrrep
                     o.equations(select,modBuilder.EQ_COL_EXPR) = strrep(o.equations(select,modBuilder.EQ_COL_EXPR), expr1, expr2);
                 else
                     o.equations(select,modBuilder.EQ_COL_EXPR) = regexprep(o.equations(select,modBuilder.EQ_COL_EXPR), expr1, expr2);
+                end
+                % Check if any change was made
+                if strcmp(original_eq, o.equations{select,modBuilder.EQ_COL_EXPR})
+                    % No substitution occurred - pattern not found
+                    backtrace_state = warning('query', 'backtrace');
+                    warning('off', 'backtrace');
+                    if usestrrep
+                        warning('String "%s" not found in equation "%s"', expr1, eqname);
+                    else
+                        warning('Pattern "%s" not found in equation "%s"', expr1, eqname);
+                    end
+                    warning(backtrace_state.state, 'backtrace');
+                    continue; % Skip to next equation
                 end
                 % Validate the modified equation syntax
                 modBuilder.validate_equation_syntax(o.equations{select,modBuilder.EQ_COL_EXPR})
@@ -3023,6 +3329,11 @@ classdef modBuilder < handle
                 o.T.equations.(eqname) = Symbols;
             end
 
+            % Add unknown symbols to symbols list
+            if unknown_count > 0
+                o.symbols = unique([o.symbols, list_of_unknown_symbols(1:unknown_count)]);
+            end
+
             % Mark symbol tables as dirty (need updating)
             o.tables_dirty = true;
         end % function
@@ -3058,7 +3369,9 @@ classdef modBuilder < handle
                 error('Equation(s) missing for:%s.', modBuilder.printlist(varargin(~ismember(varargin, p.equations(:,modBuilder.EQ_COL_NAME)))))
             end
             eqnames = setdiff(p.equations(:,modBuilder.EQ_COL_NAME), varargin);
-            p.rm(eqnames{:});
+            if ~isempty(eqnames)
+                p.rm(eqnames{:});
+            end
         end
 
         function q = merge(o, p)
