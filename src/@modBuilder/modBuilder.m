@@ -312,11 +312,11 @@ classdef modBuilder < handle
                 % Call the specific method recursively
                 switch symbol_type
                     case 'parameter'
-                        o = o.parameter(call_args{:});
+                        o.parameter(call_args{:});
                     case 'exogenous'
-                        o = o.exogenous(call_args{:});
+                        o.exogenous(call_args{:});
                     case 'endogenous'
-                        o = o.endogenous(call_args{:});
+                        o.endogenous(call_args{:});
                     otherwise
                         error('Unsupported symbol type: "%s".', symbol_type)
                 end
@@ -1485,7 +1485,7 @@ classdef modBuilder < handle
                     val = sprintf(tmp_value, id{:});
 
                     % Recursively call tag for each expanded name
-                    o = o.tag(name, tagname, val);
+                    o.tag(name, tagname, val);
                 end
                 return;
             end
@@ -1559,7 +1559,7 @@ classdef modBuilder < handle
 
             if not(isempty(inames))
                 % Delegate to common implicit loop handler
-                o = o.handle_implicit_loops(pname, 'parameter', varargin{:});
+                o.handle_implicit_loops(pname, 'parameter', varargin{:});
             else
                 % Validate symbol name for reserved names (only for non-template names)
                 modBuilder.validate_symbol_name(pname, 'parameter')
@@ -1679,7 +1679,7 @@ classdef modBuilder < handle
 
             if not(isempty(inames))
                 % Delegate to common implicit loop handler
-                o = o.handle_implicit_loops(xname, 'exogenous', varargin{:});
+                o.handle_implicit_loops(xname, 'exogenous', varargin{:});
             else
                 % Validate symbol name for reserved names (only for non-template names)
                 modBuilder.validate_symbol_name(xname, 'exogenous')
@@ -1820,10 +1820,10 @@ classdef modBuilder < handle
                 % Delegate to common implicit loop handler
                 if nargin < 3 || isempty(evalue)
                     % No value provided
-                    o = o.handle_implicit_loops(ename, 'endogenous', varargin{:});
+                    o.handle_implicit_loops(ename, 'endogenous', varargin{:});
                 else
                     % Value provided
-                    o = o.handle_implicit_loops(ename, 'endogenous', evalue, varargin{:});
+                    o.handle_implicit_loops(ename, 'endogenous', evalue, varargin{:});
                 end
             else
                 % Validate symbol name for reserved names (only for non-template names)
@@ -1919,7 +1919,7 @@ classdef modBuilder < handle
             % Auto-update symbol tables if needed
 
             if o.tables_dirty
-                o = o.updatesymboltables();
+                o.updatesymboltables();
             end
 
             % Check if equation name contains implicit loop indices (e.g., 'Y_$1_$2')
@@ -1960,7 +1960,7 @@ classdef modBuilder < handle
                     id = mIndex(i,:);
                     name = sprintf(tmp_name, id{:});
                     % Recursively call remove for each expanded name
-                    o = o.remove(name);
+                    o.remove(name);
                 end
 
                 return;
@@ -2135,7 +2135,7 @@ classdef modBuilder < handle
 
             % Auto-update symbol tables if needed
             if o.tables_dirty
-                o = o.updatesymboltables();
+                o.updatesymboltables();
             end
 
             [type, id] = o.typeof(oldsymbol);
@@ -2330,7 +2330,7 @@ classdef modBuilder < handle
             end
 
             % Update symbol map for O(1) lookups
-            o = o.update_symbol_map();
+            o.update_symbol_map();
 
             % Single pass through equations (O(n_equations × avg_symbols))
             for j=1:size(o.equations, 1)
@@ -2502,7 +2502,7 @@ classdef modBuilder < handle
 
             % Auto-update symbol tables if needed
             if o.tables_dirty
-                o = o.updatesymboltables();
+                o.updatesymboltables();
             end
 
             if o.isparameter(name)
@@ -2542,7 +2542,7 @@ classdef modBuilder < handle
 
             % Auto-update symbol tables if needed
             if o.tables_dirty
-                o = o.updatesymboltables();
+                o.updatesymboltables();
             end
 
             if o.isparameter(name)
@@ -2760,7 +2760,7 @@ classdef modBuilder < handle
             % Auto-update symbol tables if needed
 
             if o.tables_dirty
-                o = o.updatesymboltables();
+                o.updatesymboltables();
             end
 
             % Check if variable names contain implicit loop indices
@@ -2812,7 +2812,7 @@ classdef modBuilder < handle
                 for i=1:size(mIndex,1)
                     current_varname = sprintf(tmp_varname, mIndex{i,:});
                     current_varexoname = sprintf(tmp_varexoname, mIndex{i,:});
-                    o = o.flip(current_varname, current_varexoname);
+                    o.flip(current_varname, current_varexoname);
                 end
             else
                 % Simple flip (no implicit loops) - base case
@@ -2911,11 +2911,11 @@ classdef modBuilder < handle
 
             % Auto-update symbol tables if needed for both objects
             if o.tables_dirty
-                o = o.updatesymboltables();
+                o.updatesymboltables();
             end
 
             if p.tables_dirty
-                p = p.updatesymboltables();
+                p.updatesymboltables();
             end
 
             b = true;
@@ -3146,7 +3146,7 @@ classdef modBuilder < handle
                     error('No $ placeholders in expressions, but index values provided.')
                 end
 
-                o = o.substitution(expr1, expr2, eqname, true);
+                o.substitution(expr1, expr2, eqname, true);
                 return
             end
 
@@ -3203,7 +3203,7 @@ classdef modBuilder < handle
                 for i=1:size(mIndex_expr,1)
                     current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
                     current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
-                    o = o.subs(current_expr1, current_expr2);
+                    o.subs(current_expr1, current_expr2);
                 end
             elseif isempty(inames_eq)
                 % eqname has no placeholders
@@ -3211,7 +3211,7 @@ classdef modBuilder < handle
                 for i=1:size(mIndex_expr,1)
                     current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
                     current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
-                    o = o.subs(current_expr1, current_expr2, eqname);
+                    o.subs(current_expr1, current_expr2, eqname);
                 end
             else
                 % eqname has placeholders
@@ -3239,7 +3239,7 @@ classdef modBuilder < handle
                     for i=1:size(mIndex_expr,1)
                         current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
                         current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
-                        o = o.subs(current_expr1, current_expr2, current_eqname);
+                        o.subs(current_expr1, current_expr2, current_eqname);
                     end
                 end
             end
@@ -3302,7 +3302,7 @@ classdef modBuilder < handle
                     error('No $ placeholders in expr1, but index values provided.')
                 end
 
-                o = o.substitution(expr1, expr2, eqname, false);
+                o.substitution(expr1, expr2, eqname, false);
                 return
             end
 
@@ -3367,7 +3367,7 @@ classdef modBuilder < handle
                 for i=1:size(mIndex_expr,1)
                     current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
                     current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
-                    o = o.substitute(current_expr1, current_expr2);
+                    o.substitute(current_expr1, current_expr2);
                 end
             elseif isempty(inames_eq)
                 % eqname has no placeholders
@@ -3375,7 +3375,7 @@ classdef modBuilder < handle
                 for i=1:size(mIndex_expr,1)
                     current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
                     current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
-                    o = o.substitute(current_expr1, current_expr2, eqname);
+                    o.substitute(current_expr1, current_expr2, eqname);
                 end
             else
                 % eqname has placeholders
@@ -3403,7 +3403,7 @@ classdef modBuilder < handle
                     for i=1:size(mIndex_expr,1)
                         current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
                         current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
-                        o = o.substitute(current_expr1, current_expr2, current_eqname);
+                        o.substitute(current_expr1, current_expr2, current_eqname);
                     end
                 end
             end
@@ -3722,7 +3722,7 @@ classdef modBuilder < handle
 
             % Auto-update symbol tables if needed
             if o.tables_dirty
-                o = o.updatesymboltables();
+                o.updatesymboltables();
             end
 
             if nargin<3
@@ -3824,7 +3824,7 @@ classdef modBuilder < handle
 
             % Auto-update symbol tables if needed
             if o.tables_dirty
-                o = o.updatesymboltables();
+                o.updatesymboltables();
             end
 
             if not(ismember(sname, o.T.equations.(eqname)))
@@ -3922,7 +3922,7 @@ classdef modBuilder < handle
 
             % Auto-update symbol tables if accessing T property
             if isequal(S(1).type, '.') && isequal(S(1).subs, 'T') && o.tables_dirty
-                o = o.updatesymboltables();
+                o.updatesymboltables();
             end
 
             if isequal(S(1).type, '{}')
