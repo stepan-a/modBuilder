@@ -593,6 +593,60 @@ classdef modBuilder < handle
             end
         end % function
 
+
+        function matches = findsymbol(o, pattern)
+        % Find all symbols matching a regular expression pattern.
+        %
+        % INPUTS:
+        % - o         [modBuilder]
+        % - pattern   [char]         1×n    regular expression pattern
+        %
+        % OUTPUTS:
+        % - matches   [struct]       struct array with fields:
+        %                            .name       - symbol name
+        %                            .type       - 'Parameter', 'Exogenous variable', or 'Endogenous variable'
+        %                            .equations  - cell array of equation names where symbol appears
+        %
+        % REMARKS:
+        % - Searches through all parameters, exogenous, and endogenous variables
+        % - Returns empty struct array if no matches found
+
+            matches = struct('name', {}, 'type', {}, 'equations', {});
+
+            % Search parameters
+            for i = 1:size(o.params, 1)
+                name = o.params{i, modBuilder.COL_NAME};
+                if ~isempty(regexp(name, pattern, 'once'))
+                    match.name = name;
+                    match.type = 'Parameter';
+                    match.equations = o.T.params.(name);
+                    matches(end+1) = match;
+                end
+            end
+
+            % Search exogenous variables
+            for i = 1:size(o.varexo, 1)
+                name = o.varexo{i, modBuilder.COL_NAME};
+                if ~isempty(regexp(name, pattern, 'once'))
+                    match.name = name;
+                    match.type = 'Exogenous variable';
+                    match.equations = o.T.varexo.(name);
+                    matches(end+1) = match;
+                end
+            end
+
+            % Search endogenous variables
+            for i = 1:size(o.var, 1)
+                name = o.var{i, modBuilder.COL_NAME};
+                if ~isempty(regexp(name, pattern, 'once'))
+                    match.name = name;
+                    match.type = 'Endogenous variable';
+                    match.equations = o.T.var.(name);
+                    matches(end+1) = match;
+                end
+            end
+        end % function
+
     end % methods
 
 
@@ -1035,6 +1089,32 @@ classdef modBuilder < handle
     end % methods
 
     methods(Static)
+
+        function tf = isregexp(str)
+        % Check if string contains regular expression metacharacters.
+        %
+        % Valid symbol names only use letters, digits, and underscores.
+        % Any other character indicates a regex pattern.
+        %
+        % INPUTS:
+        % - str    [char]    1×n    string to check
+        %
+        % OUTPUTS:
+        % - tf     [logical] scalar true if string contains regex metacharacters
+        %
+        % EXAMPLES:
+        % modBuilder.isregexp('alpha')       % Returns false
+        % modBuilder.isregexp('beta_1')      % Returns false
+        % modBuilder.isregexp('beta_.*')     % Returns true (contains . and *)
+        % modBuilder.isregexp('theta_\d+')   % Returns true (contains \ and +)
+        % modBuilder.isregexp('^alpha')      % Returns true (contains ^)
+
+            % Regex metacharacters to check for
+            regexChars = '.*+?^$[]{}()|\\';
+
+            tf = any(ismember(str, regexChars));
+        end % function
+
 
         function o = loadobj(s)
         % Deserialize a modBuilder object reprsented by structure s.
@@ -2519,12 +2599,15 @@ classdef modBuilder < handle
         function o = lookfor(o, name)
         % Print equations where symbol 'name' appears.
         %
+        % Supports both exact symbol names and regular expression patterns.
+        % Regex patterns are auto-detected by the presence of special characters.
+        %
         % INPUTS:
         % - o         [modBuilder]
-        % - name      [char]         1×n    name of a symbol.
+        % - name      [char]         1×n    name of a symbol or regex pattern
         %
         % OUTPUTS:
-        % - b         [logical]      scalar
+        % - o         [modBuilder]
         %
         % EXAMPLES:
         % m = modBuilder();
@@ -2533,53 +2616,91 @@ classdef modBuilder < handle
         % m.add('i', 'i = delta*k');
         % m.parameter('w', 1.5);
         % m.parameter('delta', 0.1);
+        % m.parameter('beta_1', 0.5);
+        % m.parameter('beta_2', 0.3);
         %
-        % % Find all equations containing 'c'
+        % % Find all equations containing 'c' (exact match)
         % m.lookfor('c');
         % % Output: Endogenous variable c appears in 2 equations:
         % %         [c]  c = w*h
         % %         [y]  y = c + i
+        %
+        % % Find all symbols matching regex pattern
+        % m.lookfor('beta_.*');
+        % % Output: Found 2 symbols matching pattern 'beta_.*':
+        % %         Parameter beta_1 appears in ...
+        % %         Parameter beta_2 appears in ...
 
             % Auto-update symbol tables if needed
             if o.tables_dirty
                 o.updatesymboltables();
             end
 
-            if o.isparameter(name)
-                symboltype = 'Parameter';
-                eqnames = o.T.params.(name);
-            elseif o.isexogenous(name)
-                symboltype = 'Exogenous variable';
-                eqnames = o.T.varexo.(name);
-            elseif o.isendogenous(name)
-                symboltype = 'Endogenous variable';
-                eqnames = o.T.var.(name);
-            else
-                symboltype = 'Unknown';
-                eqnames = {};
-            end
+            % Auto-detect regex usage
+            if modBuilder.isregexp(name)
+                % Regex mode: find all matching symbols and recursively call lookfor
+                matches = o.findsymbol(name);
 
-            modBuilder.skipline()
-
-            if strcmp(symboltype, 'Unknown')
-                fprintf('Symbol %s does not appear in any of the equations.\n', name);
                 modBuilder.skipline()
-            else
-                n = length(eqnames);
 
-                if n>1
-                    fprintf('%s %s appears in %u equations:\n', symboltype, name, n);
-                else
-                    fprintf('%s %s appears in one equation:\n', symboltype, name);
-                end
-
-                for i=1:n
-                    equation = o.equations(strcmp(eqnames{i}, o.equations(:,modBuilder.EQ_COL_NAME)),2);
+                if isempty(matches)
+                    fprintf('No symbols matching pattern ''%s'' found.\n', name);
                     modBuilder.skipline()
-                    fprintf('[%s]\t\t%s\n', o.tags.(eqnames{i}).name, equation{1});
+                else
+                    if length(matches) == 1
+                        fprintf('Found 1 symbol matching pattern ''%s'':\n', name);
+                    else
+                        fprintf('Found %u symbols matching pattern ''%s'':\n', length(matches), name);
+                    end
+                    modBuilder.skipline()
+
+                    % Recursively call lookfor for each matching symbol
+                    % This reuses the exact match display logic
+                    for i = 1:length(matches)
+                        o.lookfor(matches(i).name);
+                        if i < length(matches)
+                            modBuilder.skipline()
+                        end
+                    end
+                end
+            else
+                % Exact match mode (original behavior)
+                if o.isparameter(name)
+                    symboltype = 'Parameter';
+                    eqnames = o.T.params.(name);
+                elseif o.isexogenous(name)
+                    symboltype = 'Exogenous variable';
+                    eqnames = o.T.varexo.(name);
+                elseif o.isendogenous(name)
+                    symboltype = 'Endogenous variable';
+                    eqnames = o.T.var.(name);
+                else
+                    symboltype = 'Unknown';
+                    eqnames = {};
                 end
 
                 modBuilder.skipline()
+
+                if strcmp(symboltype, 'Unknown')
+                    fprintf('Symbol %s does not appear in any of the equations.\n', name);
+                    modBuilder.skipline()
+                else
+                    n = length(eqnames);
+
+                    if n>1
+                        fprintf('%s %s appears in %u equations:\n', symboltype, name, n);
+                    else
+                        fprintf('%s %s appears in one equation:\n', symboltype, name);
+                    end
+
+                    for i=1:n
+                        equation = o.equations(strcmp(eqnames{i}, o.equations(:,modBuilder.EQ_COL_NAME)),2);
+                        modBuilder.skipline()
+                        fprintf('[%s]\t\t%s\n', o.tags.(eqnames{i}).name, equation{1});
+                    end
+
+                    modBuilder.skipline()
+                end
             end
         end % function
 

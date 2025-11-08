@@ -111,6 +111,7 @@ listoftests = [
   'examples/rename.m',
   'examples/typeof.m',
   'examples/lookfor.m',
+  'examples/lookfor_regex.m',
   'examples/write.m',
   'examples/copy.m',
   'examples/extract.m',
