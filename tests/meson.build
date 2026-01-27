@@ -121,6 +121,8 @@ listoftests = [
   'examples/flip.m',
   'examples/subs.m',
   'examples/substitute.m',
+  'examples/listeqbytag.m',
+  'examples/select.m',
 ]
 
 listoffailingtests = [

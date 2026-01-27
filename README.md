@@ -365,6 +365,35 @@ symbols = m.getallsymbols();
 % Returns {'alpha', 'c', 'e', 'k', 'y', ...}
 ```
 
+#### `listeqbytag(tagname, tagvalue, ...)`
+
+Return a list of equation names matching tag criteria. Tag values are interpreted as regular expressions (anchored with `^` and `$`). When multiple name-value pairs are given, all criteria must be satisfied (AND logic).
+
+**Examples:**
+
+```matlab
+% Tag some equations
+m.tag('Y_m', 'sector', 'manufacturing');
+m.tag('Y_s', 'sector', 'services');
+m.tag('Y_m', 'type', 'production');
+m.tag('Y_s', 'type', 'production');
+
+% Exact match
+eqs = m.listeqbytag('sector', 'manufacturing');
+% Returns {'Y_m'}
+
+% Regex match
+eqs = m.listeqbytag('sector', 'manuf.*');
+% Returns {'Y_m'}
+
+% Multiple criteria (AND)
+eqs = m.listeqbytag('sector', 'manufacturing', 'type', 'production');
+% Returns {'Y_m'}
+
+% Match several values with alternation
+eqs = m.listeqbytag('type', 'production|accumulation');
+```
+
 ### Model Operations
 
 #### `write(basename)`
@@ -413,6 +442,23 @@ Create a submodel with specified equations.
 submodel = m.extract('c', 'i', 'k');
 ```
 
+#### `select(tagname, tagvalue, ...)`
+
+Extract a submodel by selecting equations based on tag values. Combines `listeqbytag` and `extract`. Tag values are interpreted as regular expressions. Can also be called via curly brace indexing with a `bytag` selector (see [Indexing and Access](#indexing-and-access)).
+
+**Examples:**
+
+```matlab
+% Select all manufacturing equations
+sub = m.select('sector', 'manufacturing');
+
+% Equivalent using bytag indexing
+sub = m{bytag('sector', 'manufacturing')};
+
+% Multiple criteria
+sub = m.select('sector', 'manufacturing', 'type', 'production');
+```
+
 #### `merge(other_model)`
 
 Merge another model into this one.
@@ -448,8 +494,11 @@ m.solve('k_ss_eq', 'k_ss', 10);  % Initial guess = 10
 modBuilder supports custom indexing:
 
 ```matlab
-% Access equation by name
-eq = m{'consumption'};  % Returns equation string
+% Extract submodel by equation names
+sub = m{'consumption', 'investment'};  % Returns modBuilder submodel
+
+% Select submodel by tag criteria
+sub = m{bytag('sector', 'manufacturing')};  % Returns modBuilder submodel
 
 % Access symbol value
 alpha_val = m.alpha;    % Returns parameter value

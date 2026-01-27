@@ -3770,6 +3770,108 @@ classdef modBuilder < handle
             end
         end % function
 
+        function eqs = listeqbytag(o, varargin)
+        % Return a list of equation names matching tag criteria.
+        %
+        % INPUTS:
+        % - o          [modBuilder]
+        % - varargin   name-value pairs: tagname1, tagvalue1, tagname2, tagvalue2, ...
+        %              Tag values are interpreted as regular expressions.
+        %
+        % OUTPUTS:
+        % - eqs        [cell]          1×n cell array of equation names (char)
+        %
+        % REMARKS:
+        % - All criteria must be satisfied (AND logic).
+        % - Tag values are matched as regular expressions (anchored with ^ and $).
+        % - For exact matching, simply pass the literal value (no regex metacharacters).
+        % - Returns a unique list (no duplicate equation names).
+        % - Raises an error if no equation matches.
+        %
+        % EXAMPLES:
+        % m = modBuilder();
+        % m.add('Y_m', 'Y_m = A_m*K_m'); m.add('Y_s', 'Y_s = A_s*K_s');
+        % m.parameter('A_m', 1); m.parameter('A_s', 1);
+        % m.exogenous('K_m', 1); m.exogenous('K_s', 1);
+        % m.tag('Y_m', 'sector', 'manufacturing');
+        % m.tag('Y_s', 'sector', 'services');
+        %
+        % eqs = m.listeqbytag('sector', 'manufacturing');
+        % % Returns {'Y_m'}
+        %
+        % eqs = m.listeqbytag('sector', 'manuf.*');
+        % % Returns {'Y_m'}
+
+            if mod(numel(varargin), 2) ~= 0
+                error('Arguments must be name-value pairs.')
+            end
+
+            tagnames = varargin(1:2:end);
+            tagvalues = varargin(2:2:end);
+
+            for i = 1:numel(tagnames)
+                validateattributes(tagnames{i}, {'char'}, {'nonempty', 'row'}, 'listeqbytag', sprintf('tagname (argument %d)', 2*i-1));
+                validateattributes(tagvalues{i}, {'char'}, {'nonempty', 'row'}, 'listeqbytag', sprintf('tagvalue (argument %d)', 2*i));
+            end
+
+            eqs = {};
+
+            for i = 1:o.size('equations')
+                eqname = o.equations{i, modBuilder.EQ_COL_NAME};
+                eqtags = o.tags.(eqname);
+                match = true;
+
+                for j = 1:numel(tagnames)
+                    if ~isfield(eqtags, tagnames{j})
+                        match = false;
+                        break
+                    end
+
+                    if isempty(regexp(eqtags.(tagnames{j}), ['^' tagvalues{j} '$'], 'once'))
+                        match = false;
+                        break
+                    end
+                end
+
+                if match
+                    eqs{end+1} = eqname; %#ok<AGROW>
+                end
+            end
+
+            eqs = unique(eqs, 'stable');
+
+            if isempty(eqs)
+                error('No equation matches the given tag criteria.')
+            end
+        end % function
+
+        function p = select(o, varargin)
+        % Select a submodel based on tag criteria.
+        %
+        % INPUTS:
+        % - o          [modBuilder]
+        % - varargin   name-value pairs: tagname1, tagvalue1, tagname2, tagvalue2, ...
+        %              Tag values are interpreted as regular expressions.
+        %
+        % OUTPUTS:
+        % - p          [modBuilder]    submodel with matching equations
+        %
+        % REMARKS:
+        % - Combines listeqbytag and extract: first finds matching equation names,
+        %   then extracts them into a new modBuilder object.
+        % - All criteria must be satisfied (AND logic).
+        % - Can also be called via curly brace indexing with a bytag selector:
+        %   m{bytag('sector', 'manufacturing')} is equivalent to
+        %   m.select('sector', 'manufacturing')
+        %
+        % EXAMPLES:
+        % submodel = m.select('sector', 'manufacturing');
+        % submodel = m.select('sector', 'manuf.*', 'type', 'production');
+
+            eqs = o.listeqbytag(varargin{:});
+            p = o.extract(eqs{:});
+        end % function
+
         function q = merge(o, p)
         % Merge two models into a single larger model
         %
@@ -4047,8 +4149,14 @@ classdef modBuilder < handle
             end
 
             if isequal(S(1).type, '{}')
-                % o{'eq1', 'eq2', ...} - extract equations using curly braces
-                p = o.extract(S(1).subs{:});
+                if isa(S(1).subs{1}, 'bytag')
+                    % o{bytag('tagname', 'tagvalue')} - select equations by tag
+                    args = S(1).subs{1}.toargs();
+                    p = o.select(args{:});
+                else
+                    % o{'eq1', 'eq2', ...} - extract equations using curly braces
+                    p = o.extract(S(1).subs{:});
+                end
                 S = modBuilder.shiftS(S, 1);
             elseif isequal(S(1).type, '()')
                 % o('eq1', 'eq2', ...) - extract equations using parentheses (backward compatibility)
