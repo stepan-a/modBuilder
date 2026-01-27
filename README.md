@@ -1,6 +1,7 @@
 # modBuilder
 
 [![Pipeline Status](https://git.dynare.org/Dynare/modBuilder/badges/master/pipeline.svg)](https://git.dynare.org/Dynare/modBuilder/-/commits/master)
+[![Documentation](https://img.shields.io/badge/slides-PDF-blue)](https://git.dynare.org/Dynare/modBuilder/-/jobs/artifacts/master/raw/doc/slides.pdf?job=doc)
 
 A MATLAB class for programmatically creating and manipulating Dynare `.mod` files.
 
