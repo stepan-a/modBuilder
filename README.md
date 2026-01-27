@@ -46,6 +46,8 @@ m.write('my_model');
 
 ## Installation
 
+Requires **MATLAB R2023a** or later (uses `combinations`).
+
 Add the `src` directory to your MATLAB path:
 
 ```matlab
