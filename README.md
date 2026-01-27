@@ -1,6 +1,6 @@
 # modBuilder
 
-[![Pipeline Status](https://git.dynare.org/stepan-a/modbuilder/badges/master/pipeline.svg)](https://git.dynare.org/stepan-a/modbuilder/-/commits/master)
+[![Pipeline Status](https://git.dynare.org/Dynare/modBuilder/badges/master/pipeline.svg)](https://git.dynare.org/Dynare/modBuilder/-/commits/master)
 
 A MATLAB class for programmatically creating and manipulating Dynare `.mod` files.
 
