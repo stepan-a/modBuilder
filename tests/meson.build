@@ -55,6 +55,8 @@ listoftests = [
   'solvers/t02.m',
   'solvers/t03.m',
   'subsref/rbc1.m',
+  'subsref/t01.m',
+  'subsref/t02.m',
   'subs/rbc1.m',
   'subs/rbc2.m',
   'subs/t01.m',
@@ -76,6 +78,7 @@ listoftests = [
   'rm/t02.m',
   'rm/t03.m',
   'rm/t04.m',
+  'rm/t05.m',
   'flip/t01.m',
   'flip/t02.m',
   'flip/t03.m',
@@ -161,6 +164,13 @@ listoftests = [
   'eq/t08.m',
   'normal/t01.m',
   'normal/t02.m',
+  'metadata/t01.m',
+  'metadata/t02.m',
+  'metadata/t03.m',
+  'display/t01.m',
+  'display/t02.m',
+  'display/t03.m',
+  'evaluate/t01.m',
 ]
 
 listoffailingtests = [
