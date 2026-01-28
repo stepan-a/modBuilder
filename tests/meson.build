@@ -151,6 +151,14 @@ listoftests = [
   'errors/t26.m',
   'errors/t27.m',
   'errors/t28.m',
+  'eq/t01.m',
+  'eq/t02.m',
+  'eq/t03.m',
+  'eq/t04.m',
+  'eq/t05.m',
+  'eq/t06.m',
+  'eq/t07.m',
+  'eq/t08.m',
 ]
 
 listoffailingtests = [
