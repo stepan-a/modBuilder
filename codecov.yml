@@ -1,0 +1,33 @@
+# Codecov configuration for modBuilder
+# Documentation: https://docs.codecov.com/docs/codecovyml-reference
+
+coverage:
+  # Couverture globale requise
+  status:
+    project:
+      default:
+        target: 80%          # Seuil minimum de couverture
+        threshold: 2%        # Tolérance (la CI passe si couverture >= target - threshold)
+    patch:
+      default:
+        target: 70%          # Couverture minimum pour le nouveau code (PR)
+
+  # Arrondi des pourcentages
+  precision: 1
+  round: nearest
+
+# Fichiers à ignorer dans le calcul de couverture
+ignore:
+  - "src/missing/**/*"       # Fallbacks Statistics Toolbox (normpdf, normcdf)
+
+# Commentaires sur les Pull Requests
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+  require_changes: true      # Commenter seulement si la couverture change
+
+# Flags pour séparer différents types de tests (optionnel, pour usage futur)
+# flags:
+#   unittests:
+#     paths:
+#       - src/
