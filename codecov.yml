@@ -16,10 +16,6 @@ coverage:
   precision: 1
   round: nearest
 
-# Fichiers à ignorer dans le calcul de couverture
-ignore:
-  - "src/missing/**/*"       # Fallbacks Statistics Toolbox (normpdf, normcdf)
-
 # Commentaires sur les Pull Requests
 comment:
   layout: "reach,diff,flags,files"

@@ -159,6 +159,8 @@ listoftests = [
   'eq/t06.m',
   'eq/t07.m',
   'eq/t08.m',
+  'normal/t01.m',
+  'normal/t02.m',
 ]
 
 listoffailingtests = [
