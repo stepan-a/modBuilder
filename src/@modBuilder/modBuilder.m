@@ -959,6 +959,7 @@ classdef modBuilder < handle
             if not(isequal(sort(f1), sort(f2)))
                 return
             end
+            b = true;
             for i=1:length(f1)
                 b = isequal(sort(S1.(f1{i})), sort(S2.(f1{i})));
                 if not(b)
