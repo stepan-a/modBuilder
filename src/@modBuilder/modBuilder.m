@@ -79,16 +79,11 @@ classdef modBuilder < handle
         % Column indices for equations table
         EQ_COL_NAME = 1     % Equation name (endogenous variable name)
         EQ_COL_EXPR = 2     % Equation expression (char)
-    end
 
-    properties (Constant)
         % Valid symbol/component types for type checking
-        % Used by size(), updatesymboltable(), and other methods that accept type arguments
-        % Public constant so users can query valid types programmatically
+        % Used by size(), updatesymboltable(), and other methods
         VALID_TYPES = {'parameters', 'exogenous', 'endogenous', 'equations'}
-    end
 
-    properties (Constant, Access = private)
         % Reserved function names that cannot be used as symbol names
         % These are MATLAB/Octave built-in functions and Dynare-specific functions
         % Used by getsymbols() to filter out functions
