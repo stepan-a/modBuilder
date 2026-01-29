@@ -81,7 +81,7 @@ classdef modBuilder < handle
         EQ_COL_EXPR = 2     % Equation expression (char)
 
         % Valid symbol/component types for type checking
-        % Used by size(), updatesymboltable(), and other methods
+        % Used by size(), validate_type(), and other methods
         VALID_TYPES = {'parameters', 'exogenous', 'endogenous', 'equations'}
 
         % Reserved function names that cannot be used as symbol names
@@ -518,76 +518,6 @@ classdef modBuilder < handle
             q.tags = modBuilder.mergeStructs(o.tags, p.tags);
         end % function
 
-        function o = updatesymboltable(o, type)
-        % Update fields under o.T. These fields map symbols (parameter, endogenous and exogenous variables) with equations.
-        %
-        % INPUTS:
-        % - o       [modBuilder]
-        % - type    [char]          1×n array, type of symbol. Possible values are 'parameters', 'exogenous' and 'endogenous'
-        %
-        % OUTPUTS:
-        % - o       [modBuilder]    updated object.
-        %
-        % REMARKS:
-        % - o.T.params.<NAME> is a cell array of row char arrays, each element targets an equation (designated by an endogenous variable) where parameter NAME appears,
-        % - o.T.varexo.<NAME> same as o.T.params.<NAME> for exogenous variables,
-        % - o.T.var.<NAME> same as o.T.params.<NAME> for endogenous variables.
-
-            % Validate type before processing
-            modBuilder.validate_type(type);
-
-            switch type
-              case 'parameters'
-                for i=1:o.size(type)
-
-                    for j=1:o.size('endogenous') % The number of endogenous variables is equal to the number of equations by construction.
-
-                        if any(matches(o.T.equations.(o.equations{j,modBuilder.EQ_COL_NAME}), o.params{i,modBuilder.COL_NAME}))
-
-                            if isfield(o.T.params, o.params{i,modBuilder.COL_NAME})
-                                o.T.params.(o.params{i,modBuilder.COL_NAME}) = horzcat(o.T.params.(o.params{i,modBuilder.COL_NAME}), o.equations(j,modBuilder.EQ_COL_NAME));
-                            else
-                                o.T.params.(o.params{i,modBuilder.COL_NAME}) = o.equations(j,modBuilder.EQ_COL_NAME);
-                            end
-                        end
-                    end
-                end
-
-              case 'exogenous'
-                for i=1:o.size(type)
-
-                    for j=1:o.size('endogenous')
-
-                        if any(matches(o.T.equations.(o.equations{j,modBuilder.EQ_COL_NAME}), o.varexo{i,modBuilder.COL_NAME}))
-
-                            if isfield(o.T.varexo, o.varexo{i,modBuilder.COL_NAME})
-                                o.T.varexo.(o.varexo{i,modBuilder.COL_NAME}) = horzcat(o.T.varexo.(o.varexo{i,modBuilder.COL_NAME}), o.equations(j,modBuilder.EQ_COL_NAME));
-                            else
-                                o.T.varexo.(o.varexo{i,modBuilder.COL_NAME}) = o.equations(j,modBuilder.EQ_COL_NAME);
-                            end
-                        end
-                    end
-                end
-
-              case 'endogenous'
-                for i=1:o.size(type)
-                    o.T.var.(o.var{i,modBuilder.COL_NAME}) = o.var(i,modBuilder.COL_NAME);
-                end
-
-                for i=1:o.size(type)
-
-                    for j=1:o.size(type)
-
-                        if any(matches (o.T.equations.(o.var{j,modBuilder.COL_NAME}), o.var{i,modBuilder.COL_NAME}))
-                            o.T.var.(o.var{i,modBuilder.COL_NAME}) = horzcat(o.T.var.(o.var{i,modBuilder.COL_NAME}), o.var(j,modBuilder.COL_NAME));
-                        end
-                    end
-
-                    o.T.var.(o.var{i,modBuilder.COL_NAME}) = unique(o.T.var.(o.var{i,modBuilder.COL_NAME}));
-                end
-            end
-        end % function
-
 
         function matches = findsymbol(o, pattern)
         % Find all symbols matching a regular expression pattern.
@@ -659,7 +589,7 @@ classdef modBuilder < handle
         % REMARKS:
         % - Validates against modBuilder.VALID_TYPES constant
         % - Provides helpful error message listing valid options
-        % - Used internally by size(), updatesymboltable(), and other type-checking methods
+        % - Used internally by size() and other type-checking methods
         % - Can be called by users to validate type strings before use
         %
         % EXAMPLE:
