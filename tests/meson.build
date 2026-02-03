@@ -57,6 +57,7 @@ listoftests = [
   'subsref/rbc1.m',
   'subsref/t01.m',
   'subsref/t02.m',
+  'subsref/t03.m',
   'subs/rbc1.m',
   'subs/rbc2.m',
   'subs/t01.m',

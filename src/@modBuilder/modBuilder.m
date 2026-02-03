@@ -4135,6 +4135,23 @@ classdef modBuilder < handle
                 % Otherwise, use builtin subsref for cell arrays, structs, etc.
                 if isa(p, 'modBuilder')
                     p = subsref(p, S);
+                elseif isa(p, 'cell') && strcmp(S(1).type, '{}')
+                    % Extract subcell preserving shape
+                    subcell = p(S(1).subs{:});
+                    if isscalar(subcell)
+                        % Single element: return content directly (original {} behavior)
+                        p = subcell{1};
+                    elseif all(cellfun(@(x) isnumeric(x) && isscalar(x), subcell(:)))
+                        % Multiple numeric scalars: convert to numeric array
+                        p = cell2mat(subcell);
+                    else
+                        % Keep as cell array (strings, mixed content, etc.)
+                        p = subcell;
+                    end
+                    S = modBuilder.shiftS(S, 1);
+                    if ~isempty(S)
+                        p = builtin('subsref', p, S);
+                    end
                 else
                     p = builtin('subsref', p, S);
                 end
