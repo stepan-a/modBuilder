@@ -2190,7 +2190,7 @@ classdef modBuilder < handle
             o.tables_dirty = true;
         end % function
 
-        function o = write(o, basename)
+        function o = write(o, basename, varargin)
         % Write model in a mod file.
         %
         % INPUTS:
@@ -2280,6 +2280,26 @@ classdef modBuilder < handle
             end
 
             fprintf(fid, 'end;\n');
+
+            if ~isempty(varargin)
+
+                if ismember('with-initval', varargin)
+                    %
+                    % Print initial values if any
+                    %
+                    if ~all(isnan([o.var{:, modBuilder.COL_VALUE}]))
+                        fprintf(fid, '\ninitval;\n\n');
+                        for i=1:o.size('endogenous')
+                            if ~isnan(o.var{i, modBuilder.COL_VALUE})
+                                fprintf(fid, '\t%s = %f;\n', o.var{i, modBuilder.COL_NAME}, o.var{i, modBuilder.COL_VALUE});
+                            end
+                        end
+                        fprintf(fid, '\nend; // initval block\n');
+                    end
+                end
+
+            end
+
             fclose(fid);
         end % function
 

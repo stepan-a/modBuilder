@@ -398,15 +398,12 @@ eqs = m.listeqbytag('type', 'production|accumulation');
 
 ### Model Operations
 
-#### `write(basename)`
+#### `write(basename, [options])`
 
 Export model to a Dynare `.mod` file.
 
-**Example:**
-
-```matlab
-m.write('rbc_model');  % Creates rbc_model.mod
-```
+**Options:**
+- `'with-initval'` — Append an `initval` block after the model block if any endogenous variables have initial values set
 
 #### `copy()`
 
