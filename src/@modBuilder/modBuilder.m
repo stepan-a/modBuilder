@@ -2081,7 +2081,7 @@ classdef modBuilder < handle
                 % Check that the last nindices arguments are index values
                 idValues = varargin(end-nindices+1:end);
                 try
-                    [allint, ~] = modBuilder.check_indices_values(idValues);
+                    [~, ~] = modBuilder.check_indices_values(idValues);
                 catch
                     error('Last %u arguments are not valid indices values.', nindices)
                 end
@@ -4178,7 +4178,7 @@ classdef modBuilder < handle
             end
         end % function
 
-        function n = numArgumentsFromSubscript(obj, s, indexingContext)
+        function n = numArgumentsFromSubscript(~, ~, ~)
         % Determine number of output arguments expected from subscripted reference
         %
         % INPUTS:
@@ -4255,7 +4255,7 @@ classdef modBuilder < handle
                 end
 
                 try
-                    [type, id] = typeof(o, S(1).subs{1});
+                    [type, ~] = typeof(o, S(1).subs{1});
                 catch
                     error('Wrong index (unknown symbol).')
                 end
