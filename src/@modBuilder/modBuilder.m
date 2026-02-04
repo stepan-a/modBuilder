@@ -2593,7 +2593,7 @@ classdef modBuilder < handle
                     fprintf('No symbols matching pattern ''%s'' found.\n', name);
                     modBuilder.skipline()
                 else
-                    if length(matches) == 1
+                    if isscalar(matches)
                         fprintf('Found 1 symbol matching pattern ''%s'':\n', name);
                     else
                         fprintf('Found %u symbols matching pattern ''%s'':\n', length(matches), name);
