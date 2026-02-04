@@ -2190,15 +2190,19 @@ classdef modBuilder < handle
             o.tables_dirty = true;
         end % function
 
-        function o = write(o, basename, varargin)
-        % Write model in a mod file.
+        function o = write(o, filename, options)
+        % Write model to a Dynare .mod file.
         %
         % INPUTS:
         % - o         [modBuilder]
-        % - basename  [char]         1×n    name of the file, without extension, where the model will be written.
+        % - filename  [char]         1×n    name of the output file (with or without .mod extension)
+        %
+        % OPTIONAL NAME-VALUE ARGUMENTS:
+        % - initval   [logical]      Include an initval block with initial values for endogenous variables (default: false)
+        % - precision [integer]      Number of significant digits for numerical values (default: 6 decimal places)
         %
         % OUTPUTS:
-        % None
+        % - o         [modBuilder]   The model object (unchanged)
         %
         % EXAMPLES:
         % m = modBuilder();
@@ -2206,9 +2210,39 @@ classdef modBuilder < handle
         % m.parameter('alpha', 0.33);
         %
         % % Write to file 'mymodel.mod'
-        % m.write('mymodel');
+        % m.write('mymodel.mod');
+        %
+        % % Write with higher precision (15 significant digits)
+        % m.write('mymodel.mod', precision=15);
+        %
+        % % Write with initval block
+        % m.write('mymodel.mod', initval=true);
+        %
+        % % Combine options
+        % m.write('mymodel.mod', initval=true, precision=10);
 
-            fid = fopen(sprintf('%s.mod', basename), 'w');
+            arguments
+                o modBuilder
+                filename (1,:) char
+                options.initval (1,1) logical = false
+                options.precision (1,1) {mustBeNonnegative, mustBeInteger} = 0
+            end
+
+            % Handle file extension: append .mod if not present (or if .dyn is not present, which is a valid Dynare extension for model files)
+            if ~endsWith(filename, '.mod') || ~endsWith(filename, '.dyn')
+                filename = [filename, '.mod'];
+            end
+
+            % Set number format
+            % Default (precision=0): use %f (6 decimal places) for backward compatibility
+            % When specified: use %.Ng (N significant digits)
+            if options.precision > 0
+                numFormat = sprintf('%%.%dg', options.precision);
+            else
+                numFormat = '%f';
+            end
+
+            fid = fopen(filename, 'w');
 
             %
             % Print list of endogenous variables
@@ -2245,8 +2279,9 @@ classdef modBuilder < handle
             calibrated_params = o.params(calibrated_idx, :);
 
             % Write in batch
+            paramFormat = ['%s = ', numFormat, ';\n'];
             for i=1:size(calibrated_params, 1)
-                fprintf(fid, '%s = %f;\n', ...
+                fprintf(fid, paramFormat, ...
                         calibrated_params{i, modBuilder.COL_NAME}, ...
                         calibrated_params{i, modBuilder.COL_VALUE});
             end
@@ -2281,23 +2316,20 @@ classdef modBuilder < handle
 
             fprintf(fid, 'end;\n');
 
-            if ~isempty(varargin)
-
-                if ismember('with-initval', varargin)
-                    %
-                    % Print initial values if any
-                    %
-                    if ~all(isnan([o.var{:, modBuilder.COL_VALUE}]))
-                        fprintf(fid, '\ninitval;\n\n');
-                        for i=1:o.size('endogenous')
-                            if ~isnan(o.var{i, modBuilder.COL_VALUE})
-                                fprintf(fid, '\t%s = %f;\n', o.var{i, modBuilder.COL_NAME}, o.var{i, modBuilder.COL_VALUE});
-                            end
+            if options.initval
+                %
+                % Print initial values if any
+                %
+                if ~all(isnan([o.var{:, modBuilder.COL_VALUE}]))
+                    fprintf(fid, '\ninitval;\n\n');
+                    initvalFormat = ['\t%s = ', numFormat, ';\n'];
+                    for i=1:o.size('endogenous')
+                        if ~isnan(o.var{i, modBuilder.COL_VALUE})
+                            fprintf(fid, initvalFormat, o.var{i, modBuilder.COL_NAME}, o.var{i, modBuilder.COL_VALUE});
                         end
-                        fprintf(fid, '\nend; // initval block\n');
                     end
+                    fprintf(fid, '\nend; // initval block\n');
                 end
-
             end
 
             fclose(fid);

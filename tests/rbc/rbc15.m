@@ -24,7 +24,7 @@ model.parameter('theta', 2.95);
 model.exogenous('e', 0);
 model.exogenous('u', 0);
 
-model.write('rbc15a', 'with-initval');
+model.write('rbc15a.mod', initval=true);
 
 % The inival block should not be printed, since none of the endogenous variables are given a value
 b = modiff('rbc15a.mod', 'rbc15a.true.mod');
@@ -39,7 +39,7 @@ model.a = 0;
 model.y = 1;
 model.k = 3;
 
-model.write('rbc15b', 'with-initval');
+model.write('rbc15b.mod', initval=true);
 
 b = modiff('rbc15b.mod', 'rbc15b.true.mod');
 

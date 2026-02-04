@@ -398,12 +398,35 @@ eqs = m.listeqbytag('type', 'production|accumulation');
 
 ### Model Operations
 
-#### `write(basename, [options])`
+#### `write(filename, [options])`
 
 Export model to a Dynare `.mod` file.
 
-**Options:**
-- `'with-initval'` — Append an `initval` block after the model block if any endogenous variables have initial values set
+**Arguments:**
+- `filename` — Output file name (with or without `.mod` extension)
+
+**Options (name-value):**
+- `initval` — Include an `initval` block with initial values for endogenous variables (default: `false`)
+- `precision` — Number of significant digits for numerical values (default: 6 decimal places)
+
+**Examples:**
+
+```matlab
+% Basic export
+m.write('my_model.mod');
+
+% Without extension (automatically appends .mod)
+m.write('my_model');
+
+% With higher precision (15 significant digits)
+m.write('my_model.mod', precision=15);
+
+% With initval block
+m.write('my_model.mod', initval=true);
+
+% Combine options
+m.write('my_model.mod', initval=true, precision=10);
+```
 
 #### `copy()`
 
@@ -545,7 +568,7 @@ model.exogenous('u', 0);
 model.summary();
 
 % Export to Dynare
-model.write('rbc');
+model.write('rbc.mod');
 ```
 
 ## Test Suite

@@ -173,6 +173,7 @@ listoftests = [
   'display/t02.m',
   'display/t03.m',
   'evaluate/t01.m',
+  'precision/t01.m',
 ]
 
 listoffailingtests = [
