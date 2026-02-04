@@ -2228,8 +2228,9 @@ classdef modBuilder < handle
                 options.precision (1,1) {mustBeNonnegative, mustBeInteger} = 0
             end
 
-            % Handle file extension: append .mod if not present (or if .dyn is not present, which is a valid Dynare extension for model files)
-            if ~endsWith(filename, '.mod') || ~endsWith(filename, '.dyn')
+            % Handle file extension: append .mod if not present
+            % (.dyn is also a valid Dynare extension)
+            if ~endsWith(filename, '.mod') && ~endsWith(filename, '.dyn')
                 filename = [filename, '.mod'];
             end
 
