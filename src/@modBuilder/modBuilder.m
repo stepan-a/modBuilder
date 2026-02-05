@@ -2701,13 +2701,13 @@ classdef modBuilder < handle
                 modBuilder.skipline()
 
                 if isempty(matches)
-                    fprintf('No symbols matching pattern ''%s'' found.\n', name);
+                    modBuilder.dprintf('No symbols matching pattern ''%s'' found.', name);
                     modBuilder.skipline()
                 else
                     if isscalar(matches)
-                        fprintf('Found 1 symbol matching pattern ''%s'':\n', name);
+                        modBuilder.dprintf('Found 1 symbol matching pattern ''%s'':', name);
                     else
-                        fprintf('Found %u symbols matching pattern ''%s'':\n', length(matches), name);
+                        modBuilder.dprintf('Found %u symbols matching pattern ''%s'':', length(matches), name);
                     end
                     modBuilder.skipline()
 
@@ -2739,21 +2739,21 @@ classdef modBuilder < handle
                 modBuilder.skipline()
 
                 if strcmp(symboltype, 'Unknown')
-                    fprintf('Symbol %s does not appear in any of the equations.\n', name);
+                    modBuilder.dprintf('Symbol %s does not appear in any of the equations.', name);
                     modBuilder.skipline()
                 else
                     n = length(eqnames);
 
                     if n>1
-                        fprintf('%s %s appears in %u equations:\n', symboltype, name, n);
+                        modBuilder.dprintf('%s %s appears in %u equations:', symboltype, name, n);
                     else
-                        fprintf('%s %s appears in one equation:\n', symboltype, name);
+                        modBuilder.dprintf('%s %s appears in one equation:', symboltype, name);
                     end
 
                     for i=1:n
                         equation = o.equations(strcmp(eqnames{i}, o.equations(:,modBuilder.EQ_COL_NAME)),2);
                         modBuilder.skipline()
-                        fprintf('[%s]\t\t%s\n', o.tags.(eqnames{i}).name, equation{1});
+                        modBuilder.dprintf('[%s]\t\t%s', o.tags.(eqnames{i}).name, equation{1});
                     end
 
                     modBuilder.skipline()
@@ -2788,9 +2788,9 @@ classdef modBuilder < handle
         % Exogenous: 0
         % Equations: 1
 
-            fprintf('\nModel Summary\n');
-            fprintf('=============\n');
-            fprintf('Created: %s\n\n', char(o.date));
+            modBuilder.dprintf('\nModel Summary');
+            modBuilder.dprintf('=============');
+            modBuilder.dprintf('Created: %s\n', char(o.date));
 
             % Count calibrated and uncalibrated parameters
             n_params = o.size('parameters');
@@ -2798,21 +2798,21 @@ classdef modBuilder < handle
             if n_params > 0
                 n_params_calibrated = sum(~cellfun(@isnan, o.params(:, modBuilder.COL_VALUE)));
                 n_params_uncalibrated = n_params - n_params_calibrated;
-                fprintf('Parameters: %d (%d calibrated, %d uncalibrated)\n', ...
+                modBuilder.dprintf('Parameters: %d (%d calibrated, %d uncalibrated)', ...
                         n_params, n_params_calibrated, n_params_uncalibrated);
             else
-                fprintf('Parameters: 0\n');
+                modBuilder.dprintf('Parameters: 0');
             end
 
-            fprintf('Endogenous: %d\n', o.size('endogenous'));
-            fprintf('Exogenous: %d\n', o.size('exogenous'));
-            fprintf('Equations: %d\n', o.size('equations'));
+            modBuilder.dprintf('Endogenous: %d', o.size('endogenous'));
+            modBuilder.dprintf('Exogenous: %d', o.size('exogenous'));
+            modBuilder.dprintf('Equations: %d', o.size('equations'));
 
             if ~isempty(o.symbols)
-                fprintf('\nWarning: %d untyped symbol(s)\n', length(o.symbols));
+                modBuilder.dprintf('\nWarning: %d untyped symbol(s)', length(o.symbols));
             end
 
-            fprintf('\n');
+            modBuilder.skipline();
         end % function
 
 
