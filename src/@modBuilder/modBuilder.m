@@ -3036,6 +3036,96 @@ classdef modBuilder < handle
             o.tables_dirty = true;
         end % function
 
+        function o = reassign(o, varargin)
+        % Cycle the associations between equations and endogenous variables.
+        %
+        % Uses cycle notation: with two arguments, swaps the equation
+        % associations. With three or more, performs a circular permutation
+        % where v1's equation moves to v2, v2's to v3, ..., and the last
+        % variable's equation moves to v1.
+        %
+        % INPUTS:
+        % - o          [modBuilder]
+        % - varargin   [char]        two or more endogenous variable names
+        %
+        % OUTPUTS:
+        % - o          [modBuilder]  updated object
+        %
+        % REMARKS:
+        % - All arguments must be names of endogenous variables
+        % - All arguments must be distinct
+        % - Tags follow the equation (not the variable)
+        %
+        % EXAMPLES:
+        % m = modBuilder();
+        % m.add('y', 'y = alpha*k');
+        % m.add('k', 'k = (1-delta)*k(-1) + i');
+        % m.parameter('alpha', 0.33);
+        % m.parameter('delta', 0.025);
+        % m.exogenous('i', 0);
+        %
+        % % Swap: y's equation goes to k, k's equation goes to y
+        % m.reassign('y', 'k');
+        %
+        % % Three-way cycle: v1's eq → v2, v2's eq → v3, v3's eq → v1
+        % m2 = modBuilder();
+        % m2.add('a', 'a = x + y');
+        % m2.add('b', 'b = y + z');
+        % m2.add('c', 'c = z + x');
+        % m2.exogenous('x', 0);
+        % m2.exogenous('y', 0);
+        % m2.exogenous('z', 0);
+        % m2.reassign('a', 'b', 'c');
+
+            names = varargin;
+            n = numel(names);
+
+            % Validate: at least two names required
+            if n < 2
+                error('reassign requires at least two endogenous variable names.');
+            end
+
+            % Validate: all names must be char arrays
+            for i = 1:n
+                validateattributes(names{i}, {'char'}, {'nonempty', 'row'}, 'reassign', sprintf('argument %d', i+1));
+            end
+
+            % Validate: no duplicates
+            if numel(unique(names)) ~= n
+                error('All variable names passed to reassign must be distinct.');
+            end
+
+            % Validate: all names must be endogenous
+            for i = 1:n
+                if ~o.isendogenous(names{i})
+                    error('Variable ''%s'' is not endogenous.', names{i});
+                end
+            end
+
+            % Find equation row indices
+            rows = zeros(1, n);
+            for i = 1:n
+                rows(i) = find(strcmp(names{i}, o.equations(:, modBuilder.EQ_COL_NAME)));
+            end
+
+            % Save original expressions and tags
+            old_exprs = o.equations(rows, modBuilder.EQ_COL_EXPR);
+            old_tags = cell(1, n);
+            for i = 1:n
+                old_tags{i} = o.tags.(names{i});
+            end
+
+            % Cycle: expression of names{i} goes to names{i+1} (wrapping)
+            for i = 1:n
+                target = mod(i, n) + 1;
+                o.equations{rows(target), modBuilder.EQ_COL_EXPR} = old_exprs{i};
+                o.tags.(names{target}) = old_tags{i};
+            end
+
+            % Mark symbol tables as dirty
+            o.tables_dirty = true;
+        end % function
+
         function p = copy(o)
         % Create a deep copy of the modBuilder object
         %

@@ -201,6 +201,20 @@ m.solve('delta', 'delta', 0.025);  % Solve for delta
 m.flip('k_ss', 'delta');  % Flip back
 ```
 
+#### `reassign(v1, v2[, v3, ...])`
+
+Cycle the associations between equations and endogenous variables using cycle notation. With two arguments, swaps the equation associations. With three or more, performs a circular permutation: v1's equation moves to v2, v2's to v3, ..., and the last variable's equation moves to v1.
+
+**Examples:**
+
+```matlab
+% Swap two equation associations
+m.reassign('y', 'k');  % y gets k's equation, k gets y's equation
+
+% Three-way cycle
+m.reassign('a', 'b', 'c');  % a gets c's eq, b gets a's eq, c gets b's eq
+```
+
 #### `subs(expr1, expr2[, eqname])`
 
 Substitute an expression in equations (literal string replacement via `strrep`).
