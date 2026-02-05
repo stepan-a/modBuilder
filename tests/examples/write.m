@@ -5,12 +5,24 @@ m.add('c', 'c = alpha*k');
 m.parameter('alpha', 0.33);
 
 % Write to file 'mymodel.mod'
-m.write('mymodel');
-
-% Verify file was created
+m.write('mymodel.mod');
 assert(exist('mymodel.mod', 'file') == 2);
+delete mymodel.mod
 
-% Clean up
+% Write with higher precision (15 significant digits)
+m.write('mymodel.mod', precision=15);
+assert(exist('mymodel.mod', 'file') == 2);
+delete mymodel.mod
+
+% Write with initval block
+m.endogenous('c', 1);  % Set initial value so initval block is generated
+m.write('mymodel.mod', initval=true);
+assert(exist('mymodel.mod', 'file') == 2);
+delete mymodel.mod
+
+% Combine options
+m.write('mymodel.mod', initval=true, precision=10);
+assert(exist('mymodel.mod', 'file') == 2);
 delete mymodel.mod
 
 fprintf('write.m: All tests passed\n');
