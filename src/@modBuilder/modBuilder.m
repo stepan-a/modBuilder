@@ -2199,6 +2199,8 @@ classdef modBuilder < handle
         %
         % OPTIONAL NAME-VALUE ARGUMENTS:
         % - initval   [logical]      Include an initval block with initial values for endogenous variables (default: false)
+        % - steady    [logical]      Call steady after the initval block (default: false). A warning is issued if initval is false.
+        % - check     [logical]      Call check after steady (default: false). An error is thrown if steady is false.
         % - precision [integer]      Number of significant digits for numerical values (default: 6 decimal places)
         %
         % OUTPUTS:
@@ -2218,6 +2220,9 @@ classdef modBuilder < handle
         % % Write with initval block
         % m.write('mymodel.mod', initval=true);
         %
+        % % Write with initval, steady, and check
+        % m.write('mymodel.mod', initval=true, steady=true, check=true);
+        %
         % % Combine options
         % m.write('mymodel.mod', initval=true, precision=10);
 
@@ -2225,7 +2230,17 @@ classdef modBuilder < handle
                 o modBuilder
                 filename (1,:) char
                 options.initval (1,1) logical = false
+                options.steady (1,1) logical = false
+                options.check (1,1) logical = false
                 options.precision (1,1) {mustBeNonnegative, mustBeInteger} = 0
+            end
+
+            if options.check && ~options.steady
+                error('Option ''check'' requires option ''steady'' to be true.');
+            end
+            if options.steady && ~options.initval
+                warning('modBuilder:steadyWithoutInitval', ...
+                        'Option ''steady'' is used without ''initval''. The steady command may fail without initial values.');
             end
 
             % Handle file extension: append .mod if not present
@@ -2331,6 +2346,14 @@ classdef modBuilder < handle
                     end
                     fprintf(fid, '\nend; // initval block\n');
                 end
+            end
+
+            if options.steady
+                fprintf(fid, '\nsteady;\n');
+            end
+
+            if options.check
+                fprintf(fid, '\ncheck;\n');
             end
 
             fclose(fid);

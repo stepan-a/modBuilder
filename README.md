@@ -407,6 +407,8 @@ Export model to a Dynare `.mod` file.
 
 **Options (name-value):**
 - `initval` — Include an `initval` block with initial values for endogenous variables (default: `false`)
+- `steady` — Call `steady` after the initval block (default: `false`). A warning is issued if `initval` is `false`.
+- `check` — Call `check` after `steady` (default: `false`). An error is thrown if `steady` is `false`.
 - `precision` — Number of significant digits for numerical values (default: 6 decimal places)
 
 **Examples:**
@@ -423,6 +425,9 @@ m.write('my_model.mod', precision=15);
 
 % With initval block
 m.write('my_model.mod', initval=true);
+
+% With initval, steady, and check
+m.write('my_model.mod', initval=true, steady=true, check=true);
 
 % Combine options
 m.write('my_model.mod', initval=true, precision=10);
