@@ -62,7 +62,7 @@ Or use MATLAB's `Set Path` dialog to add it permanently.
 
 ### Constructor
 
-#### `modBuilder([datetime_obj | M_, oo_, jsonfile, [tag]])`
+#### `modBuilder([datetime_obj | M_, oo_, jsonfile[, tag]])`
 
 Create a new modBuilder object.
 
@@ -95,7 +95,7 @@ m = modBuilder(M_, oo_, 'equations.json', 'custom_name');
 
 ### Model Building
 
-#### `add(varname, equation, [indices])`
+#### `add(varname, equation[, indices])`
 
 Add an equation and declare the variable as endogenous.
 
@@ -118,7 +118,7 @@ m.add('r', '1/beta = (c/c(+1))*(r(+1)+1-delta)');
 m.add('x_$1', 'x_$1 = alpha_$1 * y', {1, 2, 3});
 ```
 
-#### `parameter(pname, value, [long_name], [tex_name])`
+#### `parameter(pname, value[, long_name[, tex_name]])`
 
 Declare a parameter with optional calibration value and labels.
 
@@ -135,7 +135,7 @@ m.parameter('beta', 0.99, 'Discount factor', '\beta');
 m.parameter('rho_$1', 0.9, '', '', {1, 2, 3});
 ```
 
-#### `exogenous(xname, value, [long_name], [tex_name])`
+#### `exogenous(xname, value[, long_name[, tex_name]])`
 
 Declare an exogenous variable.
 
@@ -146,7 +146,7 @@ m.exogenous('e', 0);
 m.exogenous('epsilon', 0, 'Technology shock', '\epsilon');
 ```
 
-#### `endogenous(ename, value, [long_name], [tex_name])`
+#### `endogenous(ename, value[, long_name[, tex_name]])`
 
 Explicitly declare an endogenous variable (usually declared via `add()`).
 
@@ -201,7 +201,7 @@ m.solve('delta', 'delta', 0.025);  % Solve for delta
 m.flip('k_ss', 'delta');  % Flip back
 ```
 
-#### `subs(expr1, expr2, [eqname])`
+#### `subs(expr1, expr2[, eqname])`
 
 Substitute an expression in equations (literal string replacement via `strrep`).
 
@@ -218,7 +218,7 @@ m.subs('old_expr', 'new_expr', 'consumption_eq');
 m.subs('x_$1', 'y_$1 + z_$1', 'equation_$1', {1, 2, 3});
 ```
 
-#### `substitute(expr1, expr2, [eqname])`
+#### `substitute(expr1, expr2[, eqname])`
 
 Substitute an expression in equations using regular expression pattern matching (via `regexprep`). Same interface as `subs()`, but `expr1` is interpreted as a regex pattern rather than a literal string.
 
@@ -297,7 +297,7 @@ m.lookfor('^rho');         % Symbols starting with rho
 m.lookfor('_shock$');      % Symbols ending with _shock
 ```
 
-#### `evaluate(eqname, [printflag])`
+#### `evaluate(eqname[, printflag])`
 
 Evaluate an equation with current calibration values.
 
@@ -398,7 +398,7 @@ eqs = m.listeqbytag('type', 'production|accumulation');
 
 ### Model Operations
 
-#### `write(filename, [options])`
+#### `write(filename[, options])`
 
 Export model to a Dynare `.mod` file.
 
