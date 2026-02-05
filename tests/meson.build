@@ -174,6 +174,7 @@ listoftests = [
   'display/t03.m',
   'evaluate/t01.m',
   'precision/t01.m',
+  'steady-options/t01.m',
 ]
 
 listoffailingtests = [

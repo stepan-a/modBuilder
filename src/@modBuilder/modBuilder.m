@@ -93,6 +93,10 @@ classdef modBuilder < handle
                                  'min', 'max', 'normcdf', 'normpdf', 'erf', ...
                                  'diff', 'adl', 'EXPECTATIONS', 'STEADY_STATE'}
 
+        % Standalone flags (options without a value) for the steady command
+        % Used by format_dynare_options() to distinguish flags from key-value pairs
+        STEADY_STANDALONE_FLAGS = {'nocheck', 'noprint'}
+
         % Complete list of reserved names: Dynare's built-in functions + properties + methods Computed once
         % when class is loaded by calling compute_all_reserved_names()
         % Used by validate_symbol_name() to prevent conflicts with
@@ -680,6 +684,49 @@ classdef modBuilder < handle
     end
 
     methods(Static, Access = private)
+
+        function str = format_dynare_options(opts, flags)
+        % Convert a cell array of options to a Dynare option string.
+        %
+        % INPUTS:
+        % - opts   [cell]   1×n    cell array of key-value pairs and flags
+        %                          e.g. {'maxit', 100, 'nocheck', 'solve_algo', 4}
+        % - flags  [cell]   1×m    cell array of standalone flag names (no value expected)
+        %
+        % OUTPUTS:
+        % - str    [char]   option string, e.g. '(maxit=100, nocheck, solve_algo=4)'
+        %                   Returns '' if opts is empty.
+            if isempty(opts)
+                str = '';
+                return
+            end
+            parts = {};
+            idx = 1;
+            while idx <= numel(opts)
+                name = opts{idx};
+                if ~ischar(name)
+                    error('Expected option name (char array) at position %d.', idx);
+                end
+                if ismember(name, flags)
+                    parts{end+1} = name; %#ok<AGROW>
+                    idx = idx + 1;
+                else
+                    if idx + 1 > numel(opts)
+                        error('Option ''%s'' requires a value.', name);
+                    end
+                    value = opts{idx + 1};
+                    if isnumeric(value)
+                        parts{end+1} = sprintf('%s=%s', name, num2str(value)); %#ok<AGROW>
+                    elseif ischar(value)
+                        parts{end+1} = sprintf('%s=%s', name, value); %#ok<AGROW>
+                    else
+                        error('Value for option ''%s'' must be numeric or char.', name);
+                    end
+                    idx = idx + 2;
+                end
+            end
+            str = ['(', strjoin(parts, ', '), ')'];
+        end % function
 
         function reserved = compute_all_reserved_names()
         % Compute complete list of reserved names (called once when class loads)
@@ -2198,10 +2245,11 @@ classdef modBuilder < handle
         % - filename  [char]         1×n    name of the output file (with or without .mod extension)
         %
         % OPTIONAL NAME-VALUE ARGUMENTS:
-        % - initval   [logical]      Include an initval block with initial values for endogenous variables (default: false)
-        % - steady    [logical]      Call steady after the initval block (default: false). A warning is issued if initval is false.
-        % - check     [logical]      Call check after steady (default: false). An error is thrown if steady is false.
-        % - precision [integer]      Number of significant digits for numerical values (default: 6 decimal places)
+        % - initval         [logical]  Include an initval block with initial values for endogenous variables (default: false)
+        % - steady          [logical]  Call steady after the initval block (default: false). A warning is issued if initval is false.
+        % - steady_options  [cell]     Options for the steady command as key-value pairs, e.g. {'maxit', 100, 'nocheck'} (default: {})
+        % - check           [logical]  Call check after steady (default: false). An error is thrown if steady is false.
+        % - precision       [integer]  Number of significant digits for numerical values (default: 6 decimal places)
         %
         % OUTPUTS:
         % - o         [modBuilder]   The model object (unchanged)
@@ -2223,6 +2271,9 @@ classdef modBuilder < handle
         % % Write with initval, steady, and check
         % m.write('mymodel.mod', initval=true, steady=true, check=true);
         %
+        % % Write with steady options
+        % m.write('mymodel.mod', initval=true, steady=true, steady_options={'maxit', 100, 'nocheck'});
+        %
         % % Combine options
         % m.write('mymodel.mod', initval=true, precision=10);
 
@@ -2231,12 +2282,16 @@ classdef modBuilder < handle
                 filename (1,:) char
                 options.initval (1,1) logical = false
                 options.steady (1,1) logical = false
+                options.steady_options (1,:) cell = {}
                 options.check (1,1) logical = false
                 options.precision (1,1) {mustBeNonnegative, mustBeInteger} = 0
             end
 
             if options.check && ~options.steady
                 error('Option ''check'' requires option ''steady'' to be true.');
+            end
+            if ~isempty(options.steady_options) && ~options.steady
+                error('Option ''steady_options'' requires option ''steady'' to be true.');
             end
             if options.steady && ~options.initval
                 warning('modBuilder:steadyWithoutInitval', ...
@@ -2349,7 +2404,7 @@ classdef modBuilder < handle
             end
 
             if options.steady
-                fprintf(fid, '\nsteady;\n');
+                fprintf(fid, '\nsteady%s;\n', modBuilder.format_dynare_options(options.steady_options, modBuilder.STEADY_STANDALONE_FLAGS));
             end
 
             if options.check

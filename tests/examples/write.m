@@ -25,6 +25,11 @@ m.write('mymodel.mod', initval=true, steady=true, check=true);
 assert(exist('mymodel.mod', 'file') == 2);
 delete mymodel.mod
 
+% Write with steady options
+m.write('mymodel.mod', initval=true, steady=true, steady_options={'maxit', 100, 'nocheck'});
+assert(exist('mymodel.mod', 'file') == 2);
+delete mymodel.mod
+
 % Combine options
 m.write('mymodel.mod', initval=true, precision=10);
 assert(exist('mymodel.mod', 'file') == 2);
