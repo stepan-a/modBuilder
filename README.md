@@ -215,6 +215,46 @@ m.reassign('y', 'k');  % y gets k's equation, k gets y's equation
 m.reassign('a', 'b', 'c');  % a gets c's eq, b gets a's eq, c gets b's eq
 ```
 
+#### `rmflip(eqname, newexo[, indices])`
+
+Remove an equation and exogenize a different variable instead. Removes equation `eqname`, keeps its associated variable endogenous (by reassigning it to `newexo`'s former equation), and makes `newexo` exogenous.
+
+**Arguments:**
+- `eqname` — Name of the equation to remove
+- `newexo` — Endogenous variable to make exogenous (must appear in `eqname`'s variable's usage)
+- `indices` (optional) — Cell arrays for implicit loops
+
+**Example:**
+
+```matlab
+m = modBuilder();
+m.add('y', 'y = a*k');
+m.add('k', 'k = (1-delta)*k(-1) + i + y');
+m.parameter('a', 0.33);
+m.parameter('delta', 0.025);
+m.exogenous('i', 0);
+
+% Remove y's equation, make k exogenous instead
+m.rmflip('y', 'k');
+% y stays endogenous (determined by k's former equation), k becomes exogenous
+```
+
+#### `exogenize(varname, eqname[, indices])`
+
+Make an endogenous variable exogenous by dropping an equation. Variable-centric interface to `rmflip`: makes `varname` exogenous by removing equation `eqname`.
+
+**Arguments:**
+- `varname` — Endogenous variable to make exogenous
+- `eqname` — Equation to remove
+- `indices` (optional) — Cell arrays for implicit loops
+
+**Example:**
+
+```matlab
+% Equivalent to m.rmflip('y', 'k')
+m.exogenize('k', 'y');
+```
+
 #### `subs(expr1, expr2[, eqname])`
 
 Substitute an expression in equations (literal string replacement via `strrep`).
@@ -628,14 +668,24 @@ Tests are located in the `tests/` directory:
 
 ```
 tests/
-├── rbc/           - Real Business Cycle model tests
-├── ad/            - Automatic differentiation tests
-├── ar/            - Autoregressive model tests
-├── solvers/       - Numerical solver tests
+├── rbc/            - Real Business Cycle model tests
+├── ad/             - Automatic differentiation tests
+├── ar/             - Autoregressive model tests
+├── solvers/        - Numerical solver tests
 ├── implicit-loops/ - Implicit loop functionality tests
-├── load-mod-file/ - Mod file loading tests
-├── examples/      - Method examples from documentation
-└── utils/         - Test utilities
+├── load-mod-file/  - Mod file loading tests
+├── flip/           - Flip method tests
+├── reassign/       - Reassign method tests
+├── rmflip/         - Rmflip and exogenize method tests
+├── rm/             - Remove method tests
+├── rename/         - Rename method tests
+├── subs/           - Subs method tests
+├── substitute/     - Substitute method tests
+├── subsref/        - Custom indexing tests
+├── merge/          - Merge method tests
+├── tag/            - Tag method tests
+├── examples/       - Method examples from documentation
+└── utils/          - Test utilities
 ```
 
 ### Running Tests from MATLAB

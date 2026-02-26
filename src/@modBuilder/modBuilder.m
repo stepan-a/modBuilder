@@ -3126,6 +3126,162 @@ classdef modBuilder < handle
             o.tables_dirty = true;
         end % function
 
+        function o = rmflip(o, eqname, newexo, varargin)
+        % Remove an equation and exogenize a different variable instead
+        %
+        % Removes equation eqname, keeps its associated variable endogenous
+        % (by flipping it back), and makes newexo exogenous instead.
+        %
+        % INPUTS:
+        % - o       [modBuilder]
+        % - eqname  [char]          name of the equation to remove
+        % - newexo  [char]          endogenous variable to make exogenous
+        % - idx1    [cell/numeric]  index values for implicit loops (optional)
+        % - ...
+        %
+        % OUTPUTS:
+        % - o       [modBuilder]    updated object
+        %
+        % REMARKS:
+        % - eqname must be a known equation
+        % - newexo must be a known endogenous variable
+        % - The variable associated with eqname must appear in newexo's equation,
+        %   otherwise the reassigned equation would not determine eqname's variable
+        % - Supports implicit loops with $ placeholders (same as flip)
+        %
+        % EXAMPLES:
+        % m = modBuilder();
+        % m.add('y', 'y = a*k');
+        % m.add('k', 'k = (1-delta)*k(-1) + i + y');
+        % m.parameter('a', 0.33);
+        % m.parameter('delta', 0.025);
+        % m.exogenous('i', 0);
+        %
+        % % Remove y's equation, make k exogenous instead
+        % m.rmflip('y', 'k');
+        % % y stays endogenous (determined by k's former equation), k becomes exogenous
+
+            % Validate inputs
+            validateattributes(eqname, {'char'}, {'nonempty', 'row'}, 'rmflip', 'eqname');
+            validateattributes(newexo, {'char'}, {'nonempty', 'row'}, 'rmflip', 'newexo');
+
+            % Auto-update symbol tables if needed
+            if o.tables_dirty
+                o.updatesymboltables();
+            end
+
+            % Check if names contain implicit loop indices
+            inames_eq = unique(regexp(eqname, '\$\d*', 'match'));
+            inames_newexo = unique(regexp(newexo, '\$\d*', 'match'));
+
+            if ~isempty(inames_eq) || ~isempty(inames_newexo)
+                % Implicit loop mode
+
+                % Validate that both names have the same indices
+                if ~isempty(setxor(inames_eq, inames_newexo))
+                    error('Both names must contain the same index placeholders. Found %s in eqname and %s in newexo.', ...
+                          strjoin(inames_eq, ', '), strjoin(inames_newexo, ', '))
+                end
+
+                nindices = numel(inames_eq);
+
+                % Validate number of index arrays
+                if ~isequal(numel(varargin), nindices)
+                    error('The number of indices in the names is %u, but values for %u indices are provided.', ...
+                          nindices, numel(varargin))
+                end
+
+                % Check that indices are uniform
+                [allint, ~] = modBuilder.check_indices_values(varargin);
+
+                % Compute Cartesian product of index values
+                mIndex = table2cell(combinations(varargin{:}));
+
+                % Prepare templates for sprintf
+                tmp_eqname = eqname;
+                tmp_newexo = newexo;
+
+                for i = nindices:-1:1
+                    if allint(i)
+                        tmp_eqname = strrep(tmp_eqname, sprintf('$%u', i), '%u');
+                        tmp_newexo = strrep(tmp_newexo, sprintf('$%u', i), '%u');
+                    else
+                        tmp_eqname = strrep(tmp_eqname, sprintf('$%u', i), '%s');
+                        tmp_newexo = strrep(tmp_newexo, sprintf('$%u', i), '%s');
+                    end
+                end
+
+                % Recurse for each combination
+                for i = 1:size(mIndex, 1)
+                    current_eqname = sprintf(tmp_eqname, mIndex{i,:});
+                    current_newexo = sprintf(tmp_newexo, mIndex{i,:});
+                    o.rmflip(current_eqname, current_newexo);
+                end
+            else
+                % Base case (no implicit loops)
+
+                % Validate eqname is a known equation
+                if ~any(strcmp(eqname, o.equations(:, modBuilder.EQ_COL_NAME)))
+                    error('Unknown equation "%s".', eqname)
+                end
+
+                % Validate newexo is a known endogenous variable
+                if ~o.isendogenous(newexo)
+                    error('"%s" is not a known endogenous variable.', newexo)
+                end
+
+                % Critical check: eqname's variable must appear in newexo's equation
+                if ~any(strcmp(eqname, o.T.equations.(newexo)))
+                    error('Variable "%s" does not appear in equation "%s". The reassigned equation would not determine "%s".', ...
+                          eqname, newexo, eqname)
+                end
+
+                % remove(eqname) drops the equation and converts eqname to exogenous
+                o.remove(eqname);
+
+                % flip(newexo, eqname) swaps newexo (endo→exo) and eqname (exo→endo)
+                o.flip(newexo, eqname);
+            end
+        end % function
+
+        function o = exogenize(o, varname, eqname, varargin)
+        % Make an endogenous variable exogenous by dropping an equation
+        %
+        % Variable-centric interface to rmflip: makes varname exogenous
+        % by removing equation eqname. The variable associated with eqname
+        % stays endogenous (determined by varname's former equation).
+        %
+        % INPUTS:
+        % - o        [modBuilder]
+        % - varname  [char]          endogenous variable to make exogenous
+        % - eqname   [char]          equation to remove
+        % - idx1     [cell/numeric]  index values for implicit loops (optional)
+        % - ...
+        %
+        % OUTPUTS:
+        % - o        [modBuilder]    updated object
+        %
+        % REMARKS:
+        % - Delegates to rmflip(eqname, varname, ...)
+        % - varname must be a known endogenous variable
+        % - eqname must be a known equation
+        % - eqname's variable must appear in varname's equation
+        %
+        % EXAMPLES:
+        % m = modBuilder();
+        % m.add('y', 'y = a*k');
+        % m.add('k', 'k = (1-delta)*k(-1) + i + y');
+        % m.parameter('a', 0.33);
+        % m.parameter('delta', 0.025);
+        % m.exogenous('i', 0);
+        %
+        % % Make k exogenous by dropping y's equation
+        % m.exogenize('k', 'y');
+        % % Equivalent to m.rmflip('y', 'k')
+
+            o.rmflip(eqname, varname, varargin{:});
+        end % function
+
         function p = copy(o)
         % Create a deep copy of the modBuilder object
         %
