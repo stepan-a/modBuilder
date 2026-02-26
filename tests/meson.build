@@ -131,7 +131,7 @@ listoftests = [
   'examples/flip.m',
   'examples/reassign.m',
   'examples/rmflip.m',
-  'examples/exogenize.m',
+  'examples/exogenise.m',
   'examples/subs.m',
   'examples/substitute.m',
   'examples/listeqbytag.m',

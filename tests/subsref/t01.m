@@ -1,4 +1,4 @@
-% Comprehensive test for new subsref behavior
+% Comprehensive test for new subsref behaviour
 addpath ../utils
 
 m = modBuilder();
@@ -16,7 +16,7 @@ m.exogenous('capital', 100);
 m.endogenous('c', 10);
 m.endogenous('y', 20);
 
-fprintf('=== Testing new subsref behavior ===\n\n');
+fprintf('=== Testing new subsref behaviour ===\n\n');
 
 % Test 1: Extract single equation with parentheses
 fprintf('Test 1: Extract single equation with parentheses\n');
@@ -114,8 +114,8 @@ catch e
     fprintf('  m.params - FAILED: %s\n', e.message);
 end
 
-% Test 10: Verify parentheses extraction preserves old behavior
-fprintf('\nTest 10: Verify parentheses extraction preserves old behavior\n');
+% Test 10: Verify parentheses extraction preserves old behaviour
+fprintf('\nTest 10: Verify parentheses extraction preserves old behaviour\n');
 try
     sub = m('c');
     if isa(sub, 'modBuilder')

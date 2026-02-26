@@ -2721,7 +2721,7 @@ classdef modBuilder < handle
                     end
                 end
             else
-                % Exact match mode (original behavior)
+                % Exact match mode (original behaviour)
                 if o.isparameter(name)
                     symboltype = 'Parameter';
                     eqnames = o.T.params.(name);
@@ -3127,7 +3127,7 @@ classdef modBuilder < handle
         end % function
 
         function o = rmflip(o, eqname, newexo, varargin)
-        % Remove an equation and exogenize a different variable instead
+        % Remove an equation and exogenise a different variable instead
         %
         % Removes equation eqname, keeps its associated variable endogenous
         % (by flipping it back), and makes newexo exogenous instead.
@@ -3244,7 +3244,7 @@ classdef modBuilder < handle
             end
         end % function
 
-        function o = exogenize(o, varname, eqname, varargin)
+        function o = exogenise(o, varname, eqname, varargin)
         % Make an endogenous variable exogenous by dropping an equation
         %
         % Variable-centric interface to rmflip: makes varname exogenous
@@ -3276,7 +3276,7 @@ classdef modBuilder < handle
         % m.exogenous('i', 0);
         %
         % % Make k exogenous by dropping y's equation
-        % m.exogenize('k', 'y');
+        % m.exogenise('k', 'y');
         % % Equivalent to m.rmflip('y', 'k')
 
             o.rmflip(eqname, varname, varargin{:});
@@ -4516,7 +4516,7 @@ classdef modBuilder < handle
                     % Extract subcell preserving shape
                     subcell = p(S(1).subs{:});
                     if isscalar(subcell)
-                        % Single element: return content directly (original {} behavior)
+                        % Single element: return content directly (original {} behaviour)
                         p = subcell{1};
                     elseif all(cellfun(@(x) isnumeric(x) && isscalar(x), subcell(:)))
                         % Multiple numeric scalars: convert to numeric array

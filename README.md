@@ -16,7 +16,7 @@ A MATLAB class for programmatically creating and manipulating Dynare `.mod` file
 Each equation in a modBuilder model is explicitly associated with one endogenous variable by the user. When calling `add('y', 'y = c + i')`, the first argument names both the endogenous variable and the equation. This association is a modelling choice — it does not affect the `.mod` file that Dynare sees, since Dynare solves the full system simultaneously. However, it gives modBuilder a structure to work with:
 
 - **Targeted modifications**: Operations like `change`, `remove`, `flip`, `rmflip`, and `reassign` refer to equations by their associated variable name, making it easy to identify and manipulate individual equations in large models.
-- **Automatic bookkeeping**: When an equation is removed, modBuilder knows which endogenous variable loses its defining equation and can reclassify it (e.g. convert it to exogenous if it still appears elsewhere). This default behaviour can be overridden with `rmflip` or `exogenize`, which let you choose a different variable to exogenize instead.
+- **Automatic bookkeeping**: When an equation is removed, modBuilder knows which endogenous variable loses its defining equation and can reclassify it (e.g. convert it to exogenous if it still appears elsewhere). This default behaviour can be overridden with `rmflip` or `exogenise`, which let you choose a different variable to exogenise instead.
 - **Submodel extraction**: `extract` and `select` pull out subsets of equations together with the correct variable declarations, because the association tells modBuilder which variables are determined by which equations.
 
 ### Key Features
@@ -225,7 +225,7 @@ m.reassign('a', 'b', 'c');  % a gets c's eq, b gets a's eq, c gets b's eq
 
 #### `rmflip(eqname, newexo[, indices])`
 
-Remove an equation and exogenize a different variable instead. Removes equation `eqname`, keeps its associated variable endogenous (by reassigning it to `newexo`'s former equation), and makes `newexo` exogenous.
+Remove an equation and exogenise a different variable instead. Removes equation `eqname`, keeps its associated variable endogenous (by reassigning it to `newexo`'s former equation), and makes `newexo` exogenous.
 
 **Arguments:**
 - `eqname` — Name of the equation to remove
@@ -247,7 +247,7 @@ m.rmflip('y', 'k');
 % y stays endogenous (determined by k's former equation), k becomes exogenous
 ```
 
-#### `exogenize(varname, eqname[, indices])`
+#### `exogenise(varname, eqname[, indices])`
 
 Make an endogenous variable exogenous by dropping an equation. Variable-centric interface to `rmflip`: makes `varname` exogenous by removing equation `eqname`.
 
@@ -260,7 +260,7 @@ Make an endogenous variable exogenous by dropping an equation. Variable-centric 
 
 ```matlab
 % Equivalent to m.rmflip('y', 'k')
-m.exogenize('k', 'y');
+m.exogenise('k', 'y');
 ```
 
 #### `subs(expr1, expr2[, eqname])`
@@ -684,7 +684,7 @@ tests/
 ├── load-mod-file/  - Mod file loading tests
 ├── flip/           - Flip method tests
 ├── reassign/       - Reassign method tests
-├── rmflip/         - Rmflip and exogenize method tests
+├── rmflip/         - Rmflip and exogenise method tests
 ├── rm/             - Remove method tests
 ├── rename/         - Rename method tests
 ├── subs/           - Subs method tests
