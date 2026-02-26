@@ -9,7 +9,15 @@ A MATLAB class for programmatically creating and manipulating Dynare `.mod` file
 
 ## Overview
 
-`modBuilder` simplifies the interactive and programmatic creation of Dynare model files. It enables incremental model development by allowing users to define parameters, endogenous/exogenous variables, and equations directly from the MATLAB environment.
+`modBuilder` simplifies the interactive and programmatic creation of Dynare model files, the aim is to provide a complete programmatic API for building, inspecting, and manipulating DSGE models. It enables incremental model development by allowing users to define parameters, endogenous/exogenous variables, and equations directly from the MATLAB environment. The class also provides helpers for steady-state computation (`solve`, `evaluate`). Because models are defined as plain MATLAB scripts, an arbitrary number of model variants sharing a common core of equations can be developed side by side in the same script, and the whole workflow is easily versioned with Git.
+
+### Equation–Variable Association
+
+Each equation in a modBuilder model is explicitly associated with one endogenous variable by the user. When calling `add('y', 'y = c + i')`, the first argument names both the endogenous variable and the equation. This association is a modelling choice — it does not affect the `.mod` file that Dynare sees, since Dynare solves the full system simultaneously. However, it gives modBuilder a structure to work with:
+
+- **Targeted modifications**: Operations like `change`, `remove`, `flip`, `rmflip`, and `reassign` refer to equations by their associated variable name, making it easy to identify and manipulate individual equations in large models.
+- **Automatic bookkeeping**: When an equation is removed, modBuilder knows which endogenous variable loses its defining equation and can reclassify it (e.g. convert it to exogenous if it still appears elsewhere). This default behaviour can be overridden with `rmflip` or `exogenize`, which let you choose a different variable to exogenize instead.
+- **Submodel extraction**: `extract` and `select` pull out subsets of equations together with the correct variable declarations, because the association tells modBuilder which variables are determined by which equations.
 
 ### Key Features
 
