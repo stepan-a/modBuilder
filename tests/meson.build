@@ -184,6 +184,22 @@ listoftests = [
   'precision/t01.m',
   'write/t01.m',
   'steady-options/t01.m',
+  'steady-state-model/t01.m',
+  'steady-state-model/t02.m',
+  'steady-state-model/t03.m',
+  'steady-state-model/t04.m',
+  'steady-state-model/t05.m',
+  'steady-state-model/t06.m',
+  'steady-state-model/t07.m',
+  'steady-state-model/t08.m',
+  'steady-state-model/t09.m',
+  'steady-state-model/t10.m',
+  'steady-state-model/t11.m',
+  'steady-state-model/t12.m',
+  'steady-state-model/t13.m',
+  'steady-state-model/t14.m',
+  'steady-state-model/t15.m',
+  'examples/steady.m',
 ]
 
 listoffailingtests = [

@@ -162,6 +162,49 @@ Explicitly declare an endogenous variable (usually declared via `add()`).
 m.endogenous('y', [], 'Output', 'Y');
 ```
 
+#### `steady(varname, expression[, indices])`
+
+Define an analytical steady-state expression for an endogenous variable or parameter. Expressions generate a Dynare `steady_state_model` block in the exported `.mod` file when `write()` is called with `steady_state_model=true`.
+
+**Arguments:**
+- `varname` — Name of an endogenous variable or parameter
+- `expression` — RHS expression string
+- `indices` (optional) — Cell arrays for implicit loops
+
+**Examples:**
+
+```matlab
+% Define steady-state expressions
+m.steady('k', '(alpha*beta/(1-beta*(1-delta)))^(1/(1-alpha))');
+m.steady('y', 'k^alpha');
+m.steady('c', 'y - delta*k');
+
+% Parameter computed from steady-state values
+m.steady('labor_share', '1 - alpha*y/k');
+
+% Implicit loops
+m.steady('Y_$1', 'A_$1*K_$1', {1, 2, 3});
+
+% Replacing an existing expression (preserves row position)
+m.steady('y', 'alpha*k');
+```
+
+#### `checksteady()`
+
+Validate steady-state expressions and return symbol names in topological (dependency) order. Called automatically by `write()` when `steady_state_model=true`.
+
+**Returns:**
+- Cell array of symbol names ordered so that each expression is evaluated after its dependencies
+
+**Errors on:**
+- Unknown symbols in expressions
+- Circular dependencies between expressions
+
+```matlab
+sorted = m.checksteady();
+% Returns e.g. {'k', 'y', 'c'} — k first because y and c depend on it
+```
+
 ### Model Modification
 
 #### `change(varname, equation)`
@@ -469,7 +512,8 @@ Export model to a Dynare `.mod` file.
 
 **Options (name-value):**
 - `initval` — Include an `initval` block with initial values for endogenous variables (default: `false`)
-- `steady` — Call `steady` after the initval block (default: `false`). A warning is issued if `initval` is `false`.
+- `steady` — Call `steady` after the initval block (default: `false`). A warning is issued if `initval` is `false` and `steady_state_model` is `false`.
+- `steady_state_model` — Include a `steady_state_model` block with analytical expressions defined via the `steady()` method (default: `false`). Expressions are automatically sorted in dependency order.
 - `steady_options` — Options for the `steady` command as a cell array of key-value pairs and flags, e.g. `{'maxit', 100, 'nocheck'}` (default: `{}`)
 - `check` — Call `check` after `steady` (default: `false`). An error is thrown if `steady` is `false`.
 - `precision` — Number of significant digits for numerical values (default: 6 decimal places)
@@ -494,6 +538,9 @@ m.write('my_model.mod', initval=true, steady=true, check=true);
 
 % With steady options
 m.write('my_model.mod', initval=true, steady=true, steady_options={'maxit', 100, 'nocheck'});
+
+% With steady_state_model block
+m.write('my_model.mod', steady_state_model=true);
 
 % Combine options
 m.write('my_model.mod', initval=true, precision=10);
@@ -690,10 +737,11 @@ tests/
 ├── subs/           - Subs method tests
 ├── substitute/     - Substitute method tests
 ├── subsref/        - Custom indexing tests
-├── merge/          - Merge method tests
-├── tag/            - Tag method tests
-├── examples/       - Method examples from documentation
-└── utils/          - Test utilities
+├── merge/              - Merge method tests
+├── tag/                - Tag method tests
+├── steady-state-model/ - Steady-state expression tests
+├── examples/           - Method examples from documentation
+└── utils/              - Test utilities
 ```
 
 ### Running Tests from MATLAB

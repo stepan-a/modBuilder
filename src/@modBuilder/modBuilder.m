@@ -54,6 +54,12 @@ classdef modBuilder < handle
         % Column 2: equation expression (char)
         equations = cell(0, 2);
 
+        % Analytical steady-state expressions (n×2 cell array)
+        % Column 1: symbol name — endogenous variable or parameter (char)
+        % Column 2: RHS expression (char)
+        % Row order = insertion order (used for tie-breaking in topological sort)
+        steady_state = cell(0, 2);
+
         % Symbol table: maps symbols to equations where they appear
         % T.params.<NAME> = {eq1, eq2, ...} - equations using parameter NAME
         % T.varexo.<NAME> = {eq1, eq2, ...} - equations using exogenous variable NAME
@@ -79,6 +85,10 @@ classdef modBuilder < handle
         % Column indices for equations table
         EQ_COL_NAME = 1     % Equation name (endogenous variable name)
         EQ_COL_EXPR = 2     % Equation expression (char)
+
+        % Column indices for steady_state table
+        SS_COL_NAME = 1     % Symbol name (endogenous variable or parameter)
+        SS_COL_EXPR = 2     % RHS expression (char)
 
         % Valid symbol/component types for type checking
         % Used by size(), validate_type(), and other methods
@@ -1111,6 +1121,9 @@ classdef modBuilder < handle
                     o.tags = s.tags;
                     o.symbols = s.symbols;
                     o.equations = s.equations;
+                    if isfield(s, 'steady_state')
+                        o.steady_state = s.steady_state;
+                    end
                 else
                     error('Cannot instantiate a modBuilder object (missing fields).')
                 end
@@ -1923,6 +1936,208 @@ classdef modBuilder < handle
             end
         end % function
 
+        function o = steady(o, varname, expression, varargin)
+        % Define an analytical steady-state expression for an endogenous variable or parameter.
+        %
+        % INPUTS:
+        % - o           [modBuilder]
+        % - varname     [char]         1×n array, name of an endogenous variable or parameter
+        % - expression  [char]         1×m array, RHS expression string
+        % - ...
+        %
+        % OUTPUTS:
+        % - o           [modBuilder]   updated object
+        %
+        % REMARKS:
+        % - The variable must be a known endogenous variable or parameter (error if exogenous or unknown).
+        % - If varname already has a steady-state expression, it is replaced in place (preserving row position).
+        % - If varname contains indices (e.g. 'Y_$1'), then expressions are defined for all combinations
+        %   of values provided as cell arrays of index values at the end of varargin.
+        % - No expression content validation is performed here (deferred to checksteady()).
+        % - The expressions generate a steady_state_model block in the exported .mod file when
+        %   write() is called with steady_state_model=true.
+        %
+        % EXAMPLES:
+        % m = modBuilder();
+        % m.add('y', 'y = k^alpha');
+        % m.add('c', 'c = y - delta*k');
+        % m.add('k', '1/beta = alpha*y(+1)/k + (1-delta)');
+        % m.parameter('alpha', 0.36);
+        % m.parameter('beta', 0.99);
+        % m.parameter('delta', 0.025);
+        %
+        % % Define analytical steady-state expressions
+        % m.steady('k', '(alpha*beta/(1-beta*(1-delta)))^(1/(1-alpha))');
+        % m.steady('y', 'k^alpha');
+        % m.steady('c', 'y - delta*k');
+        %
+        % % Parameter computed from steady-state values
+        % m.parameter('labor_share', NaN);
+        % m.steady('labor_share', '1 - alpha*y/k');
+        %
+        % % Implicit loops
+        % m2 = modBuilder();
+        % m2.add('Y_$1', 'Y_$1 = A_$1*K_$1', {1, 2, 3});
+        % m2.parameter('A_$1', 1.0, {1, 2, 3});
+        % m2.exogenous('K_$1', 1.0, {1, 2, 3});
+        % m2.steady('Y_$1', 'A_$1*K_$1', {1, 2, 3});
+
+            % Validate inputs
+            validateattributes(varname, {'char'}, {'nonempty', 'row'}, 'steady', 'varname');
+            validateattributes(expression, {'char'}, {'nonempty', 'row'}, 'steady', 'expression');
+
+            % Check if variable name contains implicit loop indices (e.g., 'Y_$1_$2')
+            inames = unique(regexp(varname, '\$\d*', 'match'));
+
+            if not(isempty(inames))
+                % Implicit loop: expand and recurse
+                nindices = numel(inames);
+
+                if not(isequal(numel(varargin), nindices))
+                    error('The number of indices in the variable name is %u, but values for %u indices are provided.', ...
+                          nindices, numel(varargin))
+                end
+
+                % Check that indices are uniform (all integers or all strings for each index)
+                [allint, allstr] = modBuilder.check_indices_values(varargin);
+
+                % Compute Cartesian product of index values
+                mIndex = table2cell(combinations(varargin{:}));
+
+                % Prepare template for sprintf (replace $1, $2, etc. with %u or %s) for varname only
+                tmp_varname = varname;
+
+                for i=nindices:-1:1
+
+                    if allint(i)
+                        tmp_varname = strrep(tmp_varname, sprintf('$%u',i), '%u');
+                    else
+                        tmp_varname = strrep(tmp_varname, sprintf('$%u',i), '%s');
+                    end
+                end
+
+                % Define steady-state expressions for all combinations
+                % Use strrep for expression (indices may appear multiple times)
+                for i=1:size(mIndex, 1)
+                    id = mIndex(i,:);
+                    expanded_varname = sprintf(tmp_varname, id{:});
+                    expanded_expression = expression;
+                    for j=nindices:-1:1
+                        if allstr(j)
+                            expanded_expression = strrep(expanded_expression, sprintf('$%u', j), id{j});
+                        else
+                            expanded_expression = strrep(expanded_expression, sprintf('$%u', j), num2str(id{j}));
+                        end
+                    end
+                    o.steady(expanded_varname, expanded_expression);
+                end
+
+                return;
+            end
+
+            % Base case: validate that varname is a known endogenous variable or parameter
+            if ~(ismember(varname, o.var(:,modBuilder.COL_NAME)) || ismember(varname, o.params(:,modBuilder.COL_NAME)))
+                if ismember(varname, o.varexo(:,modBuilder.COL_NAME))
+                    error('Cannot define a steady-state expression for exogenous variable "%s".', varname)
+                else
+                    error('Symbol "%s" is not a known endogenous variable or parameter.', varname)
+                end
+            end
+
+            % Check if varname already has a steady-state expression
+            idx = strcmp(varname, o.steady_state(:, modBuilder.SS_COL_NAME));
+
+            if any(idx)
+                % Replace expression in place (preserving row position)
+                o.steady_state{idx, modBuilder.SS_COL_EXPR} = expression;
+            else
+                % Append new row
+                n = size(o.steady_state, 1);
+                o.steady_state{n+1, modBuilder.SS_COL_NAME} = varname;
+                o.steady_state{n+1, modBuilder.SS_COL_EXPR} = expression;
+            end
+        end % function
+
+        function sorted_names = checksteady(o)
+        % Validate steady-state expressions and return symbol names in topological order.
+        %
+        % INPUTS:
+        % - o              [modBuilder]
+        %
+        % OUTPUTS:
+        % - sorted_names   [cell]      1×n cell array of symbol names in dependency order
+        %
+        % REMARKS:
+        % - For each expression, all symbols must be known (via issymbol()).
+        % - Topological sort uses Kahn's algorithm.
+        % - Nodes are symbols in steady_state(:, SS_COL_NAME).
+        % - Edge A → B means expression for B references symbol A and A is also a node.
+        % - Symbols with only numeric values (not nodes) are treated as leaf constants.
+        % - Tie-breaking: when multiple nodes have in-degree 0, the one with the smallest
+        %   row index in steady_state is picked first (preserves call order).
+        % - Errors on unknown symbols, circular dependencies, or missing values.
+
+            n = size(o.steady_state, 1);
+
+            if n == 0
+                sorted_names = {};
+                return
+            end
+
+            node_names = o.steady_state(:, modBuilder.SS_COL_NAME)';
+
+            % Build adjacency and in-degree
+            in_degree = zeros(1, n);
+            % adj{i} = list of node indices that depend on node i (i.e. i → j)
+            adj = cell(1, n);
+            for i = 1:n
+                adj{i} = [];
+            end
+
+            for i = 1:n
+                expr = o.steady_state{i, modBuilder.SS_COL_EXPR};
+                syms_in_expr = modBuilder.getsymbols(expr);
+                for j = 1:numel(syms_in_expr)
+                    sym = syms_in_expr{j};
+                    % Check that the symbol is known
+                    if ~o.issymbol(sym)
+                        error('Unknown symbol "%s" in steady-state expression for "%s".', sym, node_names{i})
+                    end
+                    % Check if this symbol is also a node
+                    node_idx = find(strcmp(sym, node_names));
+                    if ~isempty(node_idx)
+                        % Edge: node_idx → i (sym must be computed before node i)
+                        adj{node_idx}(end+1) = i;
+                        in_degree(i) = in_degree(i) + 1;
+                    end
+                end
+            end
+
+            % Kahn's algorithm with stable tie-breaking (smallest row index first)
+            sorted_names = cell(1, n);
+            count = 0;
+
+            for iter = 1:n
+                % Find all nodes with in-degree 0
+                candidates = find(in_degree == 0);
+                if isempty(candidates)
+                    % Remaining nodes form a cycle
+                    remaining = node_names(in_degree > 0);
+                    error('Circular dependency detected among steady-state expressions: %s.', strjoin(remaining, ', '))
+                end
+                % Tie-breaking: pick the candidate with smallest original row index
+                chosen = candidates(1);
+                count = count + 1;
+                sorted_names{count} = node_names{chosen};
+                % Mark as processed (set in-degree to -1 so it won't be picked again)
+                in_degree(chosen) = -1;
+                % Reduce in-degree for dependents
+                for j = adj{chosen}
+                    in_degree(j) = in_degree(j) - 1;
+                end
+            end
+        end % function
+
         function o = remove(o, eqname, varargin)
         % Remove an equation from the model, remove one endogenous variable, remove unecessary parameters and exogenous variables
         %
@@ -2030,6 +2245,12 @@ classdef modBuilder < handle
 
             o.equations(ide,:) = [];
             o.tags = rmfield(o.tags, eqname);
+
+            % Remove steady-state expression for this endogenous variable if present
+            ss_idx = strcmp(eqname, o.steady_state(:, modBuilder.SS_COL_NAME));
+            if any(ss_idx)
+                o.steady_state(ss_idx, :) = [];
+            end
 
             for i=1:length(o.T.equations.(eqname))
                 symname = o.T.equations.(eqname){i};
@@ -2233,6 +2454,14 @@ classdef modBuilder < handle
                 o.T.equations.(o.equations{i,modBuilder.EQ_COL_NAME}) = modBuilder.replaceincell(o.T.equations.(o.equations{i,modBuilder.EQ_COL_NAME}), oldsymbol, newsymbol);
             end
 
+            % Update steady-state expressions
+            for i=1:size(o.steady_state, 1)
+                if strcmp(o.steady_state{i, modBuilder.SS_COL_NAME}, oldsymbol)
+                    o.steady_state{i, modBuilder.SS_COL_NAME} = newsymbol;
+                end
+                o.steady_state{i, modBuilder.SS_COL_EXPR} = regexprep(o.steady_state{i, modBuilder.SS_COL_EXPR}, ['(?<!\w)' oldsymbol '(?!\w)'], newsymbol);
+            end
+
             % Mark symbol tables as dirty (need updating)
             o.tables_dirty = true;
         end % function
@@ -2245,11 +2474,12 @@ classdef modBuilder < handle
         % - filename  [char]         1×n    name of the output file (with or without .mod extension)
         %
         % OPTIONAL NAME-VALUE ARGUMENTS:
-        % - initval         [logical]  Include an initval block with initial values for endogenous variables (default: false)
-        % - steady          [logical]  Call steady after the initval block (default: false). A warning is issued if initval is false.
-        % - steady_options  [cell]     Options for the steady command as key-value pairs, e.g. {'maxit', 100, 'nocheck'} (default: {})
-        % - check           [logical]  Call check after steady (default: false). An error is thrown if steady is false.
-        % - precision       [integer]  Number of significant digits for numerical values (default: 6 decimal places)
+        % - initval              [logical]  Include an initval block with initial values for endogenous variables (default: false)
+        % - steady               [logical]  Call steady after the initval block (default: false). A warning is issued if initval is false.
+        % - steady_state_model   [logical]  Include a steady_state_model block with analytical expressions (default: false)
+        % - steady_options       [cell]     Options for the steady command as key-value pairs, e.g. {'maxit', 100, 'nocheck'} (default: {})
+        % - check                [logical]  Call check after steady (default: false). An error is thrown if steady is false.
+        % - precision            [integer]  Number of significant digits for numerical values (default: 6 decimal places)
         %
         % OUTPUTS:
         % - o         [modBuilder]   The model object (unchanged)
@@ -2282,6 +2512,7 @@ classdef modBuilder < handle
                 filename (1,:) char
                 options.initval (1,1) logical = false
                 options.steady (1,1) logical = false
+                options.steady_state_model (1,1) logical = false
                 options.steady_options (1,:) cell = {}
                 options.check (1,1) logical = false
                 options.precision (1,1) {mustBeNonnegative, mustBeInteger} = 0
@@ -2293,7 +2524,10 @@ classdef modBuilder < handle
             if ~isempty(options.steady_options) && ~options.steady
                 error('Option ''steady_options'' requires option ''steady'' to be true.');
             end
-            if options.steady && ~options.initval
+            if options.steady_state_model && isempty(o.steady_state)
+                error('Option ''steady_state_model'' requires at least one steady-state expression (use the steady() method).');
+            end
+            if options.steady && ~options.initval && ~options.steady_state_model
                 warning('modBuilder:steadyWithoutInitval', ...
                         'Option ''steady'' is used without ''initval''. The steady command may fail without initial values.');
             end
@@ -2387,6 +2621,19 @@ classdef modBuilder < handle
 
             fprintf(fid, 'end;\n');
 
+            if options.steady_state_model
+                %
+                % Print steady_state_model block
+                %
+                sorted_names = o.checksteady();
+                fprintf(fid, '\nsteady_state_model;\n\n');
+                for i=1:numel(sorted_names)
+                    ss_idx = strcmp(sorted_names{i}, o.steady_state(:, modBuilder.SS_COL_NAME));
+                    fprintf(fid, '\t%s = %s;\n', sorted_names{i}, o.steady_state{ss_idx, modBuilder.SS_COL_EXPR});
+                end
+                fprintf(fid, '\nend;\n');
+            end
+
             if options.initval
                 %
                 % Print initial values if any
@@ -2428,6 +2675,7 @@ classdef modBuilder < handle
             s.tags = o.tags;
             s.symbols = o.symbols;
             s.equations = o.equations;
+            s.steady_state = o.steady_state;
             s.T = o.T;
             s.date = o.date;
         end % function
@@ -3030,6 +3278,12 @@ classdef modBuilder < handle
                 % Update tags
                 o.tags.(varexoname) = o.tags.(varname);
                 o.tags = rmfield(o.tags, varname);
+
+                % Remove steady-state expression for the exogenised variable
+                ss_idx = strcmp(varname, o.steady_state(:, modBuilder.SS_COL_NAME));
+                if any(ss_idx)
+                    o.steady_state(ss_idx, :) = [];
+                end
             end
 
             % Mark symbol tables as dirty (need updating)
@@ -3310,6 +3564,7 @@ classdef modBuilder < handle
             p.var = o.var;
             p.symbols = o.symbols;
             p.equations = o.equations;
+            p.steady_state = o.steady_state;
             p.T = o.T;
             p.tags = o.tags;
             p.tables_dirty = o.tables_dirty;
@@ -3375,6 +3630,11 @@ classdef modBuilder < handle
                     b = false;
                     return
                 end
+            end
+
+            if not(modBuilder.isequalcell(o.steady_state, p.steady_state))
+                b = false;
+                return
             end
 
             if not(modBuilder.isequalsymboltable(o, p, 'params'))
@@ -4221,6 +4481,9 @@ classdef modBuilder < handle
 
             % Merge equations (simple concatenation)
             q.equations = [o.equations; p.equations];
+
+            % Merge steady-state expressions
+            q.steady_state = [o.steady_state; p.steady_state];
 
             % Merge symbol tables
             q = o.merge_symbol_tables(p, q);
