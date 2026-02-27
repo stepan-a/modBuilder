@@ -18,10 +18,15 @@ function run_all_tests_with_coverage()
     suite = TestSuite.fromClass(?AllTests);
     fprintf('Discovered %d tests.\n\n', numel(suite));
 
+    % Collect all .m source files explicitly (forFolder with
+    % IncludingSubfolders can truncate coverage on large classdef files).
+    srcfiles = dir(fullfile(srcdir, '**', '*.m'));
+    filepaths = arrayfun(@(f) fullfile(f.folder, f.name), srcfiles, ...
+        'UniformOutput', false);
+
     % Configure runner with text output, coverage, and JUnit reporting
     runner = TestRunner.withTextOutput;
-    runner.addPlugin(CodeCoveragePlugin.forFolder(srcdir, ...
-        'IncludingSubfolders', true, ...
+    runner.addPlugin(CodeCoveragePlugin.forFile(filepaths, ...
         'Producing', CoberturaFormat(fullfile(rootdir, 'coverage.xml'))));
     runner.addPlugin(XMLPlugin.producingJUnitFormat( ...
         fullfile(rootdir, 'test-results.xml')));
