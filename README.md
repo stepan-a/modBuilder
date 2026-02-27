@@ -620,13 +620,55 @@ full_model.merge(consumption);
 
 #### `solve(eqname, sname, sinit)`
 
-Numerically solve an equation for a symbol.
+Numerically solve a single equation for one symbol using Newton's method with automatic differentiation.
+
+**Arguments:**
+- `eqname` — Name of the equation to solve
+- `sname` — Symbol to solve for (parameter, endogenous, or exogenous)
+- `sinit` — Initial guess
 
 **Example:**
 
 ```matlab
 % Solve for steady state capital
 m.solve('k_ss_eq', 'k_ss', 10);  % Initial guess = 10
+```
+
+#### `solve_system(eqnames, snames[, tol, maxit])`
+
+Numerically solve a system of equations for multiple symbols simultaneously using Newton's method. The Jacobian is computed via automatic differentiation, exploiting the known sparsity pattern from the symbol table.
+
+**Arguments:**
+- `eqnames` — Cell array of equation names
+- `snames` — Cell array of symbol names to solve for (can be any mix of parameters, endogenous, and exogenous variables)
+- `tol` (optional) — Convergence tolerance (default: `1e-6`)
+- `maxit` (optional) — Maximum iterations (default: `100`)
+
+**Remarks:**
+- The system must be square (same number of equations and unknowns).
+- Current symbol values are used as the initial guess; all symbols being solved for must have a numeric value set beforehand.
+
+**Examples:**
+
+```matlab
+% Solve for the RBC steady state
+m = modBuilder();
+m.add('k', '1/beta = alpha*y/k + (1-delta)');
+m.add('y', 'y = k^alpha');
+m.add('c', 'c = y - delta*k');
+m.parameter('alpha', 0.36);
+m.parameter('beta', 0.99);
+m.parameter('delta', 0.025);
+m.endogenous('k', 5);
+m.endogenous('y', 1.5);
+m.endogenous('c', 1);
+m.solve_system({'k', 'y', 'c'}, {'k', 'y', 'c'});
+
+% Solve for a parameter and an endogenous variable jointly
+m.solve_system({'y', 'c'}, {'alpha', 'c'});
+
+% With custom tolerance
+m.solve_system({'k', 'y', 'c'}, {'k', 'y', 'c'}, 'tol', 1e-12);
 ```
 
 ### Indexing and Access

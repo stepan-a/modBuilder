@@ -69,6 +69,16 @@ classdef autoDiff1
             end
         end % function
 
+        function q = uminus(o)
+        % Overload the unary minus operator.
+            q = autoDiff1(-o.x, -o.dx);
+        end
+
+        function q = uplus(o)
+        % Overload the unary plus operator.
+            q = autoDiff1(o.x, o.dx);
+        end
+
         %
         % Special mathematical functions
         %

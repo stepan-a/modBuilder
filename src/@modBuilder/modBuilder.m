@@ -586,6 +586,156 @@ classdef modBuilder < handle
             end
         end % function
 
+        function [fhandles, incidence] = compile_equations(o, eqnames, snames)
+        % Pre-compile equations into function handles with solve variables accessed via cell array v{k}.
+        %
+        % INPUTS:
+        % - o          [modBuilder]
+        % - eqnames    [cell]        1×m cell array of equation names
+        % - snames   [cell]        1×n cell array of symbol names (solve variables)
+        %
+        % OUTPUTS:
+        % - fhandles   [cell]        1×m cell array of function handles @(v) LHS-(RHS)
+        % - incidence  [logical]     m×n matrix, incidence(i,j)=true if snames{j} appears in eqnames{i}
+
+            % Auto-update symbol tables if needed
+            if o.tables_dirty
+                o.updatesymboltables();
+            end
+
+            m = length(eqnames);
+            n = length(snames);
+
+            % Build var-name-to-index map
+            varmap = containers.Map();
+            for j = 1:n
+                varmap(snames{j}) = j;
+            end
+
+            fhandles = cell(1, m);
+            incidence = false(m, n);
+
+            for i = 1:m
+                % Get static version of the equation
+                eq_fn = @(x) isequal(x, eqnames{i});
+                eqID = cellfun(eq_fn, o.equations(:, modBuilder.EQ_COL_NAME));
+                equation = regexprep(o.equations{eqID, modBuilder.EQ_COL_EXPR}, '(\w+)\([+-]?\d+\)', '$1');
+
+                % Split on = and form LHS-(RHS)
+                LHSRHS = strsplit(equation, '=');
+                if length(LHSRHS) == 2
+                    expr = sprintf('%s-(%s)', LHSRHS{1}, LHSRHS{2});
+                elseif isscalar(LHSRHS)
+                    expr = LHSRHS{1};
+                else
+                    error('An equation cannot have more than one equal (=) symbol.')
+                end
+
+                % Get all symbols in this equation
+                symbols = o.T.equations.(eqnames{i});
+                symbols = [symbols, eqnames{i}]; %#ok<AGROW>
+                symbols = unique(symbols);
+
+                % First pass: replace solve variables with v{k}
+                for s = 1:length(symbols)
+                    symbol = symbols{s};
+                    if varmap.isKey(symbol)
+                        k = varmap(symbol);
+                        expr = regexprep(expr, ['\<', symbol, '\>'], sprintf('v{%d}', k));
+                        incidence(i, k) = true;
+                    end
+                end
+
+                % Second pass: replace known symbols with numeric values
+                for s = 1:length(symbols)
+                    symbol = symbols{s};
+                    if ~varmap.isKey(symbol)
+                        [type, id] = o.typeof(symbol);
+                        switch type
+                          case 'parameter'
+                            val = o.params{id, modBuilder.COL_VALUE};
+                          case 'exogenous'
+                            val = o.varexo{id, modBuilder.COL_VALUE};
+                          case 'endogenous'
+                            val = o.var{id, modBuilder.COL_VALUE};
+                          otherwise
+                            error('Unknown symbol type.')
+                        end
+                        expr = regexprep(expr, ['\<', symbol, '\>'], num2str(val, 15));
+                    end
+                end
+
+                fhandles{i} = str2func(sprintf('@(v) %s', expr));
+            end
+        end % function
+
+        function [J, residuals] = jacobian(o, eqnames, snames)
+        % Compute a sparse Jacobian matrix using automatic differentiation.
+        %
+        % INPUTS:
+        % - o          [modBuilder]
+        % - eqnames    [cell]        1×m cell array of equation names
+        % - snames   [cell]        1×n cell array of symbol names to differentiate w.r.t.
+        %
+        % OUTPUTS:
+        % - J          [sparse]      m×n sparse Jacobian matrix evaluated at current calibration
+        % - residuals  [double]      m×1 residual vector (LHS−RHS for each equation)
+
+            [fhandles, incidence] = o.compile_equations(eqnames, snames);
+            m = length(eqnames);
+            n = length(snames);
+
+            % Build evaluation point
+            x0 = zeros(n, 1);
+            for j = 1:n
+                [type, id] = o.typeof(snames{j});
+                switch type
+                  case 'parameter'
+                    x0(j) = o.params{id, modBuilder.COL_VALUE};
+                  case 'exogenous'
+                    x0(j) = o.varexo{id, modBuilder.COL_VALUE};
+                  case 'endogenous'
+                    x0(j) = o.var{id, modBuilder.COL_VALUE};
+                  otherwise
+                    error('Unknown symbol type.')
+                end
+            end
+
+            % Compute residuals with plain doubles
+            v = num2cell(x0);
+            residuals = zeros(m, 1);
+            for i = 1:m
+                residuals(i) = fhandles{i}(v);
+            end
+
+            % Compute Jacobian column by column using AD (COO → sparse)
+            nnzJ = nnz(incidence);
+            II = zeros(nnzJ, 1);
+            JJ = zeros(nnzJ, 1);
+            VV = zeros(nnzJ, 1);
+            idx = 0;
+            for j = 1:n
+                affected = find(incidence(:, j));
+                if isempty(affected), continue; end
+                v_ad = cell(n, 1);
+                for k = 1:n
+                    if k == j
+                        v_ad{k} = autoDiff1(x0(k), 1.0);
+                    else
+                        v_ad{k} = autoDiff1(x0(k), 0.0);
+                    end
+                end
+                for ii = affected'
+                    r = fhandles{ii}(v_ad);
+                    idx = idx + 1;
+                    II(idx) = ii;
+                    JJ(idx) = j;
+                    VV(idx) = r.dx;
+                end
+            end
+            J = sparse(II, JJ, VV, m, n);
+        end % function
+
     end % methods
 
 
@@ -4694,7 +4844,118 @@ classdef modBuilder < handle
             end
         end % function
 
-        function p = subsref(o, S)
+        function o = solve_system(o, eqnames, snames, options)
+        % Solve a system of equations for multiple symbols using Newton's method.
+        %
+        % INPUTS:
+        % - o              [modBuilder]
+        % - eqnames        [cell]         1×m cell array of equation names
+        % - snames         [cell]         1×n cell array of symbol names to solve for
+        % - options.tol    [double]       convergence tolerance (default 1e-6)
+        % - options.maxit  [double]       maximum iterations (default 100)
+        %
+        % OUTPUTS:
+        % - o              [modBuilder]   updated object with solved symbol values
+        %
+        % REMARKS:
+        % - The system must be square (m equations, m unknowns).
+        % - Symbols to solve for can be any mix of parameters, exogenous,
+        %   and endogenous variables.
+        % - Current symbol values are used as the initial guess.
+        % - The Jacobian is computed via automatic differentiation using
+        %   the sparsity pattern from the symbol table.
+        %
+        % EXAMPLES:
+        % % Solve for the RBC steady state
+        % m = modBuilder();
+        % m.add('k', '1/beta = alpha*y/k + (1-delta)');
+        % m.add('y', 'y = k^alpha');
+        % m.add('c', 'c = y - delta*k');
+        % m.parameter('alpha', 0.36);
+        % m.parameter('beta', 0.99);
+        % m.parameter('delta', 0.025);
+        % m.endogenous('k', 5);
+        % m.endogenous('y', 1.5);
+        % m.endogenous('c', 1);
+        % m.solve_system({'k', 'y', 'c'}, {'k', 'y', 'c'});
+        %
+        % % Solve for a parameter and an endogenous variable
+        % m.solve_system({'y', 'c'}, {'alpha', 'c'});
+
+            arguments
+                o modBuilder
+                eqnames cell
+                snames cell
+                options.tol (1,1) double = 1e-6
+                options.maxit (1,1) double = 100
+            end
+
+            m = length(eqnames);
+            n = length(snames);
+
+            if m ~= n
+                error('System must be square: number of equations (%d) must equal number of variables (%d).', m, n)
+            end
+
+            for j = 1:n
+                if ~o.issymbol(snames{j})
+                    error('Unknown symbol "%s".', snames{j})
+                end
+                [type, id] = o.typeof(snames{j});
+                switch type
+                  case 'parameter'
+                    val = o.params{id, modBuilder.COL_VALUE};
+                  case 'exogenous'
+                    val = o.varexo{id, modBuilder.COL_VALUE};
+                  case 'endogenous'
+                    val = o.var{id, modBuilder.COL_VALUE};
+                end
+                if isnan(val)
+                    error('Symbol "%s" has no initial value. Set a value before calling solve_system.', snames{j})
+                end
+            end
+
+            [fhandles, incidence] = o.compile_equations(eqnames, snames);
+
+            % Build initial guess from current values
+            x0 = zeros(n, 1);
+            for j = 1:n
+                [type, id] = o.typeof(snames{j});
+                switch type
+                  case 'parameter'
+                    x0(j) = o.params{id, modBuilder.COL_VALUE};
+                  case 'exogenous'
+                    x0(j) = o.varexo{id, modBuilder.COL_VALUE};
+                  case 'endogenous'
+                    x0(j) = o.var{id, modBuilder.COL_VALUE};
+                  otherwise
+                    error('Unknown symbol type.')
+                end
+            end
+
+            % Build closures for the solver
+            residual_fn = @(x) eval_residuals(fhandles, x, m);
+            jacobian_fn = @(x) eval_jacobian(fhandles, incidence, x, n);
+
+            [xsol, ~, ~] = solvers.newton_system(residual_fn, jacobian_fn, x0, options.tol, options.maxit);
+
+            % Write solution back
+            for j = 1:n
+                [type, id] = o.typeof(snames{j});
+                switch type
+                  case 'parameter'
+                    o.params{id, modBuilder.COL_VALUE} = xsol(j);
+                  case 'exogenous'
+                    o.varexo{id, modBuilder.COL_VALUE} = xsol(j);
+                  case 'endogenous'
+                    o.var{id, modBuilder.COL_VALUE} = xsol(j);
+                  otherwise
+                    error('Unknown symbol type.')
+                end
+            end
+        end % function
+
+        function varargout = subsref(o, S)
         % Overload subsref: o{'eq'} extracts equation, o.x returns parameter/variable value
         %
         % INPUTS:
@@ -4702,7 +4963,7 @@ classdef modBuilder < handle
         % - S    [struct]         subscript structure from MATLAB
         %
         % OUTPUTS:
-        % - p    [varies]         extracted submodel, property value, parameter/variable value, or method result
+        % - varargout  [varies]   extracted submodel, property value, parameter/variable value, or method result
         %
         % REMARKS:
         % - o{'eq1'} or o{'eq1', 'eq2', ...} extracts equations by name using curly braces
@@ -4713,6 +4974,9 @@ classdef modBuilder < handle
             if isequal(S(1).type, '.') && isequal(S(1).subs, 'T') && o.tables_dirty
                 o.updatesymboltables();
             end
+
+            nout = nargout;
+            method_call = false;
 
             if isequal(S(1).type, '{}')
                 if isa(S(1).subs{1}, 'bytag')
@@ -4754,12 +5018,13 @@ classdef modBuilder < handle
                         S = modBuilder.shiftS(S, 1);
                     catch
                         % Not a known symbol - try method call
+                        method_call = true;
                         if isscalar(S)
-                            p = feval(S(1).subs, o);
+                            [varargout{1:nout}] = feval(S(1).subs, o);
                             S = modBuilder.shiftS(S, 1);
                         elseif isequal(S(2).type, '()')
                             % Method call with arguments: o.method(args)
-                            p = feval(S(1).subs, o, S(2).subs{:});
+                            [varargout{1:nout}] = feval(S(1).subs, o, S(2).subs{:});
                             S = modBuilder.shiftS(S, 2);
                         else
                             % Unknown symbol and not a method call - error
@@ -4767,6 +5032,14 @@ classdef modBuilder < handle
                         end
                     end
                 end
+            end
+
+            if method_call
+                if ~isempty(S)
+                    % Chain remaining indexing on first output only
+                    varargout{1} = builtin('subsref', varargout{1}, S);
+                end
+                return
             end
 
             if ~isempty(S)
@@ -4796,29 +5069,43 @@ classdef modBuilder < handle
                     p = builtin('subsref', p, S);
                 end
             end
+
+            varargout{1} = p;
         end % function
 
-        function n = numArgumentsFromSubscript(~, ~, ~)
+        function n = numArgumentsFromSubscript(o, s, indexingContext)
         % Determine number of output arguments expected from subscripted reference
         %
         % INPUTS:
-        % - obj              [modBuilder]
-        % - s                [struct]            subscript structure from MATLAB
+        % - o               [modBuilder]
+        % - s               [struct]            subscript structure from MATLAB
         % - indexingContext  [IndexingContext]   Statement or Expression context
         %
         % OUTPUTS:
         % - n                [integer]           number of expected outputs
         %
         % REMARKS:
-        % This method is called by MATLAB before subsref to determine how many
-        % outputs to expect from the indexing operation. Always returning 1 tells
-        % MATLAB that all indexing operations return exactly one output, which
-        % prevents "Too many output arguments" errors in chained indexing.
+        % For method calls with multiple outputs (e.g. [J,r] = o.jacobian(...)),
+        % we need to return the actual nargout of the method. For other indexing
+        % operations, we return 1.
 
-            % Always return 1 output argument for all indexing
-            % operations This includes o{'eq'}, o('eq'), o.property,
-            % and chained operations We will see later if we need to
-            % consider cases where we return more than one output.
+            if indexingContext == matlab.mixin.util.IndexingContext.Statement ...
+                    && isequal(s(1).type, '.') ...
+                    && ~ismember(s(1).subs, {metaclass(o).PropertyList.Name})
+                % Dot reference that is not a property — could be a method or symbol.
+                % Check if it is a method with multiple outputs.
+                mc = metaclass(o);
+                mlist = mc.MethodList;
+                idx = strcmp(s(1).subs, {mlist.Name});
+                if any(idx)
+                    mdef = mlist(idx);
+                    nouts = numel(mdef.OutputNames);
+                    if nouts > 1
+                        n = nouts;
+                        return
+                    end
+                end
+            end
             n = 1;
         end % function
 
@@ -4899,3 +5186,41 @@ classdef modBuilder < handle
     end % methods
 
 end % classdef
+
+function r = eval_residuals(fhandles, x, m)
+    v = num2cell(x(:));
+    r = zeros(m, 1);
+    for i = 1:m
+        r(i) = fhandles{i}(v);
+    end
+end
+
+function J = eval_jacobian(fhandles, incidence, x, n)
+    m = size(incidence, 1);
+    x = x(:);
+    nnzJ = nnz(incidence);
+    II = zeros(nnzJ, 1);
+    JJ = zeros(nnzJ, 1);
+    VV = zeros(nnzJ, 1);
+    idx = 0;
+    for j = 1:n
+        affected = find(incidence(:, j));
+        if isempty(affected), continue; end
+        v_ad = cell(n, 1);
+        for k = 1:n
+            if k == j
+                v_ad{k} = autoDiff1(x(k), 1.0);
+            else
+                v_ad{k} = autoDiff1(x(k), 0.0);
+            end
+        end
+        for i = affected'
+            r = fhandles{i}(v_ad);
+            idx = idx + 1;
+            II(idx) = i;
+            JJ(idx) = j;
+            VV(idx) = r.dx;
+        end
+    end
+    J = sparse(II, JJ, VV, m, n);
+end
