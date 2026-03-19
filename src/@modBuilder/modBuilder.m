@@ -2697,6 +2697,7 @@ classdef modBuilder < handle
             end
 
             fid = fopen(filename, 'w');
+            cleanup = onCleanup(@() fclose(fid));
 
             %
             % Print list of endogenous variables
@@ -2807,7 +2808,6 @@ classdef modBuilder < handle
                 fprintf(fid, '\ncheck;\n');
             end
 
-            fclose(fid);
         end % function
 
         function s = saveobj(o)
