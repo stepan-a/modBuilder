@@ -256,6 +256,7 @@ classdef autoDiff1
 
         function q = max(o, p)
         % Overload the max function.
+            [o, p] = autoDiff1.convert(o, p);
             if o.x>p.x
                 q = autoDiff1(o.x, o.dx);
             elseif o.x<p.x
@@ -267,6 +268,7 @@ classdef autoDiff1
 
         function q = min(o, p)
         % Overload the min function.
+            [o, p] = autoDiff1.convert(o, p);
             if o.x>p.x
                 q = autoDiff1(p.x, p.dx);
             elseif o.x<p.x
