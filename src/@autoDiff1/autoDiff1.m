@@ -286,7 +286,7 @@ classdef autoDiff1
                 mu = 0;
             end
 
-            q = autoDiff1(normcdf(o.x, mu, sigma), normpdf(o.x, mu, sigma)*o.dx/sigma);
+            q = autoDiff1(normcdf(o.x, mu, sigma), normpdf(o.x, mu, sigma)*o.dx);
         end % function
 
         function q = normpdf(o, mu, sigma)
