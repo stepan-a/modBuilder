@@ -937,15 +937,15 @@ classdef modBuilder < handle
         end % function
 
         function dprintf(format, varargin)
-        % Display formatted output using fprintf and disp combination
+        % Display formatted output using dprintf and disp combination
         %
         % INPUTS:
         % - format    [char]     format string (same as fprintf)
         % - varargin  [cell]     optional arguments for format string
             if nargin>1
-                disp(fprintf(format, varargin{:}));
+                disp(sprintf(format, varargin{:}));
             else
-                disp(fprintf(format));
+                disp(sprintf(format));
             end
         end % function
 
