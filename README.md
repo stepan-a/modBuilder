@@ -559,7 +559,7 @@ m2.change('c', 'c = new_equation');  % Doesn't affect m
 
 #### `eq(other_model)` (overloads `==`)
 
-Test equality of two modBuilder objects. Compares all properties (parameters, variables, equations, tags, and symbol tables). The order of elements does not matter.
+Test equality of two modBuilder objects. Compares names, values, equations, tags, and symbol tables. The order of elements does not matter. Note that `long_name` and `tex_name` attributes are not compared: two models differing only in these metadata are considered equal.
 
 **Example:**
 

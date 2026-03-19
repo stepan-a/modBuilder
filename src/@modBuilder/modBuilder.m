@@ -3649,8 +3649,10 @@ classdef modBuilder < handle
         % - b   [logical]       true if objects are identical, false otherwise
         %
         % REMARKS:
-        % - Compares all properties: params, varexo, var, symbols, equations, tags, and symbol tables
+        % - Compares names, values, symbols, equations, tags, and symbol tables
         % - Order of elements does not matter for cell arrays (treated as sets)
+        % - long_name and tex_name attributes are NOT compared (two models differing
+        %   only in metadata are considered equal)
             if ~isa(o, 'modBuilder') || ~isa(p, 'modBuilder')
                 error('Cannot compare modBuilder object with an object from another class.')
             end
