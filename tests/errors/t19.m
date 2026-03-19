@@ -35,13 +35,10 @@ catch
 end
 assert(thrown, 'Expected error: sqrt domain error.');
 
-thrown = false;
-try
-    sqrt(autoDiff1(0, 1));
-catch
-    thrown = true;
-end
-assert(thrown, 'Expected error: sqrt of zero.');
+% sqrt(0) is now valid (value=0, derivative=Inf)
+r = sqrt(autoDiff1(0, 1));
+assert(r.x == 0, 'sqrt(0) value should be 0.');
+assert(isinf(r.dx), 'sqrt(0) derivative should be Inf.');
 
 % Test 4: cbrt of zero
 thrown = false;
