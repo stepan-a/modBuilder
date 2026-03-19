@@ -4415,13 +4415,13 @@ classdef modBuilder < handle
 
                             switch type
                               case 'parameter'
-                                modBuilder.dprintf('Parameter %s will be removed).', delsyms{j})
+                                modBuilder.dprintf('Parameter %s will be removed.', delsyms{j})
                                 o.params(id,:) = [];
                               case 'exogenous'
-                                modBuilder.dprintf('Exogenous variable %s will be removed).', delsyms{j})
+                                modBuilder.dprintf('Exogenous variable %s will be removed.', delsyms{j})
                                 o.varexo(id,:) = [];
                               case 'endogenous'
-                                modBuilder.dprintf('Endogenous variable %s will be removed).', delsyms{j})
+                                modBuilder.dprintf('Endogenous variable %s will be removed.', delsyms{j})
                                 o.var(id,:) = [];
                             end
                         else
