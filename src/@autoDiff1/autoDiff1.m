@@ -76,7 +76,7 @@ classdef autoDiff1
 
         function q = uplus(o)
         % Overload the unary plus operator.
-            q = autoDiff1(o.x, o.dx);
+            q = o;
         end
 
         %
