@@ -1007,25 +1007,19 @@ classdef modBuilder < handle
               case 'exogenous'
                 keyword = 'varexo';
             end
-            if not(isempty(Table{1,4})) && not(isempty(Table{1,3}))
-                fprintf(fid, '%s %s $%s$ (long_name=''%s'')\n\t', keyword, Table{1,1}, Table{1,4}, Table{1,3});
-            elseif isempty(Table{1,4}) && not(isempty(Table{1,3}))
-                fprintf(fid, '%s %s (long_name=''%s'')\n\t', keyword, Table{1,1}, Table{1,3});
-            elseif not(isempty(Table{1,4})) && isempty(Table{1,3})
-                fprintf(fid, '%s %s $%s$\n\t', keyword, Table{1,1}, Table{1,4});
-            else
-                fprintf(fid, '%s %s\n\t', keyword, Table{1,1});
-            end
-            for i=2:size(Table,1)
-                if not(isempty(Table{i,4})) && not(isempty(Table{i,3}))
-                    fprintf(fid, '%s $%s$ (long_name=''%s'')\n\t', Table{i,1}, Table{i,4}, Table{i,3});
-                elseif isempty(Table{i,4}) && not(isempty(Table{i,3}))
-                    fprintf(fid, '%s (long_name=''%s'')\n\t', Table{i,1}, Table{i,3});
-                elseif not(isempty(Table{i,4})) && isempty(Table{i,3})
-                    fprintf(fid, '%s $%s$\n\t', Table{i,1}, Table{i,4});
-                else
-                    fprintf(fid, '%s\n\t', Table{i,1});
+            for i=1:size(Table,1)
+                % Print keyword before first symbol, tab before others
+                if i == 1
+                    fprintf(fid, '%s ', keyword);
                 end
+                fprintf(fid, '%s', Table{i,1});
+                if ~isempty(Table{i,4})
+                    fprintf(fid, ' $%s$', Table{i,4});
+                end
+                if ~isempty(Table{i,3})
+                    fprintf(fid, ' (long_name=''%s'')', Table{i,3});
+                end
+                fprintf(fid, '\n\t');
             end
             fprintf(fid, ';\n\n');
         end % function
