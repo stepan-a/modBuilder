@@ -127,6 +127,7 @@ listoftests = [
   'validation/t02.m',
   'validation/t03.m',
   'validation/t04.m',
+  'validation/t05.m',
   'examples/add.m',
   'examples/parameter.m',
   'examples/exogenous.m',

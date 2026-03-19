@@ -1025,13 +1025,12 @@ classdef modBuilder < handle
         %
         % OUTPUTS:
         % - tokens  [cell]          1×m array of row char arrays, list of symbols
-            tokens = strsplit(expr, {'=', '+','-','*','/','^', '(', ')', ',', '\n', '\t', ' '});
-            % Filter out the numbers, punctuation.
-            tokens(cellfun(@(x) all(isstrprop(x, 'digit')+isstrprop(x, 'punct')), tokens)) = [];
+            % Extract valid identifiers (start with letter or _, followed by word characters)
+            % The negative lookbehind (?<![.\d]) rejects identifiers preceded by a digit
+            % or dot, correctly ignoring scientific notation (1e5, 1e-5) and decimals (0.33)
+            tokens = regexp(expr, '(?<![.\d])[a-zA-Z_]\w*', 'match');
             % Filter out reserved functions and operators
             tokens(cellfun(@(x) ismember(x, modBuilder.DYNARE_RESERVED_NAMES), tokens)) = [];
-            % Filter out empty elements.
-            tokens(cellfun(@(x) all(isempty(x)), tokens)) = [];
             % Remove duplicates
             tokens = unique(tokens);
         end % function
