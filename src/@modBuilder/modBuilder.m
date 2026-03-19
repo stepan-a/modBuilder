@@ -130,6 +130,44 @@ classdef modBuilder < handle
 
     methods (Access = private)
 
+        function val = get_value(o, name)
+        % Return the calibration/steady-state value of a symbol
+        %
+        % INPUTS:
+        % - o      [modBuilder]
+        % - name   [char]         symbol name
+        %
+        % OUTPUTS:
+        % - val    [double]       scalar value
+            [type, id] = o.typeof(name);
+            switch type
+              case 'parameter'
+                val = o.params{id, modBuilder.COL_VALUE};
+              case 'exogenous'
+                val = o.varexo{id, modBuilder.COL_VALUE};
+              case 'endogenous'
+                val = o.var{id, modBuilder.COL_VALUE};
+            end
+        end % function
+
+        function set_value(o, name, val)
+        % Set the calibration/steady-state value of a symbol
+        %
+        % INPUTS:
+        % - o      [modBuilder]
+        % - name   [char]         symbol name
+        % - val    [double]       scalar value
+            [type, id] = o.typeof(name);
+            switch type
+              case 'parameter'
+                o.params{id, modBuilder.COL_VALUE} = val;
+              case 'exogenous'
+                o.varexo{id, modBuilder.COL_VALUE} = val;
+              case 'endogenous'
+                o.var{id, modBuilder.COL_VALUE} = val;
+            end
+        end % function
+
         function o = update_symbol_map(o)
         % Update the symbol lookup map for O(1) type checking
         %
@@ -650,17 +688,7 @@ classdef modBuilder < handle
                 for s = 1:length(symbols)
                     symbol = symbols{s};
                     if ~varmap.isKey(symbol)
-                        [type, id] = o.typeof(symbol);
-                        switch type
-                          case 'parameter'
-                            val = o.params{id, modBuilder.COL_VALUE};
-                          case 'exogenous'
-                            val = o.varexo{id, modBuilder.COL_VALUE};
-                          case 'endogenous'
-                            val = o.var{id, modBuilder.COL_VALUE};
-                          otherwise
-                            error('Unknown symbol type.')
-                        end
+                        val = o.get_value(symbol);
                         expr = regexprep(expr, ['\<', symbol, '\>'], num2str(val, 15));
                     end
                 end
@@ -688,17 +716,7 @@ classdef modBuilder < handle
             % Build evaluation point
             x0 = zeros(n, 1);
             for j = 1:n
-                [type, id] = o.typeof(snames{j});
-                switch type
-                  case 'parameter'
-                    x0(j) = o.params{id, modBuilder.COL_VALUE};
-                  case 'exogenous'
-                    x0(j) = o.varexo{id, modBuilder.COL_VALUE};
-                  case 'endogenous'
-                    x0(j) = o.var{id, modBuilder.COL_VALUE};
-                  otherwise
-                    error('Unknown symbol type.')
-                end
+                x0(j) = o.get_value(snames{j});
             end
 
             % Compute residuals with plain doubles
@@ -4604,21 +4622,9 @@ classdef modBuilder < handle
 
             for i=1:length(Symbols)
                 symbol = Symbols{i};
-                [type, id] = o.typeof(symbol);
-
-                switch type
-                  case 'parameter'
-                    LHS = regexprep(LHS, ['\<', symbol, '\>'], num2str(o.params{id,modBuilder.COL_VALUE}, 15));
-                    RHS = regexprep(RHS, ['\<', symbol, '\>'], num2str(o.params{id,modBuilder.COL_VALUE}, 15));
-                  case 'exogenous'
-                    LHS = regexprep(LHS, ['\<', symbol, '\>'], num2str(o.varexo{id,modBuilder.COL_VALUE}, 15));
-                    RHS = regexprep(RHS, ['\<', symbol, '\>'], num2str(o.varexo{id,modBuilder.COL_VALUE}, 15));
-                  case 'endogenous'
-                    LHS = regexprep(LHS, ['\<', symbol, '\>'], num2str(o.var{id,modBuilder.COL_VALUE}, 15));
-                    RHS = regexprep(RHS, ['\<', symbol, '\>'], num2str(o.var{id,modBuilder.COL_VALUE}, 15));
-                  otherwise
-                    error('Unknown symbol type.')
-                end
+                val_str = num2str(o.get_value(symbol), 15);
+                LHS = regexprep(LHS, ['\<', symbol, '\>'], val_str);
+                RHS = regexprep(RHS, ['\<', symbol, '\>'], val_str);
             end
 
             evaleq.lhs = eval(LHS);
@@ -4695,18 +4701,7 @@ classdef modBuilder < handle
             %
             for i=1:length(knownsymbols)
                 symbol = knownsymbols{i};
-                [type, id] = o.typeof(symbol);
-
-                switch type
-                  case 'parameter'
-                    equation = regexprep(equation, ['\<', symbol, '\>'], num2str(o.params{id,modBuilder.COL_VALUE}, 15));
-                  case 'exogenous'
-                    equation = regexprep(equation, ['\<', symbol, '\>'], num2str(o.varexo{id,modBuilder.COL_VALUE}, 15));
-                  case 'endogenous'
-                    equation = regexprep(equation, ['\<', symbol, '\>'], num2str(o.var{id,modBuilder.COL_VALUE}, 15));
-                  otherwise
-                    error('Unknown symbol type.')
-                end
+                equation = regexprep(equation, ['\<', symbol, '\>'], num2str(o.get_value(symbol), 15));
             end
 
             %
@@ -4729,18 +4724,7 @@ classdef modBuilder < handle
             % Set initial guess for the unknown symbol
             %
             [x, ~, ~] = solvers.newton(f, sinit, 1e-6, 100);
-            [type, id] = o.typeof(sname);
-
-            switch type
-              case 'parameter'
-                o.params{id,modBuilder.COL_VALUE} = x;
-              case 'exogenous'
-                o.varexo{id,modBuilder.COL_VALUE} = x;
-              case 'endogenous'
-                o.var{id,modBuilder.COL_VALUE} = x;
-              otherwise
-                error('Unknown symbol type.')
-            end
+            o.set_value(sname, x);
         end % function
 
         function o = solve_system(o, eqnames, snames, options)
@@ -4800,16 +4784,7 @@ classdef modBuilder < handle
                 if ~o.issymbol(snames{j})
                     error('Unknown symbol "%s".', snames{j})
                 end
-                [type, id] = o.typeof(snames{j});
-                switch type
-                  case 'parameter'
-                    val = o.params{id, modBuilder.COL_VALUE};
-                  case 'exogenous'
-                    val = o.varexo{id, modBuilder.COL_VALUE};
-                  case 'endogenous'
-                    val = o.var{id, modBuilder.COL_VALUE};
-                end
-                if isnan(val)
+                if isnan(o.get_value(snames{j}))
                     error('Symbol "%s" has no initial value. Set a value before calling solve_system.', snames{j})
                 end
             end
@@ -4819,17 +4794,7 @@ classdef modBuilder < handle
             % Build initial guess from current values
             x0 = zeros(n, 1);
             for j = 1:n
-                [type, id] = o.typeof(snames{j});
-                switch type
-                  case 'parameter'
-                    x0(j) = o.params{id, modBuilder.COL_VALUE};
-                  case 'exogenous'
-                    x0(j) = o.varexo{id, modBuilder.COL_VALUE};
-                  case 'endogenous'
-                    x0(j) = o.var{id, modBuilder.COL_VALUE};
-                  otherwise
-                    error('Unknown symbol type.')
-                end
+                x0(j) = o.get_value(snames{j});
             end
 
             % Build closures for the solver
@@ -4840,17 +4805,7 @@ classdef modBuilder < handle
 
             % Write solution back
             for j = 1:n
-                [type, id] = o.typeof(snames{j});
-                switch type
-                  case 'parameter'
-                    o.params{id, modBuilder.COL_VALUE} = xsol(j);
-                  case 'exogenous'
-                    o.varexo{id, modBuilder.COL_VALUE} = xsol(j);
-                  case 'endogenous'
-                    o.var{id, modBuilder.COL_VALUE} = xsol(j);
-                  otherwise
-                    error('Unknown symbol type.')
-                end
+                o.set_value(snames{j}, xsol(j));
             end
         end % function
 
@@ -4900,20 +4855,7 @@ classdef modBuilder < handle
                 else
                     % Not a property - check if it's a parameter or variable
                     try
-                        [type, id] = typeof(o, S(1).subs);
-
-                        % It's a known symbol - return its value
-                        switch type
-                            case 'parameter'
-                                p = o.params{id, modBuilder.COL_VALUE};
-                            case 'endogenous'
-                                p = o.var{id, modBuilder.COL_VALUE};
-                            case 'exogenous'
-                                p = o.varexo{id, modBuilder.COL_VALUE};
-                            otherwise
-                                error('Unknown symbol type: %s', type);
-                        end
-
+                        p = o.get_value(S(1).subs);
                         S = modBuilder.shiftS(S, 1);
                     catch
                         % Not a known symbol - try method call
@@ -5037,20 +4979,9 @@ classdef modBuilder < handle
                 end
 
                 try
-                    [type, id] = typeof(o, S(1).subs);
+                    o.set_value(S(1).subs, B);
                 catch
                     error('Unknown symbol ''%s''. Cannot assign to non-existent symbol.', S(1).subs);
-                end
-
-                switch type
-                  case 'parameter'
-                    o.params{id,modBuilder.COL_VALUE} = B;
-                  case 'exogenous'
-                    o.varexo{id,modBuilder.COL_VALUE} = B;
-                  case 'endogenous'
-                    o.var{id,modBuilder.COL_VALUE} = B;
-                  otherwise
-                    error('Wrong assignment.');
                 end
 
             elseif isequal(S(1).type, '()')
