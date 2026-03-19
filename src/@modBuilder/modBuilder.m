@@ -3783,6 +3783,9 @@ classdef modBuilder < handle
             % Do we need to remove some symbols (parameters or exogenous variables)?
             list_of_symbols_potentially_to_be_removed = setdiff(otokens, ntokens);
 
+            % Clear symbol_map so typeof() uses linear search (safe during deletions)
+            o.symbol_map = [];
+
             for i=1:length(list_of_symbols_potentially_to_be_removed)
 
                 if not(o.appear_in_more_than_one_equation(list_of_symbols_potentially_to_be_removed{i}))
@@ -4323,6 +4326,8 @@ classdef modBuilder < handle
                 delsyms = setdiff(o.T.equations.(eqname), Symbols); % Deleted symbols in updated equation
 
                 if ~isempty(delsyms)
+                    % Clear symbol_map so typeof() uses linear search (safe during deletions)
+                    o.symbol_map = [];
 
                     for j=1:length(delsyms)
                         [type, id] = o.typeof(delsyms{j});
