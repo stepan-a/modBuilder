@@ -109,11 +109,11 @@ classdef autoDiff1
 
         function q = sqrt(o)
         % Overload the square root function.
-            if o.x>0
+            if o.x>=0
                 tmp = sqrt(o.x);
-                q = autoDiff1(tmp, o.dx/(2*tmp));
+                q = autoDiff1(tmp, o.dx/(2*tmp)); % derivative is Inf at x=0
             else
-                error('Domain error: argument must be positive.')
+                error('Domain error: argument must be non-negative.')
             end
         end % function
 
