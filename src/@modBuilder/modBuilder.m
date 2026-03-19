@@ -588,16 +588,18 @@ classdef modBuilder < handle
         % - Searches through all parameters, exogenous, and endogenous variables
         % - Returns empty struct array if no matches found
 
-            matches = struct('name', {}, 'type', {}, 'equations', {});
+            n_total = size(o.params, 1) + size(o.varexo, 1) + size(o.var, 1);
+            matches = repmat(struct('name', '', 'type', '', 'equations', {{}}), 1, n_total);
+            count = 0;
 
             % Search parameters
             for i = 1:size(o.params, 1)
                 name = o.params{i, modBuilder.COL_NAME};
                 if ~isempty(regexp(name, pattern, 'once'))
-                    match.name = name;
-                    match.type = 'Parameter';
-                    match.equations = o.T.params.(name);
-                    matches(end+1) = match;
+                    count = count + 1;
+                    matches(count).name = name;
+                    matches(count).type = 'Parameter';
+                    matches(count).equations = o.T.params.(name);
                 end
             end
 
@@ -605,10 +607,10 @@ classdef modBuilder < handle
             for i = 1:size(o.varexo, 1)
                 name = o.varexo{i, modBuilder.COL_NAME};
                 if ~isempty(regexp(name, pattern, 'once'))
-                    match.name = name;
-                    match.type = 'Exogenous variable';
-                    match.equations = o.T.varexo.(name);
-                    matches(end+1) = match;
+                    count = count + 1;
+                    matches(count).name = name;
+                    matches(count).type = 'Exogenous variable';
+                    matches(count).equations = o.T.varexo.(name);
                 end
             end
 
@@ -616,12 +618,14 @@ classdef modBuilder < handle
             for i = 1:size(o.var, 1)
                 name = o.var{i, modBuilder.COL_NAME};
                 if ~isempty(regexp(name, pattern, 'once'))
-                    match.name = name;
-                    match.type = 'Endogenous variable';
-                    match.equations = o.T.var.(name);
-                    matches(end+1) = match;
+                    count = count + 1;
+                    matches(count).name = name;
+                    matches(count).type = 'Endogenous variable';
+                    matches(count).equations = o.T.var.(name);
                 end
             end
+
+            matches = matches(1:count);
         end % function
 
         function [fhandles, incidence] = compile_equations(o, eqnames, snames)
@@ -2674,11 +2678,9 @@ classdef modBuilder < handle
                     fprintf(fid, '[name = ''%s'']\n', Tags.name);
                 else
                     fprintf(fid, '[name = ''%s''', Tags.name);
-                    tagnames = setdiff(tagnames, 'name');
-
-                    while ~isempty(tagnames)
-                        fprintf(fid, ', %s = ''%s''', tagnames{1}, Tags.(tagnames{1}));
-                        tagnames = setdiff(tagnames, tagnames{1});
+                    extra_tags = setdiff(tagnames, 'name');
+                    for j = 1:numel(extra_tags)
+                        fprintf(fid, ', %s = ''%s''', extra_tags{j}, Tags.(extra_tags{j}));
                     end
 
                     fprintf(fid, ']\n');
