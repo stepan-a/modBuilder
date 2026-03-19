@@ -1218,6 +1218,49 @@ classdef modBuilder < handle
             end
         end % function
 
+        function expanded = expand_templates(templates, index_values)
+        % Expand implicit loop templates into concrete strings.
+        %
+        % INPUTS:
+        % - templates      [cell]   1×k cell array of template strings (e.g., {'Y_$1_$2', 'Y_$1 = A_$1*K_$2'})
+        % - index_values   [cell]   1×n cell array of cell arrays of index values
+        %
+        % OUTPUTS:
+        % - expanded       [cell]   m×k cell array of expanded strings (m = number of combinations)
+        %
+        % REMARKS:
+        % - Detects $N placeholders in the first template
+        % - Validates that the number of index arrays matches the number of placeholders
+        % - Computes Cartesian product of index values
+        % - Uses strrep for expansion, so $N placeholders can appear multiple times
+
+            inames = unique(regexp(templates{1}, '\$\d*', 'match'));
+            nindices = numel(inames);
+
+            if numel(index_values) ~= nindices
+                error('The number of indices in the template is %u, but values for %u indices are provided.', nindices, numel(index_values))
+            end
+
+            [allint, ~] = modBuilder.check_indices_values(index_values);
+            mIndex = table2cell(combinations(index_values{:}));
+
+            % Expand all combinations using strrep
+            expanded = cell(size(mIndex, 1), numel(templates));
+            for i = 1:size(mIndex, 1)
+                for t = 1:numel(templates)
+                    s = templates{t};
+                    for j = nindices:-1:1
+                        if allint(j)
+                            s = strrep(s, sprintf('$%u', j), num2str(mIndex{i, j}));
+                        else
+                            s = strrep(s, sprintf('$%u', j), mIndex{i, j});
+                        end
+                    end
+                    expanded{i, t} = s;
+                end
+            end
+        end % function
+
     end % methods
 
     methods(Static)
@@ -1522,39 +1565,9 @@ classdef modBuilder < handle
                     error('This case of implicit loops is not covered. Indices must be the same in the equation and in varname.')
                 end
 
-                % Check that the indices are uniform.
-                [allint, allstr] = modBuilder.check_indices_values(varargin);
-
-                % Compute Cartesian product of set of values
-                mIndex = table2cell(combinations(varargin{:}));
-
-                % Prepare
-                Name = varname;
-
-                for i=number_of_loops:-1:1
-                    if allint(i)
-                        Name = strrep(Name, sprintf('$%u',i), '%u');
-                        % Equation = strrep(Equation, sprintf('$%u',i), '%u');
-                    else
-                        Name = strrep(Name, sprintf('$%u',i), '%s');
-                        % Equation = strrep(Equation, sprintf('$%u',i), '%s');
-                    end
-                end
-
-                for i=1:size(mIndex,1)
-                    id = mIndex(i,:);
-                    NAME = sprintf(Name, id{:});
-                    Equation = equation;
-
-                    for j=number_of_loops:-1:1
-                        if allstr(j)
-                            Equation = strrep(Equation, sprintf('$%u', j), id{j});
-                        else
-                            Equation = strrep(Equation, sprintf('$%u', j), num2str(id{j}));
-                        end
-                    end
-
-                    o.add(NAME, Equation);
+                expanded = modBuilder.expand_templates({varname, equation}, varargin);
+                for i = 1:size(expanded, 1)
+                    o.add(expanded{i, 1}, expanded{i, 2});
                 end
             end
         end % function
@@ -1660,47 +1673,10 @@ classdef modBuilder < handle
                 error('Method tag cannot be used to change the name of an equation. Instead, use the rename method to change the name of an endogenous variable.')
             end
 
-            % Check if equation name contains implicit loop indices (e.g., 'Y_$1_$2')
-            inames = unique(regexp(eqname, '\$\d*', 'match'));
-
-            if not(isempty(inames))
-                % Implicit loop: expand and tag all matching equations
-                nindices = numel(inames);
-
-                % Validate number of index arrays
-                if not(isequal(numel(varargin), nindices))
-                    error('The number of indices in the equation name is %u, but values for %u indices are provided.', ...
-                          nindices, numel(varargin))
-                end
-
-                % Check that indices are uniform (all integers or all strings for each index)
-                [allint, ~] = modBuilder.check_indices_values(varargin);
-
-                % Compute Cartesian product of index values
-                mIndex = table2cell(combinations(varargin{:}));
-
-                % Prepare template for sprintf (replace $1, $2, etc. with %u or %s)
-                tmp_eqname = eqname;
-                tmp_value = value;
-
-                for i=nindices:-1:1
-                    if allint(i)
-                        tmp_eqname = strrep(tmp_eqname, sprintf('$%u',i), '%u');
-                        tmp_value = strrep(tmp_value, sprintf('$%u',i), '%u');
-                    else
-                        tmp_eqname = strrep(tmp_eqname, sprintf('$%u',i), '%s');
-                        tmp_value = strrep(tmp_value, sprintf('$%u',i), '%s');
-                    end
-                end
-
-                % Tag equations for all combinations
-                for i=1:size(mIndex, 1)
-                    id = mIndex(i,:);
-                    name = sprintf(tmp_eqname, id{:});
-                    val = sprintf(tmp_value, id{:});
-
-                    % Recursively call tag for each expanded name
-                    o.tag(name, tagname, val);
+            if ~isempty(regexp(eqname, '\$\d*', 'match', 'once'))
+                expanded = modBuilder.expand_templates({eqname, value}, varargin);
+                for i = 1:size(expanded, 1)
+                    o.tag(expanded{i, 1}, tagname, expanded{i, 2});
                 end
                 return;
             end
@@ -2135,52 +2111,11 @@ classdef modBuilder < handle
             validateattributes(varname, {'char'}, {'nonempty', 'row'}, 'steady', 'varname');
             validateattributes(expression, {'char'}, {'nonempty', 'row'}, 'steady', 'expression');
 
-            % Check if variable name contains implicit loop indices (e.g., 'Y_$1_$2')
-            inames = unique(regexp(varname, '\$\d*', 'match'));
-
-            if not(isempty(inames))
-                % Implicit loop: expand and recurse
-                nindices = numel(inames);
-
-                if not(isequal(numel(varargin), nindices))
-                    error('The number of indices in the variable name is %u, but values for %u indices are provided.', ...
-                          nindices, numel(varargin))
+            if ~isempty(regexp(varname, '\$\d*', 'match', 'once'))
+                expanded = modBuilder.expand_templates({varname, expression}, varargin);
+                for i = 1:size(expanded, 1)
+                    o.steady(expanded{i, 1}, expanded{i, 2});
                 end
-
-                % Check that indices are uniform (all integers or all strings for each index)
-                [allint, allstr] = modBuilder.check_indices_values(varargin);
-
-                % Compute Cartesian product of index values
-                mIndex = table2cell(combinations(varargin{:}));
-
-                % Prepare template for sprintf (replace $1, $2, etc. with %u or %s) for varname only
-                tmp_varname = varname;
-
-                for i=nindices:-1:1
-
-                    if allint(i)
-                        tmp_varname = strrep(tmp_varname, sprintf('$%u',i), '%u');
-                    else
-                        tmp_varname = strrep(tmp_varname, sprintf('$%u',i), '%s');
-                    end
-                end
-
-                % Define steady-state expressions for all combinations
-                % Use strrep for expression (indices may appear multiple times)
-                for i=1:size(mIndex, 1)
-                    id = mIndex(i,:);
-                    expanded_varname = sprintf(tmp_varname, id{:});
-                    expanded_expression = expression;
-                    for j=nindices:-1:1
-                        if allstr(j)
-                            expanded_expression = strrep(expanded_expression, sprintf('$%u', j), id{j});
-                        else
-                            expanded_expression = strrep(expanded_expression, sprintf('$%u', j), num2str(id{j}));
-                        end
-                    end
-                    o.steady(expanded_varname, expanded_expression);
-                end
-
                 return;
             end
 
@@ -2340,46 +2275,11 @@ classdef modBuilder < handle
             end
 
             % Check if equation name contains implicit loop indices (e.g., 'Y_$1_$2')
-            inames = unique(regexp(eqname, '\$\d*', 'match'));
-
-            if not(isempty(inames))
-                % Implicit loop: expand and remove all matching equations
-                nindices = numel(inames);
-
-                % Validate number of index arrays
-
-                if not(isequal(numel(varargin), nindices))
-                    error('The number of indices in the equation name is %u, but values for %u indices are provided.', ...
-                          nindices, numel(varargin))
+            if ~isempty(regexp(eqname, '\$\d*', 'match', 'once'))
+                expanded = modBuilder.expand_templates({eqname}, varargin);
+                for i = 1:size(expanded, 1)
+                    o.remove(expanded{i, 1});
                 end
-
-                % Check that indices are uniform (all integers or all strings for each index)
-                [allint, ~] = modBuilder.check_indices_values(varargin);
-
-                % Compute Cartesian product of index values
-                mIndex = table2cell(combinations(varargin{:}));
-
-                % Prepare template for sprintf (replace $1, $2, etc. with %u or %s)
-                tmp_name = eqname;
-
-                for i=nindices:-1:1
-
-                    if allint(i)
-                        tmp_name = strrep(tmp_name, sprintf('$%u',i), '%u');
-                    else
-                        tmp_name = strrep(tmp_name, sprintf('$%u',i), '%s');
-                    end
-                end
-
-                % Remove equations for all combinations
-
-                for i=1:size(mIndex, 1)
-                    id = mIndex(i,:);
-                    name = sprintf(tmp_name, id{:});
-                    % Recursively call remove for each expanded name
-                    o.remove(name);
-                end
-
                 return;
             end
 
