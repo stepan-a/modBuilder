@@ -3,3 +3,4 @@
 *.pdf
 coverage.xml
 test-results.xml
+tests/testlist.txt

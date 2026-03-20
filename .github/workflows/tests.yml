@@ -22,6 +22,15 @@ jobs:
         with:
           release: R2024b
 
+      - name: Generate test list from Meson configuration
+        run: python3 -c "
+          import re, pathlib
+          text = pathlib.Path('tests/meson.build').read_text()
+          m = re.search(r'listoftests\s*=\s*\[(.*?)\]', text, re.DOTALL)
+          tests = re.findall(r\"'([^']+)'\", m.group(1))
+          pathlib.Path('tests/testlist.txt').write_text('\n'.join(tests) + '\n')
+          "
+
       - name: Run tests with coverage
         uses: matlab-actions/run-command@v2
         with:

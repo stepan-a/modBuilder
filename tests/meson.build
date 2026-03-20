@@ -223,6 +223,18 @@ listoffailingtests = [
    'rbc/rbc6'
 ]
 
+# Generate testlist.txt in the source tree so that AllTests.m (MATLAB
+# unit-testing / coverage wrapper) can read the same list without
+# duplicating it.
+python3 = find_program('python3')
+gen_args = ['-c',
+            'import sys; open(sys.argv[1],"w").write("\\n".join(sys.argv[2:])+"\\n")',
+            meson.current_source_dir() / 'testlist.txt']
+foreach t : listoftests
+  gen_args += t
+endforeach
+run_command(python3, gen_args, check: true)
+
 foreach t : listoftests
   test(
     t,

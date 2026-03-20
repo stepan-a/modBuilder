@@ -741,6 +741,8 @@ Configure the test system with your MATLAB path:
 meson setup -Dmatlab_path=/path/to/matlab/bin/matlab build
 ```
 
+The `meson setup` step also generates `tests/testlist.txt`, a plain-text list of all test names. This file is the single source of truth shared between Meson (for `meson test`) and MATLAB (for the `AllTests` coverage wrapper). When adding or removing tests, edit the `listoftests` array in `tests/meson.build` and re-run `meson setup`.
+
 ### Running Tests
 
 ```bash
@@ -807,5 +809,5 @@ When adding new features:
 1. Add comprehensive documentation to method docstrings
 2. Include examples in the method documentation
 3. Create test files in `tests/examples/`
-4. Add tests to `tests/meson.build`
+4. Add tests to the `listoftests` array in `tests/meson.build` and re-run `meson setup` to regenerate `tests/testlist.txt`
 5. Run full test suite before committing
