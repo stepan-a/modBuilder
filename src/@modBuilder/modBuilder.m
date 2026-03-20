@@ -1503,10 +1503,15 @@ classdef modBuilder < handle
         %
         % OUTPUTS:
         % - listofsymbols   [cell]          n×1, each element is a row character array (name of a symbol).
-            listofsymbols = {};
-            for i=1:o.size('equations')
-                listofsymbols = union(listofsymbols, o.getsymbols(o.equations{i,modBuilder.EQ_COL_EXPR}));
+            if o.tables_dirty
+                o.updatesymboltables();
             end
+            eqnames = fieldnames(o.T.equations);
+            listofsymbols = {};
+            for i = 1:numel(eqnames)
+                listofsymbols = [listofsymbols, o.T.equations.(eqnames{i})]; %#ok<AGROW>
+            end
+            listofsymbols = unique(listofsymbols);
         end % function
 
         function  n = size(o, type)
