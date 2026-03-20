@@ -654,13 +654,15 @@ classdef modBuilder < handle
                 varmap(snames{j}) = j;
             end
 
+            % Build equation-name-to-row map for O(1) lookups
+            eqmap = containers.Map(o.equations(:, modBuilder.EQ_COL_NAME), num2cell(1:size(o.equations, 1)));
+
             fhandles = cell(1, m);
             incidence = false(m, n);
 
             for i = 1:m
                 % Get static version of the equation
-                eq_fn = @(x) isequal(x, eqnames{i});
-                eqID = cellfun(eq_fn, o.equations(:, modBuilder.EQ_COL_NAME));
+                eqID = eqmap(eqnames{i});
                 equation = regexprep(o.equations{eqID, modBuilder.EQ_COL_EXPR}, '(\w+)\([+-]?\d+\)', '$1');
 
                 % Split on = and form LHS-(RHS)
@@ -4598,8 +4600,7 @@ classdef modBuilder < handle
             %
             % Get static version of the equation
             %
-            eq = @(x) isequal(x, eqname);
-            eqID = cellfun(eq, o.equations(:,modBuilder.EQ_COL_NAME));
+            eqID = strcmp(eqname, o.equations(:,modBuilder.EQ_COL_NAME));
             equation = regexprep(o.equations{eqID,modBuilder.EQ_COL_EXPR}, '(\w+)\([+-]?\d+\)', '$1');
 
             %
@@ -4689,8 +4690,7 @@ classdef modBuilder < handle
             %
             % Get static version of the equation
             %
-            eq = @(x) isequal(x, eqname);
-            eqID = cellfun(eq, o.equations(:,modBuilder.EQ_COL_NAME));
+            eqID = strcmp(eqname, o.equations(:,modBuilder.EQ_COL_NAME));
             equation = regexprep(o.equations{eqID,modBuilder.EQ_COL_EXPR}, '(\w+)\([+-]?\d+\)', '$1');
 
             %
