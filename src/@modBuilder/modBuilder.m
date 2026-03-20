@@ -1624,6 +1624,12 @@ classdef modBuilder < handle
                 error('Variable "%s" already has an equation. Use the change method if you really want to redefine the equation for "%s".', varname, varname)
             end
 
+            % Validate that the endogenous variable appears in the equation
+            symbols_in_eq = modBuilder.getsymbols(equation);
+            if ~ismember(varname, symbols_in_eq)
+                error('Endogenous variable "%s" does not appear in its equation:\n\n\t%s\n', varname, equation)
+            end
+
             id = size(o.equations, 1)+1;
             o.equations{id,modBuilder.EQ_COL_NAME} = varname;
             o.equations{id,modBuilder.EQ_COL_EXPR} = equation;
@@ -1637,7 +1643,7 @@ classdef modBuilder < handle
                 o.varexo(id,:) = [];
             end
 
-            o.T.equations.(varname) = modBuilder.getsymbols(equation);
+            o.T.equations.(varname) = symbols_in_eq;
             o.symbols = horzcat(o.symbols, o.T.equations.(varname));
             o.T.equations.(varname) = setdiff(o.T.equations.(varname), varname);
             o.symbols = setdiff(o.symbols, o.var(:,modBuilder.COL_NAME));
@@ -3773,9 +3779,15 @@ classdef modBuilder < handle
                 error('There is no equation for "%s".', varname)
             end
 
+            % Validate that the endogenous variable appears in the new equation
+            allsymbols = modBuilder.getsymbols(equation);
+            if ~ismember(varname, allsymbols)
+                error('Endogenous variable "%s" does not appear in its equation:\n\n\t%s\n', varname, equation)
+            end
+
             o.equations{ide,modBuilder.EQ_COL_EXPR} = equation;
             otokens = o.T.equations.(varname);
-            ntokens = setdiff(modBuilder.getsymbols(equation), varname);
+            ntokens = setdiff(allsymbols, varname);
             o.symbols = [o.symbols, ntokens];
 
             % Remove symbols that are already known. If o.symbols is empty, it indicates that the updated equation introduces no
