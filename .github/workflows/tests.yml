@@ -23,7 +23,8 @@ jobs:
           release: R2024b
 
       - name: Generate test list from Meson configuration
-        run: python3 -c "
+        run: |
+          python3 -c "
           import re, pathlib
           text = pathlib.Path('tests/meson.build').read_text()
           m = re.search(r'listoftests\s*=\s*\[(.*?)\]', text, re.DOTALL)
