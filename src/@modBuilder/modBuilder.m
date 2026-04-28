@@ -1279,6 +1279,104 @@ classdef modBuilder < handle
             end
         end % function
 
+        function [eq2var, unmatched_eqs, unmatched_vars] = matchequations(eqsymbols, eqlhs_symbols, candidates)
+        % Match each equation to a unique endogenous variable using bipartite matching.
+        %
+        % Builds a bipartite graph where an edge connects equation i to candidate
+        % variable j iff j textually appears in equation i. A minimum-cost perfect
+        % matching is computed with matchpairs (Duff-Koster). Edge weights apply
+        % stable tie-breakers: prefer a variable that appears on the LHS of the
+        % equation, then prefer rarer candidates (Hall-style scarcity), then break
+        % remaining ties lexicographically by (equation index, candidate index).
+        %
+        % INPUTS:
+        % - eqsymbols       [cell]    n×1, each element is a cell array of symbols appearing in equation i
+        % - eqlhs_symbols   [cell]    n×1, each element is a cell array of symbols appearing in the LHS of equation i
+        % - candidates      [cell]    m×1, names of candidate endogenous variables
+        %
+        % OUTPUTS:
+        % - eq2var          [cell]    n×1, matched variable name for each equation ('' if unmatched)
+        % - unmatched_eqs   [vector]  column vector with indices of equations that could not be matched
+        % - unmatched_vars  [cell]    candidate variable names that could not be matched
+        %
+        % REMARKS:
+        % - Returns a partial matching when no perfect matching exists; the caller
+        %   inspects unmatched_eqs / unmatched_vars to report the structural gap.
+        % - Matching is based on textual occurrence, not on a symbolic static
+        %   reduction; spurious cancellations are not detected.
+        %
+        % REFERENCES:
+        % - Assignment problem (linear-sum bipartite matching):
+        %   https://en.wikipedia.org/wiki/Assignment_problem
+        % - Hall's marriage theorem (perfect-matching feasibility, motivates the
+        %   scarcity tiebreaker): https://en.wikipedia.org/wiki/Hall%27s_marriage_theorem
+        % - matchpairs (the MATLAB primitive used here, an implementation of
+        %   Duff & Koster's algorithm):
+        %   https://www.mathworks.com/help/matlab/ref/matchpairs.html
+        % - I. S. Duff and J. Koster, "On Algorithms for Permuting Large Entries
+        %   to the Diagonal of a Sparse Matrix", SIAM J. Matrix Anal. Appl.,
+        %   22(4):973-996, 2001.
+            n = numel(eqsymbols);
+            m = numel(candidates);
+            eq2var = repmat({''}, n, 1);
+            if n == 0 || m == 0
+                unmatched_eqs = (1:n)';
+                unmatched_vars = candidates(:);
+                return
+            end
+            contains_eq = false(n, m);
+            for j = 1:m
+                v = candidates{j};
+                for i = 1:n
+                    if any(strcmp(v, eqsymbols{i}))
+                        contains_eq(i, j) = true;
+                    end
+                end
+            end
+            degree = sum(contains_eq, 1)';
+            lhs_has = false(n, m);
+            for j = 1:m
+                v = candidates{j};
+                for i = 1:n
+                    if any(strcmp(v, eqlhs_symbols{i}))
+                        lhs_has(i, j) = true;
+                    end
+                end
+            end
+            % Dense cost matrix: large value forbids non-edges, edge weights
+            % encode the LHS bonus, the scarcity penalty, and the lex tiebreak.
+            % matchpairs treats unstored sparse entries as cost 0, so dense is mandatory here.
+            forbid = 1e6;
+            C = forbid * ones(n, m);
+            for i = 1:n
+                for j = 1:m
+                    if contains_eq(i, j)
+                        c = 1.0;
+                        if lhs_has(i, j)
+                            c = c - 0.5;
+                        end
+                        c = c + 0.1 * degree(j) / (m + 1);
+                        c = c + 1e-6 * (i * (m + 1) + j);
+                        C(i, j) = c;
+                    end
+                end
+            end
+            % costUnmatched between edge cost and forbid forces matchpairs to
+            % maximize matching size and never select a forbidden non-edge.
+            M = matchpairs(C, 1e3);
+            matched_rows = false(n, 1);
+            matched_cols = false(m, 1);
+            for k = 1:size(M, 1)
+                i = M(k, 1);
+                j = M(k, 2);
+                eq2var{i} = candidates{j};
+                matched_rows(i) = true;
+                matched_cols(j) = true;
+            end
+            unmatched_eqs = find(~matched_rows);
+            unmatched_vars = candidates(~matched_cols);
+        end % function
+
     end % methods
 
     methods(Static)
@@ -1364,6 +1462,11 @@ classdef modBuilder < handle
         %
         % OUTPUTS:
         % - o              [modBuilder]            new modBuilder object
+        %
+        % REMARKS:
+        % - Equations whose tag is missing or does not match an endogenous variable
+        %   are matched automatically via bipartite matching (matchequations). The
+        %   constructor errors out only if no perfect matching exists.
 
             if nargin==1 && isdatetime(varargin{1})
                 o.date = varargin{1};
@@ -1435,47 +1538,88 @@ classdef modBuilder < handle
                 o.equations = cell(n, 2);
                 o.var = cell(n, 4);
 
+                % First pass: build equation expressions and collect equations
+                % that already carry a valid endogenous-variable tag.
+                hastag = false(n, 1);
+                tagvar = repmat({''}, n, 1);
                 for i=1:n
                     equation = JSON.model(i);
+                    o.equations{i,modBuilder.EQ_COL_EXPR} = sprintf('%s = %s', equation.lhs, equation.rhs);
+                    if isfield(equation, 'tags') && isfield(equation.tags, equationtagname)
+                        tname = char(equation.tags.(equationtagname));
+                        if ismember(tname, M_.endo_names)
+                            hastag(i) = true;
+                            tagvar{i} = tname;
+                        end
+                    end
+                end
 
-                    if not(isfield(equation, 'tags'))
-                        error('Each equation must have a tag %s (to associate an endogenous variable).', equationtagname)
+                % Second pass: when some equations have no valid tag, match them
+                % to the remaining endogenous variables using bipartite matching.
+                if any(~hastag)
+                    untagged_idx = find(~hastag);
+                    available = setdiff(M_.endo_names, tagvar(hastag), 'stable');
+                    nu = numel(untagged_idx);
+                    eqsymbols = cell(nu, 1);
+                    eqlhs_symbols = cell(nu, 1);
+                    for k=1:nu
+                        i = untagged_idx(k);
+                        eqsymbols{k} = modBuilder.getsymbols(o.equations{i,modBuilder.EQ_COL_EXPR});
+                        eqlhs_symbols{k} = modBuilder.getsymbols(char(JSON.model(i).lhs));
+                    end
+                    [eq2var, umeqs, umvars] = modBuilder.matchequations(eqsymbols, eqlhs_symbols, available);
+                    if ~isempty(umeqs) || ~isempty(umvars)
+                        bullets = {};
+                        for k = 1:numel(umeqs)
+                            i = untagged_idx(umeqs(k));
+                            bullets{end+1} = sprintf('  equation #%d: %s', i, o.equations{i,modBuilder.EQ_COL_EXPR}); %#ok<AGROW>
+                        end
+                        if ~isempty(umvars)
+                            bullets{end+1} = sprintf('  unmatched endogenous variables:%s', modBuilder.printlist(umvars));
+                        end
+                        error('Unable to associate every equation with a unique endogenous variable. Provide explicit tags (%s) for these:\n%s', equationtagname, strjoin(bullets, '\n'));
+                    end
+                    bullets = cell(nu, 1);
+                    for k=1:nu
+                        i = untagged_idx(k);
+                        tagvar{i} = eq2var{k};
+                        bullets{k} = sprintf('  equation #%d -> %s', i, tagvar{i});
+                    end
+                    warning('modBuilder:autoMatch', 'Automatically matched %d untagged equation(s) to endogenous variables:\n%s', nu, strjoin(bullets, '\n'));
+                end
+
+                % Third pass: populate var / equations / tags / T.equations.
+                for i=1:n
+                    equation = JSON.model(i);
+                    name = tagvar{i};
+                    o.var{i,modBuilder.COL_NAME} = name;
+                    o.equations{i,modBuilder.EQ_COL_NAME} = name;
+                    id = strcmp(name, M_.endo_names);
+                    o.var{i,modBuilder.COL_VALUE} = oo_.steady_state(id);
+
+                    if isequal(name, M_.endo_names_long{id})
+                        o.var{i,modBuilder.COL_LONG_NAME} = '';
+                    else
+                        o.var{i,modBuilder.COL_LONG_NAME} = M_.endo_names_long{id};
                     end
 
-                    o.equations{i,modBuilder.EQ_COL_EXPR} = sprintf('%s = %s', equation.lhs, equation.rhs);
-
-                    if ismember(equation.tags.(equationtagname), M_.endo_names)
-                        o.var{i,modBuilder.COL_NAME} = char(equation.tags.(equationtagname));
-                        o.equations{i,modBuilder.EQ_COL_NAME} = o.var{i,modBuilder.COL_NAME};
-                        id = strcmp(equation.tags.((equationtagname)), M_.endo_names);
-                        o.var{i,modBuilder.COL_VALUE} = oo_.steady_state(id);
-
-                        if isequal(o.var{i,modBuilder.COL_NAME}, M_.endo_names_long{id})
-                            o.var{i,modBuilder.COL_LONG_NAME} = '';
-                        else
-                            o.var{i,modBuilder.COL_LONG_NAME} = M_.endo_names_long{id};
-                        end
-
-                        if isequal(o.var{i,modBuilder.COL_NAME}, M_.endo_names_tex{id})
-                            o.var{i,modBuilder.COL_TEX_NAME} = '';
-                        else
-                            o.var{i,modBuilder.COL_TEX_NAME} = M_.endo_names_tex{id};
-                        end
-
-                        o.T.equations.(equation.tags.((equationtagname))) = modBuilder.getsymbols(o.equations{i,modBuilder.EQ_COL_EXPR});
-                        o.symbols = unique(horzcat(o.symbols, o.T.equations.(equation.tags.((equationtagname)))));
-                        o.T.equations.(equation.tags.(equationtagname)) = setdiff(o.T.equations.(equation.tags.((equationtagname))), equation.tags.((equationtagname)));
-                        o.tags.(o.var{i,modBuilder.COL_NAME}).name = o.var{i,modBuilder.COL_NAME};
-
-                        % Do we need to populate o.tags with other equation tags?
-                        FieldNames = setdiff(fieldnames(o.tags.(o.var{i,modBuilder.COL_NAME})), {equationtagname, 'name'});
-
-                        % Equation tag name cannot be used if fourth argument is used.
-                        for j=1:numel(FieldNames)
-                            o.tags.(o.var{i,modBuilder.COL_NAME}).(FieldNames{j}) = char(equation.tags.(FieldNames{j}));
-                        end
+                    if isequal(name, M_.endo_names_tex{id})
+                        o.var{i,modBuilder.COL_TEX_NAME} = '';
                     else
-                        error('The name (equation tag) of an equation should be an endogenous variable.')
+                        o.var{i,modBuilder.COL_TEX_NAME} = M_.endo_names_tex{id};
+                    end
+
+                    o.T.equations.(name) = modBuilder.getsymbols(o.equations{i,modBuilder.EQ_COL_EXPR});
+                    o.symbols = unique(horzcat(o.symbols, o.T.equations.(name)));
+                    o.T.equations.(name) = setdiff(o.T.equations.(name), name);
+                    o.tags.(name).name = name;
+
+                    % Do we need to populate o.tags with other equation tags?
+                    FieldNames = setdiff(fieldnames(o.tags.(name)), {equationtagname, 'name'});
+
+                    % Equation tag name cannot be used if fourth argument is used.
+                    for j=1:numel(FieldNames)
+                        o.tags.(name).(FieldNames{j}) = char(equation.tags.(FieldNames{j}));
                     end
                 end
 
@@ -3203,6 +3347,34 @@ classdef modBuilder < handle
 
                 tbl = table(names, values, longnames, texnames, ...
                            'VariableNames', {'Name', 'Value', 'LongName', 'TeXName'});
+            end
+        end % function
+
+
+        function varargout = equationmap(o)
+        % Display or return the mapping between endogenous variables and equations.
+        %
+        % INPUTS:
+        % - o    [modBuilder]
+        %
+        % OUTPUTS:
+        % - tbl  [table]    columns: Endogenous, Equation. Returned only when nargout > 0.
+        %
+        % EXAMPLES:
+        % m.equationmap();           % print the mapping to the console
+        % t = m.equationmap();       % return the mapping as a MATLAB table
+            n = size(o.equations, 1);
+            if n == 0
+                tbl = table(categorical([]), categorical([]), 'VariableNames', {'Endogenous', 'Equation'});
+            else
+                names = categorical(o.equations(:, modBuilder.EQ_COL_NAME));
+                exprs = categorical(o.equations(:, modBuilder.EQ_COL_EXPR));
+                tbl = table(names, exprs, 'VariableNames', {'Endogenous', 'Equation'});
+            end
+            if nargout > 0
+                varargout{1} = tbl;
+            else
+                disp(tbl);
             end
         end % function
 

@@ -101,6 +101,12 @@ m = modBuilder(M_, oo_, 'equations.json', 'custom_name');
 **Returns:**
 - New `modBuilder` object
 
+**Equation–variable association at load time:**
+
+Each equation must be associated with a unique endogenous variable. Equations whose tag is missing or does not match an endogenous variable are matched automatically against the still-available endogenous variables using a bipartite-matching algorithm (`matchpairs`, with stable tie-breakers favoring a variable that appears on the LHS of the equation). The constructor only fails when no perfect matching exists, in which case the error spells out the unmatched equations and unmatched variables. When auto-matching fires, a `modBuilder:autoMatch` warning lists the proposed (equation, variable) pairs; suppress it with `warning('off', 'modBuilder:autoMatch')` if needed.
+
+Note that auto-matching is based on textual occurrence of the variable in the equation, not on a symbolic static reduction, so spurious cancellations are not detected.
+
 ### Model Building
 
 #### `add(varname, equation[, indices])`
@@ -447,6 +453,21 @@ disp(param_table);
 % Get variable tables
 var_table = m.table('endogenous');
 varexo_table = m.table('exogenous');
+```
+
+#### `equationmap()`
+
+Display or return the mapping between endogenous variables and equations as a two-column table (`Endogenous`, `Equation`). When called without an output argument the table is printed to the console; when called with an output argument the table is returned silently.
+
+**Examples:**
+
+```matlab
+% Print the mapping
+m.equationmap();
+
+% Get the mapping as a MATLAB table
+t = m.equationmap();
+disp(t);
 ```
 
 #### `size(type)`
