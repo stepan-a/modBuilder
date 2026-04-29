@@ -3032,12 +3032,13 @@ classdef modBuilder < handle
         %
         % OUTPUTS:
         % - type     [char]            1×m array, type of the symbol
-        % - id       [logical or integer]  Position of symbol in respective array
+        % - id       [integer]         scalar, row position of the symbol in the corresponding table
         %
         % REMARKS:
         % - Uses O(1) hash map lookup when symbol_map is available
         % - Falls back to O(n) linear search if symbol_map is not initialized
         % - Significantly faster for repeated lookups in large models
+        % - Each symbol name is unique within its type, so id is always a scalar.
         %
         % EXAMPLES:
         % m = modBuilder();
@@ -3054,39 +3055,28 @@ classdef modBuilder < handle
             if ~isempty(o.symbol_map) && isa(o.symbol_map, 'containers.Map') && o.symbol_map.isKey(name)
                 sym_info = o.symbol_map(name);
                 type = sym_info.type;
-                % Convert to logical array for backward compatibility
-                switch type
-                  case 'parameter'
-                    id = false(size(o.params, 1), 1);
-                    id(sym_info.idx) = true;
-                  case 'exogenous'
-                    id = false(size(o.varexo, 1), 1);
-                    id(sym_info.idx) = true;
-                  case 'endogenous'
-                    id = false(size(o.var, 1), 1);
-                    id(sym_info.idx) = true;
-                end
+                id = sym_info.idx;
                 return
             end
 
             % Fallback to O(n) linear search
-            id = ismember(o.params(:,modBuilder.COL_NAME), name);
+            id = find(strcmp(o.params(:,modBuilder.COL_NAME), name), 1);
 
-            if any(id)
+            if ~isempty(id)
                 type = 'parameter';
                 return
             end
 
-            id = ismember(o.varexo(:,modBuilder.COL_NAME), name);
+            id = find(strcmp(o.varexo(:,modBuilder.COL_NAME), name), 1);
 
-            if any(id)
+            if ~isempty(id)
                 type = 'exogenous';
                 return
             end
 
-            id = ismember(o.var(:,modBuilder.COL_NAME), name);
+            id = find(strcmp(o.var(:,modBuilder.COL_NAME), name), 1);
 
-            if any(id)
+            if ~isempty(id)
                 type = 'endogenous';
                 return
             end
