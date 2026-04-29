@@ -1615,11 +1615,12 @@ classdef modBuilder < handle
                     o.tags.(name).name = name;
 
                     % Do we need to populate o.tags with other equation tags?
-                    FieldNames = setdiff(fieldnames(o.tags.(name)), {equationtagname, 'name'});
-
-                    % Equation tag name cannot be used if fourth argument is used.
-                    for j=1:numel(FieldNames)
-                        o.tags.(name).(FieldNames{j}) = char(equation.tags.(FieldNames{j}));
+                    if isfield(equation, 'tags')
+                        FieldNames = setdiff(fieldnames(equation.tags), {equationtagname, 'name'});
+                        % Equation tag name cannot be used if fourth argument is used.
+                        for j=1:numel(FieldNames)
+                            o.tags.(name).(FieldNames{j}) = char(equation.tags.(FieldNames{j}));
+                        end
                     end
                 end
 
