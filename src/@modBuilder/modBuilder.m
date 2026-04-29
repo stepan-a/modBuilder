@@ -1579,13 +1579,19 @@ classdef modBuilder < handle
                         end
                         error('Unable to associate every equation with a unique endogenous variable. Provide explicit tags (%s) for these:\n%s', equationtagname, strjoin(bullets, '\n'));
                     end
-                    bullets = cell(nu, 1);
+                    nm = cell(nu, 1);
+                    ex = cell(nu, 1);
                     for k=1:nu
                         i = untagged_idx(k);
                         tagvar{i} = eq2var{k};
-                        bullets{k} = sprintf('  equation #%d -> %s', i, tagvar{i});
+                        nm{k} = tagvar{i};
+                        ex{k} = o.equations{i, modBuilder.EQ_COL_EXPR};
                     end
-                    warning('modBuilder:autoMatch', 'Automatically matched %d untagged equation(s) to endogenous variables:\n%s', nu, strjoin(bullets, '\n'));
+                    ws = warning('query', 'modBuilder:autoMatch');
+                    warning('modBuilder:autoMatch', 'Automatically matched %d untagged equation(s) to endogenous variables.', nu);
+                    if strcmp(ws.state, 'on')
+                        disp(table(categorical(nm), categorical(ex), 'VariableNames', {'Endogenous', 'Equation'}));
+                    end
                 end
 
                 % Third pass: populate var / equations / tags / T.equations.
