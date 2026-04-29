@@ -4762,13 +4762,14 @@ classdef modBuilder < handle
         % - printflag    [logical]      scalar, print results if true (default is false)
         %
         % OUTPUTS:
-        % - lhs          [double]       scalar, evaluation of the LHS member of the equation
-        % - rhs          [double]       scalar, evaluation of the RHS member of the equation
-        % - resid        [double]       scalar, evaluation of LHS-RHS
+        % - evaleq       [struct]       scalar struct with fields:
+        %                                 .lhs   [double] evaluation of the LHS member of the equation
+        %                                 .rhs   [double] evaluation of the RHS member of the equation
+        %                                 .resid [double] evaluation of LHS-RHS
         %
         % REMARKS:
         % If the equation does not contain an '=' symbol — and thus no LHS or RHS — the expression is evaluated as the left-hand
-        % side (lhs) and its residual (resid), while the right-hand side (rhs) is set to 0.
+        % side (evaleq.lhs) and its residual (evaleq.resid), while the right-hand side (evaleq.rhs) is set to 0.
 
             % Auto-update symbol tables if needed
             if o.tables_dirty
