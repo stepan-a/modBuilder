@@ -1790,7 +1790,6 @@ classdef modBuilder < handle
             o.T.equations.(varname) = symbols_in_eq;
             o.symbols = horzcat(o.symbols, o.T.equations.(varname));
             o.T.equations.(varname) = setdiff(o.T.equations.(varname), varname);
-            o.symbols = setdiff(o.symbols, o.var(:,modBuilder.COL_NAME));
             o.symbols = setdiff(o.symbols, o.symbols(cellfun(@o.issymbol, o.symbols)));
             o.tags.(varname).name = varname;
 
