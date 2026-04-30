@@ -97,11 +97,8 @@ classdef modBuilder < handle
         % Reserved function names that cannot be used as symbol names
         % These are MATLAB/Octave built-in functions and Dynare-specific functions
         % Used by getsymbols() to filter out functions
-        DYNARE_RESERVED_NAMES = {'log', 'log10', 'ln', 'exp', 'sqrt', 'cbrt', 'abs', 'sign', ...
-                                 'sin', 'cos', 'tan', 'asin', 'acos', 'atan', ...
-                                 'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh', ...
-                                 'min', 'max', 'normcdf', 'normpdf', 'erf', ...
-                                 'diff', 'adl', 'EXPECTATIONS', 'STEADY_STATE'}
+        % The list is shared with the ast class (see dynare_reserved_function_names.m)
+        DYNARE_RESERVED_NAMES = dynare_reserved_function_names()
 
         % Standalone flags (options without a value) for the steady command
         % Used by format_dynare_options() to distinguish flags from key-value pairs
