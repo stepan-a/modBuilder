@@ -41,4 +41,27 @@ if not(has) || cancels
     error('check_factor("R") on the static residual of eq1 must report has=true, cancels=false.')
 end
 
+% --- Second case: w/w − ω
+% Pure multiplicative-factor analysis (check_factor) cannot detect that w
+% "cancels" here — it requires algebraic simplification. After
+% staticise().simplify(), the residual reduces to 1 - ω and w no longer
+% appears, so the matcher correctly excludes it.
+eq3 = 'w/w - omega';
+eq4 = 'w + alpha';
+candidates2 = {'w', 'omega'};
+eqasts2 = {ast(eq3).staticise().simplify(); ast(eq4).staticise().simplify()};
+eqlhs_symbols2 = {{}; {}};
+
+[eq2var2, umeqs2, umvars2] = modBuilder.matchequations(eqasts2, eqlhs_symbols2, candidates2);
+
+if ~isempty(umeqs2) || ~isempty(umvars2)
+    error('w/w - omega case: matchequations should produce a complete assignment.')
+end
+if not(strcmp(eq2var2{1}, 'omega'))
+    error('w/w - omega: eq3 should be assigned to omega (w cancels via simplify), got "%s".', eq2var2{1})
+end
+if not(strcmp(eq2var2{2}, 'w'))
+    error('w/w - omega: eq4 should be assigned to w, got "%s".', eq2var2{2})
+end
+
 fprintf('auto_match_static.m: All tests passed\n');

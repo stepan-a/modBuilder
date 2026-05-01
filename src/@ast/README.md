@@ -79,6 +79,49 @@ Return a new tree with every time-subscripted node `x(±k)` replaced by a
 plain symbol `x`. Other node types descend through their children but
 are otherwise unchanged.
 
+#### `t.canonicalise()`
+
+Return a canonical form of the tree:
+
+- subtraction is rewritten as addition with a unary minus (`a − b → a + (−b)`),
+- division is rewritten as multiplication by an inverse (`a / b → a · b^(−1)`),
+- chains of `+` and `*` are flattened, the operands sorted by a stable
+  key (numbers before symbols before steady-state before negations
+  before calls before compound binops), then re-built into a left-
+  associated tree.
+
+Two expressions that differ only by operand order (`a + b` vs `b + a`,
+`a*b − b*a`, …) become syntactically identical after canonicalisation,
+so `ast.ast_equal` then captures their semantic equality. The renderer
+recognises canonical patterns and prints `+ uminus(y)` as `… - y` and
+`* y^(-1)` as `… / y`, so the rendered output stays readable.
+
+#### `t.simplify()`
+
+Return a simplified version of the tree. Iterates `canonicalise` plus a
+bottom-up rule pass to a fixed point. The rule set is local but covers
+the everyday cases:
+
+- *constant folding* — `2 + 3 → 5`, `6 / 2 → 3`, …
+- *additive identities* — `0 + f → f`, `f − 0 → f`
+- *multiplicative identities* — `0 · f → 0`, `1 · f → f`, `f / 1 → f`,
+  `f^0 → 1`, `f^1 → f`, `1^f → 1`
+- *structural cancellation* — `f − f → 0`, `f / f → 1`,
+  `f + (−f) → 0`, `f · f^(−1) → 1`
+- *structural merging* — `f + f → 2·f`, `f · f → f^2`
+- *double negation* — `−(−f) → f`, `−num → num(-num)`
+
+Cancellation is detected up to commutativity (so `a·b − b·a → 0`)
+because the operands are sorted by `canonicalise` before comparison.
+Genuine multi-operand cancellation in long chains (e.g.
+`a + b − a → b`) is not handled by this MVP; it would require
+pair-cancellation across flattened chains.
+
+The output preserves canonical form. The MVP `check_factor` becomes
+substantially tighter when applied to a simplified tree: cases that
+previously slipped through (e.g. `w/w − ω`) now correctly report `w`
+as absent because `w/w` is folded to `1`.
+
 #### `t.substitute(target_name, replacement[, parameter_names])`
 
 Return a new tree in which every `sym(target_name)` and every

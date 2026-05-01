@@ -164,11 +164,24 @@ classdef ast
                         str = ['(' str ')'];
                     end
                 case 'binop'
-                    cp = ast.op_precedence(o.value);
+                    op = o.value;
+                    L = o.children{1};
+                    R = o.children{2};
+                    % Pretty-print canonical forms produced by canonicalise / simplify:
+                    %   binop('+', L, uminus(Y))                    rendered as  L - Y
+                    %   binop('*', L, binop('^', Y, num(-1)))       rendered as  L / Y
+                    if strcmp(op, '+') && strcmp(R.type, 'uminus')
+                        op = '-';
+                        R = R.children{1};
+                    elseif strcmp(op, '*') && strcmp(R.type, 'binop') && strcmp(R.value, '^') && ast.is_neg_one(R.children{2})
+                        op = '/';
+                        R = R.children{1};
+                    end
+                    cp = ast.op_precedence(op);
                     pp = ast.op_precedence(parent_op);
-                    l = o.children{1}.string(o.value, false);
-                    r = o.children{2}.string(o.value, true);
-                    str = [l ' ' o.value ' ' r];
+                    l = L.string(op, false);
+                    r = R.string(op, true);
+                    str = [l ' ' op ' ' r];
                     % Decide whether the rendered subtree must be wrapped to round-trip
                     % to the same tree shape after re-parsing. The two sources of
                     % ambiguity are precedence and same-precedence associativity.
@@ -443,6 +456,91 @@ classdef ast
                 fprintf('  ast (empty)\n\n');
             else
                 fprintf('  ast: %s\n\n', o.string());
+            end
+        end % function
+
+        function o = canonicalise(o)
+        % Return a canonical form of the tree.
+        %
+        % INPUTS:
+        % - o   [ast]    tree to normalise
+        %
+        % OUTPUTS:
+        % - o   [ast]    canonicalised tree:
+        %                  - subtraction is rewritten as addition with a unary minus:
+        %                    a - b becomes a + (-b)
+        %                  - division is rewritten as multiplication by an inverse:
+        %                    a / b becomes a * b^(-1)
+        %                  - chains of '+' and '*' are flattened, the operands sorted by
+        %                    a stable key (see ast.sort_key), then re-built into a left-
+        %                    associated tree
+        %
+        % REMARKS:
+        % - Used internally by simplify to make structurally equivalent expressions
+        %   syntactically identical (so that, e.g., a*b - b*a → 0 is detected).
+        % - The canonical tree uses 'uminus' and '^' rather than '-' and '/'. The
+        %   string() renderer detects those patterns and pretty-prints them as '-' and
+        %   '/' so the rendered output stays readable.
+        % - Pure transformation; idempotent on inputs already in canonical form.
+            for i = 1:numel(o.children)
+                o.children{i} = o.children{i}.canonicalise();
+            end
+            if strcmp(o.type, 'binop') && strcmp(o.value, '-')
+                o = ast('binop', '+', {o.children{1}, ast('uminus', [], {o.children{2}})});
+            end
+            if strcmp(o.type, 'binop') && strcmp(o.value, '/')
+                o = ast('binop', '*', {o.children{1}, ast('binop', '^', {o.children{2}, ast('num', -1, {})})});
+            end
+            if strcmp(o.type, 'binop') && (strcmp(o.value, '+') || strcmp(o.value, '*'))
+                op = o.value;
+                operands = ast.flatten(o, op);
+                if numel(operands) > 1
+                    keys = cellfun(@ast.sort_key, operands, 'UniformOutput', false);
+                    [~, idx] = sort(keys);
+                    operands = operands(idx);
+                    result = operands{1};
+                    for i = 2:numel(operands)
+                        result = ast('binop', op, {result, operands{i}});
+                    end
+                    o = result;
+                end
+            end
+        end % function
+
+        function o = simplify(o)
+        % Return a simplified version of the tree (constant folding, identity rules,
+        % structural cancellation).
+        %
+        % INPUTS:
+        % - o   [ast]    tree to simplify
+        %
+        % OUTPUTS:
+        % - o   [ast]    simplified tree, in canonical form (see canonicalise)
+        %
+        % REMARKS:
+        % - Iterates canonicalise + a bottom-up rule pass until a fixed point is
+        %   reached. The rule set is intentionally local; it covers:
+        %     * constant folding (numeric-only binop)
+        %     * additive identities (0+f → f, f+0 → f), multiplicative identities
+        %       (0*f → 0, 1*f → f, f^0 → 1, f^1 → f, 1^f → 1)
+        %     * structural cancellation across direct children
+        %       (f − f → 0,  f / f → 1,  f + (−f) → 0,  f · f^(−1) → 1)
+        %     * structural merging  (f + f → 2·f,  f · f → f^2)
+        %     * double negation     (−(−f) → f, and −num → num(-num))
+        % - Cases that need genuine algebraic insight (e.g. partial cancellation in
+        %   long sums like a + b − a → b) are not handled by this MVP and may require
+        %   pair-cancellation across flattened chains.
+        % - The output preserves canonical form (with 'uminus' for subtraction and
+        %   '^(-1)' for division). The string() renderer prints those as '-' and '/'.
+            previous_key = '';
+            while true
+                o = o.canonicalise();
+                key = ast.sort_key(o);
+                if strcmp(key, previous_key)
+                    break
+                end
+                previous_key = key;
+                o = ast.simplify_pass(o);
             end
         end % function
 
@@ -809,6 +907,181 @@ classdef ast
                     p = 4;
                 otherwise
                     p = 0;
+            end
+        end % function
+
+        function operands = flatten(o, op)
+        % Flatten a chain of binop(op, ...) into a flat cell of operands.
+        %
+        % INPUTS:
+        % - o    [ast]    tree to flatten
+        % - op   [char]   binary operator to flatten ('+' or '*')
+        %
+        % OUTPUTS:
+        % - operands  [cell]  1×k cell of subtrees that, combined with op, reproduce o.
+        %
+        % REMARKS:
+        % - Used by canonicalise and simplify on commutative operators ('+', '*') to
+        %   normalise the chain shape and detect identical / cancelling subtrees.
+            if strcmp(o.type, 'binop') && strcmp(o.value, op)
+                operands = [ast.flatten(o.children{1}, op), ast.flatten(o.children{2}, op)];
+            else
+                operands = {o};
+            end
+        end % function
+
+        function k = sort_key(o)
+        % Return a stable string sort key used to order operands of commutative chains.
+        %
+        % INPUTS:
+        % - o   [ast]    node to key
+        %
+        % OUTPUTS:
+        % - k   [char]   1×n string. Lexicographic order on these keys gives the canonical
+        %                operand order: numbers first, then symbols, then steady-state, then
+        %                negations, then function calls, then compound binops.
+            switch o.type
+                case 'num'
+                    k = sprintf('0_num_%.17g', o.value);
+                case 'sym'
+                    k = sprintf('1_sym_%s', o.value);
+                case 'tsym'
+                    k = sprintf('1_sym_%s_%d', o.value{1}, o.value{2});
+                case 'ss'
+                    k = sprintf('2_ss_%s', o.value);
+                case 'uminus'
+                    k = sprintf('3_neg_%s', ast.sort_key(o.children{1}));
+                case 'call'
+                    parts = '';
+                    for i = 1:numel(o.children)
+                        parts = [parts '_' ast.sort_key(o.children{i})]; %#ok<AGROW>
+                    end
+                    k = sprintf('4_call_%s%s', o.value, parts);
+                case 'binop'
+                    k = sprintf('5_binop_%s_%s_%s', o.value, ast.sort_key(o.children{1}), ast.sort_key(o.children{2}));
+                otherwise
+                    k = '9_unknown';
+            end
+        end % function
+
+        function b = is_zero(o)
+        % True iff o is the numeric literal 0.
+            b = strcmp(o.type, 'num') && o.value == 0;
+        end % function
+
+        function b = is_one(o)
+        % True iff o is the numeric literal 1.
+            b = strcmp(o.type, 'num') && o.value == 1;
+        end % function
+
+        function b = is_neg_one(o)
+        % True iff o is the numeric literal -1.
+            b = strcmp(o.type, 'num') && o.value == -1;
+        end % function
+
+        function o = simplify_pass(o)
+        % Bottom-up application of local simplification rules. One pass; simplify()
+        % wraps this in a fixed-point loop alternating with canonicalise.
+            for i = 1:numel(o.children)
+                o.children{i} = ast.simplify_pass(o.children{i});
+            end
+            o = ast.simplify_node(o);
+        end % function
+
+        function o = simplify_node(o)
+        % Apply simplification rules at a single node (children assumed already simplified).
+            switch o.type
+                case 'uminus'
+                    c = o.children{1};
+                    if strcmp(c.type, 'num')
+                        % -num → numeric negation
+                        o = ast('num', -c.value, {});
+                        return
+                    end
+                    if strcmp(c.type, 'uminus')
+                        % --x → x
+                        o = c.children{1};
+                        return
+                    end
+                case 'binop'
+                    L = o.children{1};
+                    R = o.children{2};
+                    % Constant folding (both children numeric)
+                    if strcmp(L.type, 'num') && strcmp(R.type, 'num')
+                        try
+                            v = ast.eval_binop(o.value, L.value, R.value);
+                            if isfinite(v) && isreal(v)
+                                o = ast('num', v, {});
+                                return
+                            end
+                        catch
+                            % swallow domain errors (0^0, division by zero...) — leave as-is
+                        end
+                    end
+                    switch o.value
+                        case '+'
+                            if ast.is_zero(L), o = R; return; end
+                            if ast.is_zero(R), o = L; return; end
+                            if strcmp(R.type, 'uminus') && ast.ast_equal(L, R.children{1})
+                                % f + (-f) → 0
+                                o = ast('num', 0, {}); return
+                            end
+                            if strcmp(L.type, 'uminus') && ast.ast_equal(R, L.children{1})
+                                % (-f) + f → 0
+                                o = ast('num', 0, {}); return
+                            end
+                            if ast.ast_equal(L, R)
+                                % f + f → 2*f
+                                o = ast('binop', '*', {ast('num', 2, {}), L}); return
+                            end
+                        case '-'
+                            if ast.is_zero(R), o = L; return; end
+                            if ast.is_zero(L), o = ast('uminus', [], {R}); return; end
+                            if ast.ast_equal(L, R)
+                                % f - f → 0
+                                o = ast('num', 0, {}); return
+                            end
+                        case '*'
+                            if ast.is_zero(L) || ast.is_zero(R)
+                                o = ast('num', 0, {}); return
+                            end
+                            if ast.is_one(L), o = R; return; end
+                            if ast.is_one(R), o = L; return; end
+                            % f * f^(-1) → 1
+                            if strcmp(R.type, 'binop') && strcmp(R.value, '^') && ast.is_neg_one(R.children{2}) && ast.ast_equal(L, R.children{1})
+                                o = ast('num', 1, {}); return
+                            end
+                            if strcmp(L.type, 'binop') && strcmp(L.value, '^') && ast.is_neg_one(L.children{2}) && ast.ast_equal(R, L.children{1})
+                                o = ast('num', 1, {}); return
+                            end
+                            if ast.ast_equal(L, R)
+                                % f * f → f^2
+                                o = ast('binop', '^', {L, ast('num', 2, {})}); return
+                            end
+                        case '/'
+                            if ast.is_zero(L), o = ast('num', 0, {}); return; end
+                            if ast.is_one(R), o = L; return; end
+                            if ast.ast_equal(L, R)
+                                o = ast('num', 1, {}); return
+                            end
+                        case '^'
+                            if ast.is_zero(R), o = ast('num', 1, {}); return; end
+                            if ast.is_one(R), o = L; return; end
+                            if ast.is_one(L), o = ast('num', 1, {}); return; end
+                    end
+            end
+        end % function
+
+        function v = eval_binop(op, a, b)
+        % Evaluate a numeric-only binop. Used for constant folding inside simplify.
+            switch op
+                case '+', v = a + b;
+                case '-', v = a - b;
+                case '*', v = a * b;
+                case '/', v = a / b;
+                case '^', v = a ^ b;
+                otherwise
+                    error('ast:eval_binop', 'Unknown operator "%s".', op);
             end
         end % function
 

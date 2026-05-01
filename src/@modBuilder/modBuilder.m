@@ -1309,9 +1309,12 @@ classdef modBuilder < handle
         % REMARKS:
         % - Returns a partial matching when no perfect matching exists; the caller
         %   inspects unmatched_eqs / unmatched_vars to report the structural gap.
-        % - Multiplicative-factor cancellations (e.g. λ in λ·R·τ − λ·τ) are excluded;
-        %   cases that need algebraic simplification (e.g. w/w − ω) are still admitted
-        %   by the conservative ast.check_factor primitive — see src/@ast/README.md.
+        % - The cancellation filter is at its strongest when the caller passes
+        %   simplified residuals (i.e. trees produced by ast.staticise().simplify()).
+        %   Beyond multiplicative-factor cancellations (λ in λ·R·τ − λ·τ), the
+        %   simplify pass also collapses identities such as w/w → 1 and f − f → 0,
+        %   so a candidate that survives only as a self-cancelling sub-expression is
+        %   correctly excluded.
         %
         % REFERENCES:
         % - Assignment problem (linear-sum bipartite matching):
@@ -1581,7 +1584,7 @@ classdef modBuilder < handle
                         else
                             error('modBuilder:badEquation', 'Equation #%d contains more than one "=" symbol: %s', i, eqstr)
                         end
-                        eqasts{k} = ast(residual_str).staticise();
+                        eqasts{k} = ast(residual_str).staticise().simplify();
                     end
                     [eq2var, umeqs, umvars] = modBuilder.matchequations(eqasts, eqlhs_symbols, available);
                     if ~isempty(umeqs) || ~isempty(umvars)
