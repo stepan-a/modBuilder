@@ -1276,19 +1276,29 @@ classdef modBuilder < handle
             end
         end % function
 
-        function [eq2var, unmatched_eqs, unmatched_vars] = matchequations(eqsymbols, eqlhs_symbols, candidates)
+    end % methods
+
+    methods(Static)
+
+        function [eq2var, unmatched_eqs, unmatched_vars] = matchequations(eqasts, eqlhs_symbols, candidates)
         % Match each equation to a unique endogenous variable using bipartite matching.
         %
         % Builds a bipartite graph where an edge connects equation i to candidate
-        % variable j iff j textually appears in equation i. A minimum-cost perfect
-        % matching is computed with matchpairs (Duff-Koster). Edge weights apply
-        % stable tie-breakers: prefer a variable that appears on the LHS of the
-        % equation, then prefer rarer candidates (Hall-style scarcity), then break
-        % remaining ties lexicographically by (equation index, candidate index).
+        % variable j iff j appears in equation i AND does not cancel out of the
+        % static reduction of equation i (tested via ast.check_factor on the
+        % staticised residual). A minimum-cost perfect matching is then computed
+        % with matchpairs (Duff-Koster). Edge weights apply stable tie-breakers:
+        % prefer a variable that appears on the LHS of the equation, then prefer
+        % rarer candidates (Hall-style scarcity), then break remaining ties
+        % lexicographically by (equation index, candidate index).
         %
         % INPUTS:
-        % - eqsymbols       [cell]    n×1, each element is a cell array of symbols appearing in equation i
-        % - eqlhs_symbols   [cell]    n×1, each element is a cell array of symbols appearing in the LHS of equation i
+        % - eqasts          [cell]    n×1, each element is a staticised ast tree of the static residual
+        %                             of equation i (LHS - RHS, with all time subscripts collapsed).
+        %                             check_factor is called on each tree to test whether a candidate
+        %                             cancels out of equation i.
+        % - eqlhs_symbols   [cell]    n×1, each element is a cell array of symbols appearing in the LHS
+        %                             of equation i (used as a tie-breaker hint, not for the admission rule).
         % - candidates      [cell]    m×1, names of candidate endogenous variables
         %
         % OUTPUTS:
@@ -1299,8 +1309,9 @@ classdef modBuilder < handle
         % REMARKS:
         % - Returns a partial matching when no perfect matching exists; the caller
         %   inspects unmatched_eqs / unmatched_vars to report the structural gap.
-        % - Matching is based on textual occurrence, not on a symbolic static
-        %   reduction; spurious cancellations are not detected.
+        % - Multiplicative-factor cancellations (e.g. λ in λ·R·τ − λ·τ) are excluded;
+        %   cases that need algebraic simplification (e.g. w/w − ω) are still admitted
+        %   by the conservative ast.check_factor primitive — see src/@ast/README.md.
         %
         % REFERENCES:
         % - Assignment problem (linear-sum bipartite matching):
@@ -1313,7 +1324,7 @@ classdef modBuilder < handle
         % - I. S. Duff and J. Koster, "On Algorithms for Permuting Large Entries
         %   to the Diagonal of a Sparse Matrix", SIAM J. Matrix Anal. Appl.,
         %   22(4):973-996, 2001.
-            n = numel(eqsymbols);
+            n = numel(eqasts);
             m = numel(candidates);
             eq2var = repmat({''}, n, 1);
             if n == 0 || m == 0
@@ -1325,7 +1336,8 @@ classdef modBuilder < handle
             for j = 1:m
                 v = candidates{j};
                 for i = 1:n
-                    if any(strcmp(v, eqsymbols{i}))
+                    [has, cancels] = eqasts{i}.check_factor(v);
+                    if has && ~cancels
                         contains_eq(i, j) = true;
                     end
                 end
@@ -1373,10 +1385,6 @@ classdef modBuilder < handle
             unmatched_eqs = find(~matched_rows);
             unmatched_vars = candidates(~matched_cols);
         end % function
-
-    end % methods
-
-    methods(Static)
 
         function tf = isregexp(str)
         % Check if string contains regular expression metacharacters.
@@ -1557,14 +1565,25 @@ classdef modBuilder < handle
                     untagged_idx = find(~hastag);
                     available = setdiff(M_.endo_names, tagvar(hastag), 'stable');
                     nu = numel(untagged_idx);
-                    eqsymbols = cell(nu, 1);
                     eqlhs_symbols = cell(nu, 1);
+                    eqasts = cell(nu, 1);
                     for k=1:nu
                         i = untagged_idx(k);
-                        eqsymbols{k} = modBuilder.getsymbols(o.equations{i,modBuilder.EQ_COL_EXPR});
+                        eqstr = o.equations{i,modBuilder.EQ_COL_EXPR};
                         eqlhs_symbols{k} = modBuilder.getsymbols(char(JSON.model(i).lhs));
+                        % Build the static residual AST (LHS - RHS, with leads/lags collapsed)
+                        % for the cancellation filter inside matchequations.
+                        LHSRHS = strsplit(eqstr, '=');
+                        if length(LHSRHS) == 2
+                            residual_str = sprintf('(%s) - (%s)', strtrim(LHSRHS{1}), strtrim(LHSRHS{2}));
+                        elseif isscalar(LHSRHS)
+                            residual_str = strtrim(LHSRHS{1});
+                        else
+                            error('modBuilder:badEquation', 'Equation #%d contains more than one "=" symbol: %s', i, eqstr)
+                        end
+                        eqasts{k} = ast(residual_str).staticise();
                     end
-                    [eq2var, umeqs, umvars] = modBuilder.matchequations(eqsymbols, eqlhs_symbols, available);
+                    [eq2var, umeqs, umvars] = modBuilder.matchequations(eqasts, eqlhs_symbols, available);
                     if ~isempty(umeqs) || ~isempty(umvars)
                         bullets = {};
                         for k = 1:numel(umeqs)

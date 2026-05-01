@@ -140,6 +140,7 @@ listoftests = [
   'load-mod-file/rbc1autopartial.m',
   'load-mod-file/rbc1autononlinear.m',
   'load-mod-file/rbc1tags.m',
+  'load-mod-file/auto_match_static.m',
   'merge/t01.m',
   'merge/t02.m',
   'merge/t03.m',

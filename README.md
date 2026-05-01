@@ -105,7 +105,7 @@ m = modBuilder(M_, oo_, 'equations.json', 'custom_name');
 
 Each equation must be associated with a unique endogenous variable. Equations whose tag is missing or does not match an endogenous variable are matched automatically against the still-available endogenous variables using a bipartite-matching algorithm (`matchpairs`, with stable tie-breakers favoring a variable that appears on the LHS of the equation). The constructor only fails when no perfect matching exists, in which case the error spells out the unmatched equations and unmatched variables. When auto-matching fires, a `modBuilder:autoMatch` warning lists the proposed (equation, variable) pairs; suppress it with `warning('off', 'modBuilder:autoMatch')` if needed.
 
-Note that auto-matching is based on textual occurrence of the variable in the equation, not on a symbolic static reduction, so spurious cancellations are not detected.
+Auto-matching combines a textual occurrence check with a symbolic filter: a candidate variable is admitted as a possible match for an equation only if it appears textually AND does not cancel out of the static reduction of that equation. The cancellation check is delegated to [`ast.check_factor`](src/@ast/README.md), which recognises multiplicative-factor cancellations (e.g. λ in `λ·R·τ − λ·τ`) but is conservative on cases that need algebraic simplification (e.g. `w/w − ω`).
 
 ### Model Building
 
