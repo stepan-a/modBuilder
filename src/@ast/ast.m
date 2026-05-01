@@ -5,6 +5,10 @@ classdef ast
 %   t = ast('alpha*GDP(-1) + beta')   build a tree from an equation string
 %   t.string()                     render the tree back to a string
 %   t.staticise()                     collapse all time subscripts (x(±k) → x)
+%   t.substitute('alpha', '1-gamma')  replace a symbol by an AST subtree (lag-aware;
+%                                     pass the parameter names as a 4th argument to
+%                                     keep them time-invariant in the replacement)
+%   t.shift_lag(-1, {'alpha'})        lag-shift every variable, skipping parameters
 %   [has, cancels] = t.check_factor('alpha')
 %                                     test whether a variable appears as a
 %                                     common multiplicative factor of the tree
@@ -216,6 +220,118 @@ classdef ast
                 for i = 1:numel(o.children)
                     o.children{i} = o.children{i}.staticise();
                 end
+            end
+        end % function
+
+        function o = substitute(o, target_name, replacement, parameter_names)
+        % Replace every occurrence of a symbol by an AST subtree, lag-aware.
+        %
+        % INPUTS:
+        % - o                [ast]        tree to transform
+        % - target_name      [char]       1×n array, name of the symbol to replace
+        % - replacement      [ast | char] subtree to inline at every match. A char input
+        %                                 is auto-parsed via ast(replacement).
+        % - parameter_names  [cell]       (optional) 1×k cell array of symbol names that
+        %                                 are time-invariant (typically the model's
+        %                                 parameters). Names in this set are excluded
+        %                                 from the lag-shift performed for tsym matches.
+        %                                 Defaults to {}.
+        %
+        % OUTPUTS:
+        % - o                [ast]        new tree with the substitution applied
+        %
+        % REMARKS:
+        % - Matches both 'sym' and 'tsym' nodes carrying target_name. The match is
+        %   exact (whole symbol nodes), so substring traps like substituting "k" inside
+        %   "k_bar" cannot occur.
+        % - Precedence is preserved by construction: the replacement is inlined as a
+        %   subtree, and string() adds the right parentheses when re-stringifying.
+        %   This fixes the precedence bug of strrep-based substitution (e.g. substituting
+        %   x by y+z in a*x^2 correctly produces a*(y+z)^2 instead of a*y+z^2).
+        % - For tsym matches, the replacement is lag-shifted by the matching tsym's
+        %   lag before being inlined: substituting mc by w/mpl into pi - beta*mc(-1)
+        %   produces pi - beta*(w(-1)/mpl(-1)). Names listed in parameter_names are
+        %   skipped (kept time-invariant), and 'num' / 'ss' leaves are never shifted.
+        % - 'ss' nodes (STEADY_STATE) in the host tree are leaves and are left
+        %   untouched: the dynamic variable name they carry is not a substitution target.
+            if ischar(replacement) || isstring(replacement)
+                replacement = ast(char(replacement));
+            end
+            if nargin < 4
+                parameter_names = {};
+            end
+            switch o.type
+                case 'sym'
+                    if strcmp(o.value, target_name)
+                        % Lag 0: inline the replacement as-is.
+                        o = replacement;
+                    end
+                case 'tsym'
+                    if strcmp(o.value{1}, target_name)
+                        % Shift the replacement by this match's lag, leaving any
+                        % parameter (and num / ss) inside it time-invariant.
+                        o = replacement.shift_lag(o.value{2}, parameter_names);
+                    end
+                otherwise
+                    % All other node types either have no children (num, ss) — loop is
+                    % a no-op — or carry expression children we recurse into.
+                    for i = 1:numel(o.children)
+                        o.children{i} = o.children{i}.substitute(target_name, replacement, parameter_names);
+                    end
+            end
+        end % function
+
+        function o = shift_lag(o, k, parameter_names)
+        % Shift every time-varying variable's lag by k.
+        %
+        % INPUTS:
+        % - o                [ast]      tree to shift
+        % - k                [integer]  scalar lag offset (positive = lead, negative = lag)
+        % - parameter_names  [cell]     (optional) 1×n cell array of names treated as
+        %                               time-invariant (typically the model parameters).
+        %                               Defaults to {}.
+        %
+        % OUTPUTS:
+        % - o                [ast]      new tree with every sym/tsym variable shifted by k
+        %
+        % REMARKS:
+        % - 'num' and 'ss' leaves are time-invariant and never shifted.
+        % - A 'sym' carrying a non-parameter name becomes a 'tsym' with lag k; an
+        %   existing 'tsym' becomes a 'tsym' with lag (its existing lag + k). When the
+        %   resulting lag is 0, the node collapses back to a 'sym'.
+        % - Names listed in parameter_names are kept untouched, regardless of whether
+        %   they appear as 'sym' or (degenerately) as 'tsym'.
+        % - k = 0 is a no-op.
+            if nargin < 3
+                parameter_names = {};
+            end
+            if k == 0
+                return
+            end
+            switch o.type
+                case 'num'
+                    % constants are time-invariant
+                case 'sym'
+                    if ~ismember(o.value, parameter_names)
+                        o = ast('tsym', {o.value, k}, {});
+                    end
+                case 'tsym'
+                    if ~ismember(o.value{1}, parameter_names)
+                        new_lag = o.value{2} + k;
+                        if new_lag == 0
+                            % Total lag is zero: collapse back to a plain sym so that
+                            % rendering and structural comparison match a parser-built tree.
+                            o = ast('sym', o.value{1}, {});
+                        else
+                            o = ast('tsym', {o.value{1}, new_lag}, {});
+                        end
+                    end
+                case 'ss'
+                    % steady-state values are time-invariant
+                otherwise
+                    for i = 1:numel(o.children)
+                        o.children{i} = o.children{i}.shift_lag(k, parameter_names);
+                    end
             end
         end % function
 

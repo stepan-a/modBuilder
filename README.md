@@ -314,7 +314,7 @@ m.exogenise('k', 'y');
 
 #### `subs(expr1, expr2[, eqname])`
 
-Substitute an expression in equations (literal string replacement via `strrep`).
+Substitute an expression in equations (literal string replacement via `strrep`). When `expr1` is a single symbol identifier, a `modBuilder:preferInline` warning is emitted recommending [`inline`](#inlinevarname-replacement-eqname-idx1-) — the tree-based equivalent that is precedence-safe and lag-aware. Suppress with `warning('off', 'modBuilder:preferInline')` if needed.
 
 **Examples:**
 
@@ -331,7 +331,7 @@ m.subs('x_$1', 'y_$1 + z_$1', 'equation_$1', {1, 2, 3});
 
 #### `substitute(expr1, expr2[, eqname])`
 
-Substitute an expression in equations using regular expression pattern matching (via `regexprep`). Same interface as `subs()`, but `expr1` is interpreted as a regex pattern rather than a literal string.
+Substitute an expression in equations using regular expression pattern matching (via `regexprep`). Same interface as `subs()`, but `expr1` is interpreted as a regex pattern rather than a literal string. When `expr1` is a single symbol identifier, a `modBuilder:preferInline` warning is emitted recommending [`inline`](#inlinevarname-replacement-eqname-idx1-).
 
 **Examples:**
 
@@ -341,6 +341,40 @@ m.substitute('[\w]+\*y', 'z', 'consumption_eq');
 
 % With implicit loops
 m.substitute('x_$1', 'y_$1 + z_$1', 'equation_$1', {1, 2, 3});
+```
+
+#### `inline(varname, replacement[, eqname][, idx1, ...])`
+
+Replace every occurrence of a symbol by an AST subtree, in one or all equations. Built on the [`ast`](src/@ast/README.md) class, so the substitution is exact (whole symbol nodes, no substring traps), precedence-safe by construction, and lag-aware: a `varname(±k)` occurrence inlines the replacement *shifted by ±k*. The names declared as parameters in the model are kept time-invariant during the shift. Parameters and exogenous variables that no longer appear anywhere after the substitution are removed automatically.
+
+This is the recommended replacement for `subs` / `substitute` when the target is a single symbol — it fixes both the substring trap of `subs` (e.g. `subs('k', 'x', 'y')` would touch `k_bar`) and the precedence bug they share (e.g. `subs('x', 'y+z', 'y')` in `a*x^2` produces `a*y+z^2` rather than `a*(y+z)^2`). Substitution of an arbitrary sub-expression target (as supported by `subs` / `substitute`) is not yet handled by `inline`. Regular-expression patterns on symbol names are not supported either: the AST matches by exact name. Indexed substitutions are expressed via `$` placeholders and index value arrays, in the same convention as `subs` / `substitute`.
+
+**Examples:**
+
+```matlab
+% Inline a parameter by its calibration value across all equations
+m.inline('alpha', '0.33');
+
+% Inline a defining variable: pi = beta*mc(-1) with mc = w/mpl becomes
+%   pi = beta*(w(-1)/mpl(-1))
+% (then drop the now-tautological defining equation if desired)
+m.inline('mc', 'w/mpl');
+m.remove('mc');
+
+% Inline only into a specific equation
+m.inline('alpha', '0.33', 'y');
+
+% Implicit loop: inline alpha_i by 0.33 for i in {1, 2, 3}
+m.inline('alpha_$1', '0.33', {1, 2, 3});
+
+% Implicit loop with shared index between varname/replacement and eqname
+m.inline('alpha_$1', 'beta_$1', 'Y_$1', {1, 2, 3});
+
+% Disjoint indices: inline a global mc into per-sector equations Y_1, Y_2
+m.inline('mc', 'w/mpl', 'Y_$1', {1, 2});
+
+% Two-index expansion (Cartesian product over the index value arrays)
+m.inline('alpha_$1_$2', 'beta_$1_$2', {'FR', 'DE'}, {1, 2});
 ```
 
 #### `tag(eqname, tagname, value)`

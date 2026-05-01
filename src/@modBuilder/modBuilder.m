@@ -3995,6 +3995,273 @@ classdef modBuilder < handle
             o.tables_dirty = true;
         end % function
 
+        function o = inline(o, varname, replacement, varargin)
+        % Inline a symbol's expression into one or all equations using AST-based substitution.
+        %
+        % INPUTS:
+        % - o            [modBuilder]
+        % - varname      [char]              1×n array, name of the symbol to replace
+        %                                    (may contain $ placeholders for implicit loops)
+        % - replacement  [char | ast]        replacement expression (a char is auto-parsed
+        %                                    via ast(replacement); only chars may carry
+        %                                    $ placeholders)
+        % - eqname       [char]              (optional) name of the equation to target
+        %                                    (may contain $ placeholders). When omitted,
+        %                                    the substitution is applied to every equation.
+        % - idx1, ...    [cell/numeric]      index value arrays for the $ placeholders,
+        %                                    one per unique placeholder across varname,
+        %                                    replacement, and eqname.
+        %
+        % OUTPUTS:
+        % - o            [modBuilder]        updated object
+        %
+        % REMARKS:
+        % - Uses the ast.substitute primitive: the match is exact (whole symbol nodes,
+        %   no substring traps) and precedence is preserved by construction. This fixes
+        %   the precedence bug of subs / substitute, which operate on the equation text.
+        % - The substitution is lag-aware: every occurrence of varname(±k) becomes the
+        %   replacement shifted by ±k. Names declared as parameters in the model are kept
+        %   time-invariant (passed to ast.substitute as the parameter set).
+        % - If varname has its own defining equation and that equation is in scope, it is
+        %   rewritten too — typically into a tautology of the form replacement = replacement.
+        %   Call remove(varname) afterwards to fully eliminate the variable.
+        % - Parameters and exogenous variables that no longer appear in any equation after
+        %   the substitution are removed automatically. New symbols introduced by the
+        %   replacement enter the untyped pool with the usual warning.
+        % - Implicit loops follow the same conventions as subs / substitute: varname and
+        %   replacement must contain the same set of $ placeholders; eqname may share
+        %   placeholders with them or introduce new ones; index value arrays are matched
+        %   to the union of placeholders by position. Regular-expression patterns on
+        %   symbol names are not supported (the AST matches by exact name).
+        %
+        % EXAMPLES:
+        % % Inline a defining variable everywhere, then drop the now-tautological equation
+        % m = modBuilder();
+        % m.add('Y', 'Y = mc * X');
+        % m.add('mc', 'mc = w / mpl');
+        % m.exogenous('X', 1); m.exogenous('w', 1); m.exogenous('mpl', 1);
+        % m.inline('mc', 'w / mpl');
+        % m.remove('mc');
+        %
+        % % Inline only into a specific equation, with a parameter in the replacement
+        % m = modBuilder();
+        % m.add('Y', 'Y = mc * X');
+        % m.add('mc', 'mc = w / mpl');
+        % m.exogenous('X', 1); m.exogenous('w', 1); m.exogenous('mpl', 1);
+        % m.parameter('theta', 6);
+        % m.inline('mc', '(theta-1)/theta * w / mpl', 'Y');
+        %
+        % % Implicit loop: inline alpha_i by a constant in every equation
+        % m.inline('alpha_$1', '0.33', {1, 2, 3});
+        %
+        % % Implicit loop with eqname placeholder reuse
+        % m.inline('alpha_$1', 'beta_$1', 'Y_$1', {1, 2, 3});
+
+            validateattributes(varname, {'char'}, {'nonempty', 'row'}, 'inline', 'varname');
+
+            % Parse varargin: at most one char (eqname) followed by index value arrays.
+            eqname = '';
+            char_count = 0;
+            for k = 1:length(varargin)
+                if ischar(varargin{k}) && isrow(varargin{k})
+                    char_count = char_count + 1;
+                    if char_count == 1
+                        eqname = varargin{k};
+                    else
+                        error('inline: only one equation name (char argument) allowed.')
+                    end
+                else
+                    break
+                end
+            end
+            index_values = varargin(char_count+1:end);
+
+            % Detect $ placeholders in each char argument.
+            inames_var = unique(regexp(varname, '\$\d*', 'match'));
+            is_replacement_char = ischar(replacement) || isstring(replacement);
+            if is_replacement_char
+                replacement_str = char(replacement);
+                inames_rep = unique(regexp(replacement_str, '\$\d*', 'match'));
+            else
+                replacement_str = '';
+                inames_rep = {};
+            end
+            inames_eq = {};
+            if ~isempty(eqname)
+                inames_eq = unique(regexp(eqname, '\$\d*', 'match'));
+            end
+            has_placeholders = ~isempty(inames_var) || ~isempty(inames_rep) || ~isempty(inames_eq);
+
+            if has_placeholders
+                % --- Implicit-loop mode: expand and recurse ---
+                if ~is_replacement_char
+                    error('inline: $ placeholders are only supported when replacement is a char array.')
+                end
+                extra_in_rep = setdiff(inames_rep, inames_var);
+                if ~isempty(extra_in_rep)
+                    error('inline: replacement contains placeholders not present in varname: %s. Each placeholder in replacement must also appear in varname.', strjoin(extra_in_rep, ', '))
+                end
+                all_indices = unique([inames_var, inames_eq]);
+                if length(index_values) ~= numel(all_indices)
+                    error('inline: expected %d index value array(s) (for indices %s), but got %d.', numel(all_indices), strjoin(all_indices, ', '), length(index_values))
+                end
+                [allint, ~] = modBuilder.check_indices_values(index_values);
+                index_map = containers.Map(all_indices, index_values);
+
+                % Build sprintf templates for varname and replacement (replace each
+                % placeholder by %u or %s depending on the index value type).
+                tmp_var = varname;
+                tmp_rep = replacement_str;
+                expr_allint = false(1, numel(inames_var));
+                for k = numel(inames_var):-1:1
+                    expr_allint(k) = allint(strcmp(all_indices, inames_var{k}));
+                    fmt = '%s';
+                    if expr_allint(k), fmt = '%u'; end
+                    tmp_var = strrep(tmp_var, inames_var{k}, fmt);
+                    tmp_rep = strrep(tmp_rep, inames_var{k}, fmt);
+                end
+
+                % Expression-side combinations (over inames_var).
+                if isempty(inames_var)
+                    mIndex_expr = {{}};
+                else
+                    expr_values = cellfun(@(x) index_map(x), inames_var, 'UniformOutput', false);
+                    mIndex_expr = table2cell(combinations(expr_values{:}));
+                end
+
+                if isempty(inames_eq)
+                    % eqname has no placeholders (or no eqname at all).
+                    for i = 1:size(mIndex_expr, 1)
+                        if isempty(inames_var)
+                            current_var = varname;
+                            current_rep = replacement_str;
+                        else
+                            current_var = sprintf(tmp_var, mIndex_expr{i,:});
+                            current_rep = sprintf(tmp_rep, mIndex_expr{i,:});
+                        end
+                        if isempty(eqname)
+                            o.inline(current_var, current_rep);
+                        else
+                            o.inline(current_var, current_rep, eqname);
+                        end
+                    end
+                else
+                    % eqname has its own (possibly disjoint) set of placeholders.
+                    eq_values = cellfun(@(x) index_map(x), inames_eq, 'UniformOutput', false);
+                    eq_allint = false(1, numel(inames_eq));
+                    tmp_eqname = eqname;
+                    for k = numel(inames_eq):-1:1
+                        eq_allint(k) = allint(strcmp(all_indices, inames_eq{k}));
+                        fmt = '%s';
+                        if eq_allint(k), fmt = '%u'; end
+                        tmp_eqname = strrep(tmp_eqname, inames_eq{k}, fmt);
+                    end
+                    mIndex_eq = table2cell(combinations(eq_values{:}));
+                    for j = 1:size(mIndex_eq, 1)
+                        current_eqname = sprintf(tmp_eqname, mIndex_eq{j,:});
+                        for i = 1:size(mIndex_expr, 1)
+                            if isempty(inames_var)
+                                current_var = varname;
+                                current_rep = replacement_str;
+                            else
+                                current_var = sprintf(tmp_var, mIndex_expr{i,:});
+                                current_rep = sprintf(tmp_rep, mIndex_expr{i,:});
+                            end
+                            o.inline(current_var, current_rep, current_eqname);
+                        end
+                    end
+                end
+                return
+            end
+
+            % --- Base case: no placeholders ---
+            if ~isempty(index_values)
+                error('inline: no $ placeholders in arguments, but %d index value array(s) provided.', length(index_values))
+            end
+
+            % Parse replacement (accept either a string or an ast).
+            if ischar(replacement) || isstring(replacement)
+                replacement_ast = ast(char(replacement));
+            elseif isa(replacement, 'ast')
+                replacement_ast = replacement;
+            else
+                error('inline: replacement must be a char array or an ast object.')
+            end
+
+            % Determine the equations to operate on.
+            if isempty(eqname)
+                eqnames = o.equations(:, modBuilder.EQ_COL_NAME);
+            else
+                ide = strcmp(eqname, o.equations(:, modBuilder.EQ_COL_NAME));
+                if not(any(ide))
+                    error('inline: no equation named "%s".', eqname)
+                end
+                eqnames = {eqname};
+            end
+
+            % Parameter names: opaque "do not lag-shift" set passed to ast.substitute.
+            if isempty(o.params)
+                parameter_names = {};
+            else
+                parameter_names = o.params(:, modBuilder.COL_NAME)';
+            end
+
+            % Apply the substitution per equation, splitting on '=' so that LHS and RHS
+            % parse as independent ast trees.
+            for i = 1:numel(eqnames)
+                nm = eqnames{i};
+                ide = strcmp(nm, o.equations(:, modBuilder.EQ_COL_NAME));
+                eq_str = o.equations{ide, modBuilder.EQ_COL_EXPR};
+                LHSRHS = strsplit(eq_str, '=');
+                if length(LHSRHS) == 2
+                    new_lhs = ast(strtrim(LHSRHS{1})).substitute(varname, replacement_ast, parameter_names).string();
+                    new_rhs = ast(strtrim(LHSRHS{2})).substitute(varname, replacement_ast, parameter_names).string();
+                    new_eq = sprintf('%s = %s', new_lhs, new_rhs);
+                elseif isscalar(LHSRHS)
+                    new_eq = ast(strtrim(LHSRHS{1})).substitute(varname, replacement_ast, parameter_names).string();
+                else
+                    error('inline: equation "%s" has more than one "=" symbol.', nm)
+                end
+                o.equations{ide, modBuilder.EQ_COL_EXPR} = new_eq;
+
+                % Refresh T.equations.<eqname> with the new symbol set; track new symbols.
+                new_tokens = modBuilder.getsymbols(new_eq);
+                new_tokens = setdiff(new_tokens, nm);
+                o.T.equations.(nm) = new_tokens;
+                o.symbols = [o.symbols, new_tokens];
+            end
+
+            % Remove already-typed names from the untyped pool (and warn on the rest).
+            o.symbols = setdiff(o.symbols, [o.params(:, modBuilder.COL_NAME); o.varexo(:, modBuilder.COL_NAME); o.var(:, modBuilder.COL_NAME)]);
+            if not(isempty(o.symbols))
+                warning('Untyped symbol(s):%s.', sprintf(' %s', o.symbols{:}))
+            end
+
+            % Rebuild T.params / T.varexo / T.var from the updated equations and drop
+            % parameters / exogenous that no longer appear anywhere.
+            o.symbol_map = [];
+            o.tables_dirty = true;
+            o.updatesymboltables();
+            for j = size(o.params, 1):-1:1
+                pn = o.params{j, modBuilder.COL_NAME};
+                if ~isfield(o.T.params, pn) || isempty(o.T.params.(pn))
+                    o.params(j, :) = [];
+                    if isfield(o.T.params, pn)
+                        o.T.params = rmfield(o.T.params, pn);
+                    end
+                end
+            end
+            for j = size(o.varexo, 1):-1:1
+                xn = o.varexo{j, modBuilder.COL_NAME};
+                if ~isfield(o.T.varexo, xn) || isempty(o.T.varexo.(xn))
+                    o.varexo(j, :) = [];
+                    if isfield(o.T.varexo, xn)
+                        o.T.varexo = rmfield(o.T.varexo, xn);
+                    end
+                end
+            end
+        end % function
+
         function o = subs(o, expr1, expr2, varargin)
         % Substitute expr1 by expr2 in equation eqname (use strrep).
         %
@@ -4365,10 +4632,19 @@ classdef modBuilder < handle
         % - Updates symbol tables after substitution
         % - Warns about new unknown symbols introduced by substitution
 
+            % Recommend inline when the target is syntactically a user symbol identifier:
+            % inline performs a tree-based, precedence-safe, lag-aware substitution that
+            % subs (literal strrep) and substitute (regexprep) cannot match. Skip the
+            % recommendation for Dynare reserved names (log, exp, STEADY_STATE, ...) since
+            % inline does not target function/operator names.
+            if ~isempty(regexp(expr1, '^[a-zA-Z_]\w*$', 'once')) && ~ismember(expr1, modBuilder.DYNARE_RESERVED_NAMES)
+                warning('modBuilder:preferInline', 'The substitution target "%s" is a single symbol; consider using m.inline("%s", ...) instead, which performs a tree-based, precedence-safe, lag-aware substitution.', expr1, expr1)
+            end
+
             if usestrrep
                 % Is it safe to use the subs method?
                 if o.issymbol(expr1)
-                    warning('It is not safe to use the subs method to change a symbol. I switch to the substitute method with a regular expression. If the change applies to all the equations you could also use the rename method.')
+                    warning('It is not safe to use the subs method to change a symbol. Falling back to the substitute method with a regular expression for word-boundary safety. The inline or rename methods may be preferable.')
                     % Use MATLAB word boundaries \< and \> to match whole words only
                     if isempty(eqname)
                         o.substitute(['\<' expr1  '\>'], expr2);

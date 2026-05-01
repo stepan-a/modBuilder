@@ -79,6 +79,41 @@ Return a new tree with every time-subscripted node `x(±k)` replaced by a
 plain symbol `x`. Other node types descend through their children but
 are otherwise unchanged.
 
+#### `t.substitute(target_name, replacement[, parameter_names])`
+
+Return a new tree in which every `sym(target_name)` and every
+`tsym(target_name, _)` is replaced by `replacement`. `replacement` can
+be an `ast` or a string (auto-parsed). The match is exact (whole symbol
+nodes — no substring traps), and precedence is preserved by
+construction: substituting `x` by `y+z` in `a*x^2` correctly yields
+`a*(y+z)^2`, fixing the precedence bug of the existing `strrep`-based
+`subs` in `modBuilder`.
+
+The substitution is lag-aware: a `tsym(target_name, k)` match inlines
+the *replacement shifted by `k`*. So substituting `mc` by `w/mpl` into
+`pi - beta*mc(-1)` produces `pi - beta*(w(-1)/mpl(-1))`. Pass
+`parameter_names` (a cell array of names that are time-invariant) as
+the optional fourth argument to keep parameters in the replacement
+unshifted: substituting `mc` by `theta*w/mpl` with
+`parameter_names = {'theta'}` produces `theta*w(-1)/mpl(-1)` rather
+than `theta(-1)*w(-1)/mpl(-1)`. The AST treats `parameter_names` as an
+opaque "do not shift" set; it does not need to know what a parameter
+is, only which names are time-invariant for this call. `STEADY_STATE`
+leaves are time-invariant as well and are never shifted.
+
+#### `t.shift_lag(k[, parameter_names])`
+
+Return a new tree with every time-varying variable's lag shifted by
+`k` (positive for a lead, negative for a lag). A `sym(name)` becomes a
+`tsym(name, k)`; an existing `tsym(name, lag)` becomes
+`tsym(name, lag + k)`; the result collapses back to a `sym` whenever
+the total lag reaches 0. Names listed in `parameter_names` are kept
+untouched, as are `num` and `ss` leaves. `k = 0` is a no-op.
+
+This is used internally by `substitute` for lag-aware replacement and
+is exposed because the same primitive is needed by other passes (e.g.
+log-linearisation, generation of static / dynamic equations).
+
 #### `[has, cancels] = t.check_factor(varname)`
 
 Test whether `varname` appears as a common multiplicative factor of the
