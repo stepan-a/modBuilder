@@ -459,6 +459,34 @@ classdef ast
             end
         end % function
 
+        function o = replace_subtree(o, target, replacement)
+        % Replace every subtree of o that is structurally equal to target by replacement.
+        %
+        % INPUTS:
+        % - o            [ast]    tree to transform
+        % - target       [ast]    pattern to match
+        % - replacement  [ast]    subtree to inline at every match
+        %
+        % OUTPUTS:
+        % - o            [ast]    new tree with the substitution applied
+        %
+        % REMARKS:
+        % - Both o and target are canonicalised once at entry, so commutative
+        %   reorderings (a+b vs b+a, a*b vs b*a) match. Subsequent recursion descends
+        %   the canonicalised tree.
+        % - Matching is structural (ast.ast_equal). The MVP does not perform
+        %   sub-multiset matching, so a target a+c is not found inside a+b+c
+        %   (whose canonical left-associated tree exposes (a+b) and c, not (a+c)).
+        %   The simplify or factor passes can sometimes reshape an equation to make
+        %   the desired subtree appear.
+        % - Used by modBuilder.inline when the substitution target is an arbitrary
+        %   expression rather than a single symbol; for symbol targets, the
+        %   ast.substitute primitive (lag-aware) is preferred.
+            o = o.canonicalise();
+            target = target.canonicalise();
+            o = ast.replace_subtree_helper(o, target, replacement);
+        end % function
+
         function o = canonicalise(o)
         % Return a canonical form of the tree.
         %
@@ -1100,6 +1128,18 @@ classdef ast
                     p = 4;
                 otherwise
                     p = 0;
+            end
+        end % function
+
+        function o = replace_subtree_helper(o, target, replacement)
+        % Recursive walk used by replace_subtree; assumes target and o are already
+        % in canonical form so that ast.ast_equal captures commutative equivalence.
+            if ast.ast_equal(o, target)
+                o = replacement;
+                return
+            end
+            for i = 1:numel(o.children)
+                o.children{i} = ast.replace_subtree_helper(o.children{i}, target, replacement);
             end
         end % function
 

@@ -1,36 +1,31 @@
 addpath ../utils
 
-% Test subs method: implicit loop - substitute in all equations
+% subs: lag-aware substitution of a defining variable into other equations.
+% Motivating Phillips-curve example: pi = beta*mc(-1) with mc = w/mpl should
+% become pi = beta*(w(-1)/mpl(-1)) after inlining mc.
 
-% Build model with indexed parameters
 m = modBuilder();
-m.add('Y', 'Y = alpha_1*K_1 + alpha_2*K_2 + alpha_3*K_3');
-m.parameter('alpha_$1', 0.3, {1, 2, 3});
-m.exogenous('K_$1', 1.0, {1, 2, 3});
+m.add('pi', 'pi = beta * mc(-1)');
+m.add('mc', 'mc = w / mpl');
+m.exogenous('w', 1.0);
+m.exogenous('mpl', 1.0);
+m.parameter('beta', 0.99);
 
-% Substitute alpha_$1 with beta_$1 in all equations using implicit loop
-m.subs('alpha_$1', 'beta_$1', {1, 2, 3});
+m.subs('mc', 'w / mpl');
 
-% Verify substitution occurred
-expected_eq = 'Y = beta_1*K_1 + beta_2*K_2 + beta_3*K_3';
-if ~strcmp(m{'Y'}.equations{2}, expected_eq)
-    error('Substitution failed: expected "%s", got "%s"', expected_eq, m{'Y'}.equations{2})
+% pi must reflect the lag-shifted replacement
+got = m{'pi'}.equations{2};
+LHSRHS = strsplit(got, '=');
+got_rhs = ast(strtrim(LHSRHS{2}));
+expected_rhs = ast('beta * (w(-1) / mpl(-1))');
+if not(ast.ast_equal(got_rhs, expected_rhs))
+    error('subs: lag-aware substitution failed. expected "%s", got "%s"', expected_rhs.string(), got_rhs.string())
 end
 
-% Check that beta symbols are now parameters (rename was used)
-if ~m.isparameter('beta_1')
-    error('Symbol beta_1 should be a parameter after substitution')
-end
-if ~m.isparameter('beta_2')
-    error('Symbol beta_2 should be a parameter after substitution')
-end
-if ~m.isparameter('beta_3')
-    error('Symbol beta_3 should be a parameter after substitution')
-end
-
-% Check that alpha symbols no longer exist
-if m.issymbol('alpha_1')
-    error('Symbol alpha_1 should no longer exist after substitution')
+% mc's own equation became a tautology w/mpl = w/mpl. The user is responsible
+% for removing it explicitly; here we just check mc is still listed as endogenous.
+if not(m.isendogenous('mc'))
+    error('mc should still be endogenous (defining equation kept)')
 end
 
 fprintf('t02.m: All tests passed\n');

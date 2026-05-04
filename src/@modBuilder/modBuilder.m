@@ -4018,69 +4018,86 @@ classdef modBuilder < handle
             o.tables_dirty = true;
         end % function
 
-        function o = inline(o, varname, replacement, varargin)
-        % Inline a symbol's expression into one or all equations using AST-based substitution.
+        function o = subs(o, expr1, expr2, varargin)
+        % Replace one expression by another in one or all equations, using AST-based
+        % substitution. Both expr1 and expr2 are arbitrary expressions; either can reduce
+        % to a single symbol.
         %
         % INPUTS:
         % - o            [modBuilder]
-        % - varname      [char]              1×n array, name of the symbol to replace
-        %                                    (may contain $ placeholders for implicit loops)
-        % - replacement  [char | ast]        replacement expression (a char is auto-parsed
-        %                                    via ast(replacement); only chars may carry
-        %                                    $ placeholders)
+        % - expr1        [char]              1×n array, expression to replace. Either a
+        %                                    single symbol (a, beta, mc, ...), in which
+        %                                    case the lag-aware ast.substitute primitive
+        %                                    is used (matches every lead/lag of the
+        %                                    symbol and shifts the replacement accordingly),
+        %                                    or any expression (alpha + beta, x*y, mc(-1),
+        %                                    STEADY_STATE(K), ...), in which case the
+        %                                    structural ast.replace_subtree primitive is
+        %                                    used (matches the parsed expression as a
+        %                                    whole subtree, after canonicalisation so
+        %                                    commutative reorderings still match).
+        %                                    May contain $ placeholders for implicit loops.
+        % - expr2        [char | ast]        replacement expression (a char is auto-parsed
+        %                                    via ast(expr2); only chars may carry
+        %                                    $ placeholders).
         % - eqname       [char]              (optional) name of the equation to target
         %                                    (may contain $ placeholders). When omitted,
         %                                    the substitution is applied to every equation.
         % - idx1, ...    [cell/numeric]      index value arrays for the $ placeholders,
-        %                                    one per unique placeholder across varname,
-        %                                    replacement, and eqname.
+        %                                    one per unique placeholder across expr1,
+        %                                    expr2, and eqname.
         %
         % OUTPUTS:
         % - o            [modBuilder]        updated object
         %
         % REMARKS:
-        % - Uses the ast.substitute primitive: the match is exact (whole symbol nodes,
-        %   no substring traps) and precedence is preserved by construction. This fixes
-        %   the precedence bug of subs / substitute, which operate on the equation text.
-        % - The substitution is lag-aware: every occurrence of varname(±k) becomes the
-        %   replacement shifted by ±k. Names declared as parameters in the model are kept
-        %   time-invariant (passed to ast.substitute as the parameter set).
-        % - If varname has its own defining equation and that equation is in scope, it is
-        %   rewritten too — typically into a tautology of the form replacement = replacement.
-        %   Call remove(varname) afterwards to fully eliminate the variable.
-        % - Parameters and exogenous variables that no longer appear in any equation after
-        %   the substitution are removed automatically. New symbols introduced by the
-        %   replacement enter the untyped pool with the usual warning.
-        % - Implicit loops follow the same conventions as subs / substitute: varname and
-        %   replacement must contain the same set of $ placeholders; eqname may share
-        %   placeholders with them or introduce new ones; index value arrays are matched
-        %   to the union of placeholders by position. Regular-expression patterns on
-        %   symbol names are not supported (the AST matches by exact name).
+        % - When expr1 is a single symbol, the substitution is lag-aware: every
+        %   occurrence of expr1(±k) becomes the replacement shifted by ±k. Names
+        %   declared as parameters in the model are kept time-invariant.
+        % - When expr1 is a more complex expression, the match is structural: expr1 is
+        %   parsed and canonicalised, then any subtree of the equation that is
+        %   structurally equal (modulo commutative reorderings) is replaced by expr2 as
+        %   written — no lag-shift.
+        % - If expr1 reduces to a single variable that has its own defining equation
+        %   and that equation is in scope, the defining equation is rewritten too —
+        %   typically into a tautology of the form expr2 = expr2. Call remove(expr1)
+        %   afterwards to fully eliminate the variable.
+        % - Parameters and exogenous variables that no longer appear in any equation
+        %   after the substitution are removed automatically. New symbols introduced by
+        %   expr2 enter the untyped pool with the usual warning.
+        % - Implicit loops: expr1 and expr2 must contain the same set of $ placeholders;
+        %   eqname may share placeholders with them or introduce new ones; index value
+        %   arrays are matched to the union of placeholders by position.
+        % - Regular-expression patterns on the equation text are not supported here —
+        %   use the substitute method instead when a true text-level regex is needed.
         %
         % EXAMPLES:
-        % % Inline a defining variable everywhere, then drop the now-tautological equation
+        % % Replace a defining variable everywhere, then drop the now-tautological equation
         % m = modBuilder();
         % m.add('Y', 'Y = mc * X');
         % m.add('mc', 'mc = w / mpl');
         % m.exogenous('X', 1); m.exogenous('w', 1); m.exogenous('mpl', 1);
-        % m.inline('mc', 'w / mpl');
+        % m.subs('mc', 'w / mpl');
         % m.remove('mc');
         %
-        % % Inline only into a specific equation, with a parameter in the replacement
+        % % Replace only into a specific equation, with a parameter in the replacement
         % m = modBuilder();
         % m.add('Y', 'Y = mc * X');
         % m.add('mc', 'mc = w / mpl');
         % m.exogenous('X', 1); m.exogenous('w', 1); m.exogenous('mpl', 1);
+        % m.subs('mc', '(theta-1)/theta * w / mpl', 'Y');
         % m.parameter('theta', 6);
-        % m.inline('mc', '(theta-1)/theta * w / mpl', 'Y');
         %
-        % % Implicit loop: inline alpha_i by a constant in every equation
-        % m.inline('alpha_$1', '0.33', {1, 2, 3});
+        % % Replace an expression by another expression
+        % m.subs('alpha + beta', 'sigma');
+        %
+        % % Implicit loop: replace alpha_i by a constant in every equation
+        % m.subs('alpha_$1', '0.33', {1, 2, 3});
         %
         % % Implicit loop with eqname placeholder reuse
-        % m.inline('alpha_$1', 'beta_$1', 'Y_$1', {1, 2, 3});
+        % m.subs('alpha_$1', 'beta_$1', 'Y_$1', {1, 2, 3});
 
-            validateattributes(varname, {'char'}, {'nonempty', 'row'}, 'inline', 'varname');
+            validateattributes(expr1, {'char'}, {'nonempty', 'row'}, 'subs', 'expr1');
 
             % Parse varargin: at most one char (eqname) followed by index value arrays.
             eqname = '';
@@ -4091,7 +4108,7 @@ classdef modBuilder < handle
                     if char_count == 1
                         eqname = varargin{k};
                     else
-                        error('inline: only one equation name (char argument) allowed.')
+                        error('subs: only one equation name (char argument) allowed.')
                     end
                 else
                     break
@@ -4100,13 +4117,13 @@ classdef modBuilder < handle
             index_values = varargin(char_count+1:end);
 
             % Detect $ placeholders in each char argument.
-            inames_var = unique(regexp(varname, '\$\d*', 'match'));
-            is_replacement_char = ischar(replacement) || isstring(replacement);
-            if is_replacement_char
-                replacement_str = char(replacement);
-                inames_rep = unique(regexp(replacement_str, '\$\d*', 'match'));
+            inames_var = unique(regexp(expr1, '\$\d*', 'match'));
+            is_expr2_char = ischar(expr2) || isstring(expr2);
+            if is_expr2_char
+                expr2_str = char(expr2);
+                inames_rep = unique(regexp(expr2_str, '\$\d*', 'match'));
             else
-                replacement_str = '';
+                expr2_str = '';
                 inames_rep = {};
             end
             inames_eq = {};
@@ -4117,24 +4134,24 @@ classdef modBuilder < handle
 
             if has_placeholders
                 % --- Implicit-loop mode: expand and recurse ---
-                if ~is_replacement_char
-                    error('inline: $ placeholders are only supported when replacement is a char array.')
+                if ~is_expr2_char
+                    error('subs: $ placeholders are only supported when expr2 is a char array.')
                 end
                 extra_in_rep = setdiff(inames_rep, inames_var);
                 if ~isempty(extra_in_rep)
-                    error('inline: replacement contains placeholders not present in varname: %s. Each placeholder in replacement must also appear in varname.', strjoin(extra_in_rep, ', '))
+                    error('subs: expr2 contains placeholders not present in expr1: %s. Each placeholder in expr2 must also appear in expr1.', strjoin(extra_in_rep, ', '))
                 end
                 all_indices = unique([inames_var, inames_eq]);
                 if length(index_values) ~= numel(all_indices)
-                    error('inline: expected %d index value array(s) (for indices %s), but got %d.', numel(all_indices), strjoin(all_indices, ', '), length(index_values))
+                    error('subs: expected %d index value array(s) (for indices %s), but got %d.', numel(all_indices), strjoin(all_indices, ', '), length(index_values))
                 end
                 [allint, ~] = modBuilder.check_indices_values(index_values);
                 index_map = containers.Map(all_indices, index_values);
 
-                % Build sprintf templates for varname and replacement (replace each
+                % Build sprintf templates for expr1 and expr2 (replace each
                 % placeholder by %u or %s depending on the index value type).
-                tmp_var = varname;
-                tmp_rep = replacement_str;
+                tmp_var = expr1;
+                tmp_rep = expr2_str;
                 expr_allint = false(1, numel(inames_var));
                 for k = numel(inames_var):-1:1
                     expr_allint(k) = allint(strcmp(all_indices, inames_var{k}));
@@ -4156,16 +4173,16 @@ classdef modBuilder < handle
                     % eqname has no placeholders (or no eqname at all).
                     for i = 1:size(mIndex_expr, 1)
                         if isempty(inames_var)
-                            current_var = varname;
-                            current_rep = replacement_str;
+                            current_var = expr1;
+                            current_rep = expr2_str;
                         else
                             current_var = sprintf(tmp_var, mIndex_expr{i,:});
                             current_rep = sprintf(tmp_rep, mIndex_expr{i,:});
                         end
                         if isempty(eqname)
-                            o.inline(current_var, current_rep);
+                            o.subs(current_var, current_rep);
                         else
-                            o.inline(current_var, current_rep, eqname);
+                            o.subs(current_var, current_rep, eqname);
                         end
                     end
                 else
@@ -4184,13 +4201,13 @@ classdef modBuilder < handle
                         current_eqname = sprintf(tmp_eqname, mIndex_eq{j,:});
                         for i = 1:size(mIndex_expr, 1)
                             if isempty(inames_var)
-                                current_var = varname;
-                                current_rep = replacement_str;
+                                current_var = expr1;
+                                current_rep = expr2_str;
                             else
                                 current_var = sprintf(tmp_var, mIndex_expr{i,:});
                                 current_rep = sprintf(tmp_rep, mIndex_expr{i,:});
                             end
-                            o.inline(current_var, current_rep, current_eqname);
+                            o.subs(current_var, current_rep, current_eqname);
                         end
                     end
                 end
@@ -4199,16 +4216,16 @@ classdef modBuilder < handle
 
             % --- Base case: no placeholders ---
             if ~isempty(index_values)
-                error('inline: no $ placeholders in arguments, but %d index value array(s) provided.', length(index_values))
+                error('subs: no $ placeholders in arguments, but %d index value array(s) provided.', length(index_values))
             end
 
-            % Parse replacement (accept either a string or an ast).
-            if ischar(replacement) || isstring(replacement)
-                replacement_ast = ast(char(replacement));
-            elseif isa(replacement, 'ast')
-                replacement_ast = replacement;
+            % Parse expr2 (accept either a string or an ast).
+            if ischar(expr2) || isstring(expr2)
+                expr2_ast = ast(char(expr2));
+            elseif isa(expr2, 'ast')
+                expr2_ast = expr2;
             else
-                error('inline: replacement must be a char array or an ast object.')
+                error('subs: expr2 must be a char array or an ast object.')
             end
 
             % Determine the equations to operate on.
@@ -4217,7 +4234,7 @@ classdef modBuilder < handle
             else
                 ide = strcmp(eqname, o.equations(:, modBuilder.EQ_COL_NAME));
                 if not(any(ide))
-                    error('inline: no equation named "%s".', eqname)
+                    error('subs: no equation named "%s".', eqname)
                 end
                 eqnames = {eqname};
             end
@@ -4229,21 +4246,39 @@ classdef modBuilder < handle
                 parameter_names = o.params(:, modBuilder.COL_NAME)';
             end
 
+            % Detect whether the target is a single symbol (use the lag-aware
+            % ast.substitute primitive) or an arbitrary expression (use the
+            % structural ast.replace_subtree primitive). A 'tsym' target is treated
+            % as a literal subtree so that, e.g., inlining x(-1) does not also
+            % rewrite x or x(+1).
+            target_ast = ast(expr1);
+            target_is_symbol = strcmp(target_ast.type, 'sym');
+
             % Apply the substitution per equation, splitting on '=' so that LHS and RHS
-            % parse as independent ast trees.
+            % parse as independent ast trees. The dispatch on target_is_symbol picks
+            % between lag-aware symbol substitution and structural subtree matching.
             for i = 1:numel(eqnames)
                 nm = eqnames{i};
                 ide = strcmp(nm, o.equations(:, modBuilder.EQ_COL_NAME));
                 eq_str = o.equations{ide, modBuilder.EQ_COL_EXPR};
                 LHSRHS = strsplit(eq_str, '=');
                 if length(LHSRHS) == 2
-                    new_lhs = ast(strtrim(LHSRHS{1})).substitute(varname, replacement_ast, parameter_names).string();
-                    new_rhs = ast(strtrim(LHSRHS{2})).substitute(varname, replacement_ast, parameter_names).string();
+                    if target_is_symbol
+                        new_lhs = ast(strtrim(LHSRHS{1})).substitute(expr1, expr2_ast, parameter_names).string();
+                        new_rhs = ast(strtrim(LHSRHS{2})).substitute(expr1, expr2_ast, parameter_names).string();
+                    else
+                        new_lhs = ast(strtrim(LHSRHS{1})).replace_subtree(target_ast, expr2_ast).string();
+                        new_rhs = ast(strtrim(LHSRHS{2})).replace_subtree(target_ast, expr2_ast).string();
+                    end
                     new_eq = sprintf('%s = %s', new_lhs, new_rhs);
                 elseif isscalar(LHSRHS)
-                    new_eq = ast(strtrim(LHSRHS{1})).substitute(varname, replacement_ast, parameter_names).string();
+                    if target_is_symbol
+                        new_eq = ast(strtrim(LHSRHS{1})).substitute(expr1, expr2_ast, parameter_names).string();
+                    else
+                        new_eq = ast(strtrim(LHSRHS{1})).replace_subtree(target_ast, expr2_ast).string();
+                    end
                 else
-                    error('inline: equation "%s" has more than one "=" symbol.', nm)
+                    error('subs: equation "%s" has more than one "=" symbol.', nm)
                 end
                 o.equations{ide, modBuilder.EQ_COL_EXPR} = new_eq;
 
@@ -4280,192 +4315,6 @@ classdef modBuilder < handle
                     o.varexo(j, :) = [];
                     if isfield(o.T.varexo, xn)
                         o.T.varexo = rmfield(o.T.varexo, xn);
-                    end
-                end
-            end
-        end % function
-
-        function o = subs(o, expr1, expr2, varargin)
-        % Substitute expr1 by expr2 in equation eqname (use strrep).
-        %
-        % INPUTS:
-        % - o           [modBuilder]
-        % - expr1       [char]         1×n array, expression (may contain $ placeholders)
-        % - expr2       [char]         1×m array, expression (may contain $ placeholders)
-        % - eqname      [char]         equation name (optional, may contain $ placeholders)
-        % - idx1        [cell/numeric] index values for placeholders (required if $ present)
-        % - idx2        [cell/numeric] additional index values
-        % - ...
-        %
-        % OUTPUTS:
-        % - o           [modBuilder]   updated object
-        %
-        % REMARKS:
-        % - All char arguments (expr1, expr2, eqname) come first, then all index value arrays
-        % - If eqname is not provided, expr1 is substituted by expr2 in all equations
-        % - expr1 and expr2 must contain the same index placeholders
-        % - eqname can reuse indices from expressions or introduce new ones
-        % - Indices shared between expressions and eqname only need values provided once
-        %
-        % EXAMPLES:
-        % % Simple substitution (backward compatible)
-        % m.subs('alpha', 'beta', 'Y');
-        %
-        % % Implicit loop: substitute in all equations
-        % m.subs('(alpha_$1+0)', 'beta_$1', {1, 2, 3});
-        %
-        % % Implicit loop: substitute in specific equation
-        % m.subs('(alpha_$1+0)', 'beta_$1', 'Y', {1, 2});
-        %
-        % % Reuse indices from expressions in eqname
-        % m.subs('alpha_$1_$2', 'beta_$1_$2', 'Y_$1', {'FR', 'DE'}, {1, 2});
-        % % Y_$1 reuses $1 from expressions
-        %
-        % % New index in eqname
-        % m.subs('alpha_$1', 'beta_$1', 'Y_$2', {1, 2, 3}, {'A', 'B'});
-        % % $1 for expressions, $2 is new for eqname
-        %
-        % % Mix of reused and new indices
-        % m.subs('alpha_$1_$2', 'beta_$1_$2', 'Y_$1_$3', {'FR'}, {1, 2}, {'North', 'South'});
-        % % $1, $2 for expressions; $3 is new for eqname
-
-            % Validate inputs
-            validateattributes(expr1, {'char'}, {'nonempty', 'row'}, 'subs', 'expr1');
-            validateattributes(expr2, {'char'}, {'nonempty', 'row'}, 'subs', 'expr2');
-
-            % Parse arguments: extract char args first, then index values
-            eqname = [];
-            char_count = 0;
-
-            for i = 1:length(varargin)
-
-                if ischar(varargin{i}) && isrow(varargin{i})
-                    char_count = char_count + 1;
-
-                    if char_count == 1
-                        eqname = varargin{i};
-                    else
-                        error('Only one equation name (char argument) allowed after expr1 and expr2.')
-                    end
-                else
-                    break;
-                end
-            end
-
-            index_values = varargin(char_count+1:end);
-
-            % Check for implicit loop indices in expressions
-            inames_expr1 = unique(regexp(expr1, '\$\d*', 'match'));
-            inames_expr2 = unique(regexp(expr2, '\$\d*', 'match'));
-
-            % Validate that both expressions have the same indices
-
-            if not(isempty(setxor(inames_expr1, inames_expr2)))
-                error('Both expressions must contain the same index placeholders. Found %s in expr1 and %s in expr2.', ...
-                      strjoin(inames_expr1, ', '), strjoin(inames_expr2, ', '))
-            end
-
-            if isempty(inames_expr1)
-                % Base case: no implicit loops
-
-                if ~isempty(index_values)
-                    error('No $ placeholders in expressions, but index values provided.')
-                end
-
-                o.substitution(expr1, expr2, eqname, true);
-                return
-            end
-
-            % Implicit loop mode: collect all unique indices
-            inames_eq = [];
-
-            if ~isempty(eqname)
-                inames_eq = unique(regexp(eqname, '\$\d*', 'match'));
-            end
-
-            all_indices = unique([inames_expr1, inames_eq]);
-            nindices_total = numel(all_indices);
-
-            % Validate number of index values
-
-            if length(index_values) ~= nindices_total
-                error('Expected %d index value arrays (for indices %s), but got %d.', ...
-                      nindices_total, strjoin(all_indices, ', '), length(index_values))
-            end
-
-            % Validate all index values
-            [allint, ~] = modBuilder.check_indices_values(index_values);
-
-            % Build mapping from index placeholder to its values
-            index_map = containers.Map(all_indices, index_values);
-
-            % Extract values for expression indices
-            expr_values = cellfun(@(x) index_map(x), inames_expr1, 'UniformOutput', false);
-            expr_allint = cellfun(@(x) allint(strcmp(all_indices, x)), inames_expr1);
-
-            % Compute Cartesian product of expression indices
-            mIndex_expr = table2cell(combinations(expr_values{:}));
-
-            % Prepare templates for sprintf
-            tmp_expr1 = expr1;
-            tmp_expr2 = expr2;
-
-            for i=numel(inames_expr1):-1:1
-
-                if expr_allint(i)
-                    tmp_expr1 = strrep(tmp_expr1, inames_expr1{i}, '%u');
-                    tmp_expr2 = strrep(tmp_expr2, inames_expr1{i}, '%u');
-                else
-                    tmp_expr1 = strrep(tmp_expr1, inames_expr1{i}, '%s');
-                    tmp_expr2 = strrep(tmp_expr2, inames_expr1{i}, '%s');
-                end
-            end
-
-            % Handle eqname expansion
-
-            if isempty(eqname)
-                % Apply to all equations
-
-                for i=1:size(mIndex_expr,1)
-                    current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
-                    current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
-                    o.subs(current_expr1, current_expr2);
-                end
-            elseif isempty(inames_eq)
-                % eqname has no placeholders
-
-                for i=1:size(mIndex_expr,1)
-                    current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
-                    current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
-                    o.subs(current_expr1, current_expr2, eqname);
-                end
-            else
-                % eqname has placeholders
-                eq_values = cellfun(@(x) index_map(x), inames_eq, 'UniformOutput', false);
-                eq_allint = cellfun(@(x) allint(strcmp(all_indices, x)), inames_eq);
-                mIndex_eq = table2cell(combinations(eq_values{:}));
-
-                % Prepare template for eqname
-                tmp_eqname = eqname;
-
-                for i=numel(inames_eq):-1:1
-
-                    if eq_allint(i)
-                        tmp_eqname = strrep(tmp_eqname, inames_eq{i}, '%u');
-                    else
-                        tmp_eqname = strrep(tmp_eqname, inames_eq{i}, '%s');
-                    end
-                end
-
-                % For each equation, substitute all expression combinations
-
-                for j=1:size(mIndex_eq,1)
-                    current_eqname = sprintf(tmp_eqname, mIndex_eq{j,:});
-
-                    for i=1:size(mIndex_expr,1)
-                        current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
-                        current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
-                        o.subs(current_expr1, current_expr2, current_eqname);
                     end
                 end
             end
@@ -4528,7 +4377,7 @@ classdef modBuilder < handle
                     error('No $ placeholders in expr1, but index values provided.')
                 end
 
-                o.substitution(expr1, expr2, eqname, false);
+                o.substitution(expr1, expr2, eqname);
                 return
             end
 
@@ -4635,54 +4484,39 @@ classdef modBuilder < handle
             end
         end % function
 
-        function o = substitution(o, expr1, expr2, eqname, usestrrep)
-        % Internal method for substitution: replace expr1 with expr2 in equations
+        function o = substitution(o, expr1, expr2, eqname)
+        % Internal method for regex-based substitution: replace expr1 with expr2 in equations.
         %
         % INPUTS:
         % - o           [modBuilder]
-        % - expr1       [char]         expression to find (string literal or regex pattern)
-        % - expr2       [char]         replacement expression
+        % - expr1       [char]         regex pattern to find
+        % - expr2       [char]         replacement expression (may use regex backreferences)
         % - eqname      [char or cell] equation name(s) or [] for all equations
-        % - usestrrep   [logical]      true=use strrep (literal), false=use regexprep (regex)
         %
         % OUTPUTS:
         % - o           [modBuilder]   updated object
         %
         % REMARKS:
-        % - If eqname is empty, substitution applies to all equations
-        % - When usestrrep=false, validates that regex matches exactly one expression
-        % - Automatically uses rename() if substitution affects a symbol across all equations
-        % - Updates symbol tables after substitution
-        % - Warns about new unknown symbols introduced by substitution
+        % - If eqname is empty, substitution applies to all equations.
+        % - Validates that the regex matches exactly one expression.
+        % - Automatically uses rename() if substitution affects a symbol across all equations.
+        % - Updates symbol tables after substitution.
+        % - Warns about new unknown symbols introduced by substitution.
 
-            % Recommend inline when the target is syntactically a user symbol identifier:
-            % inline performs a tree-based, precedence-safe, lag-aware substitution that
-            % subs (literal strrep) and substitute (regexprep) cannot match. Skip the
-            % recommendation for Dynare reserved names (log, exp, STEADY_STATE, ...) since
-            % inline does not target function/operator names.
+            % Recommend the AST-based subs when the target is syntactically a user symbol
+            % identifier: subs performs a tree-based, precedence-safe, lag-aware substitution
+            % that the text-based substitute cannot match. Skip the recommendation for Dynare
+            % reserved names (log, exp, STEADY_STATE, ...) since subs does not target
+            % function / operator names.
             if ~isempty(regexp(expr1, '^[a-zA-Z_]\w*$', 'once')) && ~ismember(expr1, modBuilder.DYNARE_RESERVED_NAMES)
-                warning('modBuilder:preferInline', 'The substitution target "%s" is a single symbol; consider using m.inline("%s", ...) instead, which performs a tree-based, precedence-safe, lag-aware substitution.', expr1, expr1)
+                warning('modBuilder:preferSubs', 'The substitution target "%s" is a single symbol; consider using m.subs("%s", ...) instead, which performs a tree-based, precedence-safe, lag-aware substitution.', expr1, expr1)
             end
 
-            if usestrrep
-                % Is it safe to use the subs method?
-                if o.issymbol(expr1)
-                    warning('It is not safe to use the subs method to change a symbol. Falling back to the substitute method with a regular expression for word-boundary safety. The inline or rename methods may be preferable.')
-                    % Use MATLAB word boundaries \< and \> to match whole words only
-                    if isempty(eqname)
-                        o.substitute(['\<' expr1  '\>'], expr2);
-                    else
-                        o.substitute(['\<' expr1  '\>'], expr2, eqname);
-                    end
-                    return
-                end
-            else
-                % Test if expr1 is a valid regular expression
-                try
-                    regexp('', expr1);
-                catch
-                    error('You did not provide a valid regular expression.')
-                end
+            % Test if expr1 is a valid regular expression.
+            try
+                regexp('', expr1);
+            catch
+                error('You did not provide a valid regular expression.')
             end
 
             % Where does the substitution should be done?
@@ -4703,33 +4537,31 @@ classdef modBuilder < handle
                 end
             end
 
-            if ~usestrrep
-                % Test that the regular expression matches only one expression in all the selected equations.
-                matches = {};
+            % Test that the regular expression matches only one expression in all the selected equations.
+            matches = {};
 
-                for i=1:numel(eqnames)
-                    id = strcmp(eqnames{i}, o.equations(:,modBuilder.EQ_COL_NAME));
-                    matches = union(matches, unique(regexp(o.equations{id,modBuilder.EQ_COL_EXPR}, expr1, 'match')));
-                end
+            for i=1:numel(eqnames)
+                id = strcmp(eqnames{i}, o.equations(:,modBuilder.EQ_COL_NAME));
+                matches = union(matches, unique(regexp(o.equations{id,modBuilder.EQ_COL_EXPR}, expr1, 'match')));
+            end
 
-                if isempty(matches)
-                    % No match found - issue warning and return without modification
-                    backtrace_state = warning('query', 'backtrace');
-                    warning('off', 'backtrace');
-                    warning('Pattern "%s" not found in equation(s): %s', expr1, strjoin(eqnames, ', '));
-                    warning(backtrace_state.state, 'backtrace');
-                    return
-                elseif length(matches)>1
-                    error('The provided regular expression matches more than one expression in the equation(s).')
-                else
-                    expr0 = matches{1};
-                end
+            if isempty(matches)
+                % No match found - issue warning and return without modification
+                backtrace_state = warning('query', 'backtrace');
+                warning('off', 'backtrace');
+                warning('Pattern "%s" not found in equation(s): %s', expr1, strjoin(eqnames, ', '));
+                warning(backtrace_state.state, 'backtrace');
+                return
+            elseif length(matches)>1
+                error('The provided regular expression matches more than one expression in the equation(s).')
+            else
+                expr0 = matches{1};
             end
 
             % Can we use the rename method (is the substitution for a symbol in all the equations where it appears)?
             userename = false;
 
-            if ~usestrrep && o.issymbol(expr0)
+            if o.issymbol(expr0)
 
                 if isequal(numel(eqnames), o.size('equations'))
                     userename = true;
@@ -4765,22 +4597,14 @@ classdef modBuilder < handle
                 select = strcmp(eqname, o.equations(:,modBuilder.EQ_COL_NAME));
                 original_eq = o.equations{select,modBuilder.EQ_COL_EXPR};
 
-                if usestrrep
-                    o.equations(select,modBuilder.EQ_COL_EXPR) = strrep(o.equations(select,modBuilder.EQ_COL_EXPR), expr1, expr2);
-                else
-                    o.equations(select,modBuilder.EQ_COL_EXPR) = regexprep(o.equations(select,modBuilder.EQ_COL_EXPR), expr1, expr2);
-                end
+                o.equations(select,modBuilder.EQ_COL_EXPR) = regexprep(o.equations(select,modBuilder.EQ_COL_EXPR), expr1, expr2);
 
                 % Check if any change was made
                 if strcmp(original_eq, o.equations{select,modBuilder.EQ_COL_EXPR})
                     % No substitution occurred - pattern not found
                     backtrace_state = warning('query', 'backtrace');
                     warning('off', 'backtrace');
-                    if usestrrep
-                        warning('String "%s" not found in equation "%s"', expr1, eqname);
-                    else
-                        warning('Pattern "%s" not found in equation "%s"', expr1, eqname);
-                    end
+                    warning('Pattern "%s" not found in equation "%s"', expr1, eqname);
                     warning(backtrace_state.state, 'backtrace');
                     continue; % Skip to next equation
                 end

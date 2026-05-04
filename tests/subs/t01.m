@@ -1,8 +1,7 @@
 addpath ../utils
 
-% Test subs method: backward compatibility (simple substitution)
+% subs: replace a parameter by its calibration value across all equations.
 
-% Build a simple model
 m = modBuilder();
 m.add('y', 'y = alpha*k + beta*h');
 m.parameter('alpha', 0.33);
@@ -10,22 +9,26 @@ m.parameter('beta', 0.67);
 m.exogenous('k', 1.0);
 m.exogenous('h', 1.0);
 
-% Substitute alpha with gamma in equation y
-m.subs('alpha', 'gamma', 'y');
+m.subs('alpha', '0.33');
 
-% Verify substitution occurred
-if ~strcmp(m{'y'}.equations{2}, 'y = gamma*k + beta*h')
-    error('Substitution failed: expected "y = gamma*k + beta*h", got "%s"', m{'y'}.equations{2})
+% Verify the equation has alpha replaced by the literal 0.33 (compare via AST so
+% whitespace and rendering choices do not matter).
+got = m{'y'}.equations{2};
+LHSRHS = strsplit(got, '=');
+got_rhs = ast(strtrim(LHSRHS{2}));
+expected_rhs = ast('0.33*k + beta*h');
+if not(ast.ast_equal(got_rhs, expected_rhs))
+    error('subs: RHS mismatch. expected "%s", got "%s"', expected_rhs.string(), got_rhs.string())
 end
 
-% Check that gamma is now a parameter (subs detected symbol and used rename via substitute)
-if ~m.isparameter('gamma')
-    error('Symbol gamma should be a parameter after substitution')
-end
-
-% Check that alpha no longer exists
+% alpha is no longer referenced by any equation and must have been dropped.
 if m.issymbol('alpha')
-    error('Symbol alpha should no longer exist after substitution')
+    error('alpha should be removed after subs')
+end
+
+% beta is still referenced; it must still be a parameter.
+if not(m.isparameter('beta'))
+    error('beta should still be a parameter')
 end
 
 fprintf('t01.m: All tests passed\n');

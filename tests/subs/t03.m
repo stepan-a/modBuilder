@@ -1,28 +1,31 @@
 addpath ../utils
 
-% Test subs method: implicit loop - substitute in specific equation
+% subs: when eqname is provided, only that equation is rewritten.
 
-% Build model with multiple equations
 m = modBuilder();
-m.add('Y', 'Y = alpha_1*K_1 + alpha_2*K_2');
-m.add('C', 'C = alpha_1*Y + alpha_2*L');
-m.parameter('alpha_$1', 0.5, {1, 2});
-m.exogenous('K_$1', 1.0, {1, 2});
-m.exogenous('L', 1.0);
+m.add('y1', 'y1 = alpha + 1');
+m.add('y2', 'y2 = alpha + 2');
+m.parameter('alpha', 0.5);
 
-% Substitute alpha_$1 with beta_$1 in equation Y only
-m.subs('alpha_$1', 'beta_$1', 'Y', {1, 2});
+m.subs('alpha', '0.5', 'y1');
 
-% Verify substitution in Y
-expected_eq_Y = 'Y = beta_1*K_1 + beta_2*K_2';
-if ~strcmp(m{'Y'}.equations{2}, expected_eq_Y)
-    error('Substitution failed in Y: expected "%s", got "%s"', expected_eq_Y, m{'Y'}.equations{2})
+got1 = m{'y1'}.equations{2};
+LHSRHS = strsplit(got1, '=');
+got1_rhs = ast(strtrim(LHSRHS{2}));
+if not(ast.ast_equal(got1_rhs, ast('0.5 + 1')))
+    error('y1 subs failed: got "%s"', got1_rhs.string())
 end
 
-% Verify C equation unchanged
-expected_eq_C = 'C = alpha_1*Y + alpha_2*L';
-if ~strcmp(m{'C'}.equations{2}, expected_eq_C)
-    error('Equation C should be unchanged: expected "%s", got "%s"', expected_eq_C, m{'C'}.equations{2})
+got2 = m{'y2'}.equations{2};
+LHSRHS = strsplit(got2, '=');
+got2_rhs = ast(strtrim(LHSRHS{2}));
+if not(ast.ast_equal(got2_rhs, ast('alpha + 2')))
+    error('y2 should not have been touched: got "%s"', got2_rhs.string())
+end
+
+% alpha still appears in y2, so it must remain a parameter
+if not(m.isparameter('alpha'))
+    error('alpha should still be a parameter (still referenced by y2)')
 end
 
 fprintf('t03.m: All tests passed\n');

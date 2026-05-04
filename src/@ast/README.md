@@ -199,6 +199,28 @@ opaque "do not shift" set; it does not need to know what a parameter
 is, only which names are time-invariant for this call. `STEADY_STATE`
 leaves are time-invariant as well and are never shifted.
 
+#### `t.replace_subtree(target, replacement)`
+
+Return a new tree with every subtree structurally equal to `target`
+replaced by `replacement`. Both `target` and the host tree are
+canonicalised at entry, so commutative reorderings (`a*b` vs `b*a`,
+`a+b` vs `b+a`) match. Replacement is literal — no lag-shift, no
+parameter set — so this is the right primitive when the target is an
+arbitrary expression rather than a single symbol.
+
+This is the structural counterpart of `substitute`: use `substitute`
+when the target is a symbol you want to rewrite at every lead/lag
+(with the replacement shifted accordingly), and `replace_subtree` when
+the target is a specific expression you want to recognise wherever it
+appears, exactly as written. Used by `modBuilder.subs` for
+expression targets.
+
+The MVP does not perform sub-multiset matching, so a target `a + c`
+is *not* found inside `a + b + c` (whose canonical left-associated tree
+exposes `(a+b)` and `c`, not `(a+c)`). When that's needed, the
+`simplify` or `factor` passes can sometimes reshape the equation to
+make the desired subtree appear.
+
 #### `t.shift_lag(k[, parameter_names])`
 
 Return a new tree with every time-varying variable's lag shifted by
