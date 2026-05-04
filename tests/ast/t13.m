@@ -54,6 +54,23 @@ assert(eq_canon(n, ast('1 - omega')), 'w/w - omega → 1 - omega');
 [has, cancels] = n.check_factor('w');
 assert(~has && ~cancels, 'after simplify, w/w - omega does not contain w anymore');
 
+% --- Power addition (collect_powers in canonicalise) ---
+
+% f^m · f^n  →  f^(m+n)
+assert(eq_canon(ast('a^2 * a^3').simplify(), ast('a^5')), 'a^2 * a^3 → a^5');
+assert(eq_canon(ast('a * a^2').simplify(), ast('a^3')), 'a · a^2 → a^3');
+assert(eq_canon(ast('a^m * a^n').simplify(), ast('a^(m+n)')), 'a^m · a^n → a^(m+n)');
+assert(eq_canon(ast('f * f * f').simplify(), ast('f^3')), 'f · f · f → f^3');
+assert(eq_canon(ast('a^2 * a^(-2)').simplify(), ast('1')), 'a^2 · a^(-2) → 1');
+
+% --- Collect like terms (collect_like_terms in canonicalise) ---
+
+% Numeric-coefficient combination
+assert(eq_canon(ast('2*y + 3*y').simplify(), ast('5*y')), '2y + 3y → 5y');
+assert(eq_canon(ast('a*b + 2*a*b - 3*a*b').simplify(), ast('0')), 'ab + 2ab - 3ab → 0');
+assert(eq_canon(ast('a + b - a + 2*b').simplify(), ast('3*b')), 'a + b - a + 2b → 3b');
+assert(eq_canon(ast('5*x - 3*x').simplify(), ast('2*x')), '5x - 3x → 2x');
+
 % Idempotent: simplify(simplify(t)) == simplify(t)
 n1 = ast('a*b + 0 - a*b + 1*c').simplify();
 n2 = n1.simplify();

@@ -109,18 +109,73 @@ the everyday cases:
 - *structural cancellation* — `f − f → 0`, `f / f → 1`,
   `f + (−f) → 0`, `f · f^(−1) → 1`
 - *structural merging* — `f + f → 2·f`, `f · f → f^2`
+- *coefficient combination in `+` chains* — `2·f + 3·f → 5·f`, and the
+  zero-total drop `2·f − 2·f → 0` (a structural generalisation of
+  `f + f → 2·f` that handles arbitrary numeric coefficients)
+- *exponent combination in `·` chains* — `f^m · f^n → f^(m+n)`, including
+  the bare-base case `f · f^n → f^(n+1)` and the inverse-pair case
+  `f · f^(−1) → 1`
 - *double negation* — `−(−f) → f`, `−num → num(-num)`
+- *sign propagation* — `(−1) · f → −f`, `f · (−g) → −(f·g)`,
+  `(−f) · g → −(f·g)`
 
 Cancellation is detected up to commutativity (so `a·b − b·a → 0`)
 because the operands are sorted by `canonicalise` before comparison.
-Genuine multi-operand cancellation in long chains (e.g.
-`a + b − a → b`) is not handled by this MVP; it would require
-pair-cancellation across flattened chains.
+Pair-cancellation across flattened chains is also handled, so
+`a + b − a → b`, `((a+b)·c + d) − (d + c·(b+a)) → 0`, and
+`(a·b·c) / (a·c) → b` all reduce.
+
+`simplify` is local: it does *not* apply distributivity
+(`a·(b+c) → a·b + a·c`), expand integer powers of sums
+(`(a+b)² → a² + 2ab + b²`), or combine over a common denominator
+(`a/b + c/b → (a+c)/b`). For those, use `expand` and `factor` below.
 
 The output preserves canonical form. The MVP `check_factor` becomes
 substantially tighter when applied to a simplified tree: cases that
 previously slipped through (e.g. `w/w − ω`) now correctly report `w`
 as absent because `w/w` is folded to `1`.
+
+#### `t.expand()`
+
+Distribute multiplication over addition and apply the multinomial
+theorem to integer powers of sums:
+
+- `a · (b + c) → a·b + a·c`
+- `(a + b) · (c + d) → a·c + a·d + b·c + b·d`
+- `(a₁ + … + a_k)^n` is expanded directly via the multinomial theorem,
+  emitting only the distinct terms with their coefficients — no costly
+  collect-like-terms pass afterwards. Examples:
+    - `(a+b)² → a² + 2·a·b + b²`
+    - `(a+b)³ → a³ + 3·a²·b + 3·a·b² + b³`
+    - `(a+b+c)² → a² + b² + c² + 2·a·b + 2·a·c + 2·b·c`
+    - `(a+b+c)³` produces 10 terms including the `6·a·b·c` mixed term.
+
+Tree size grows: a product of `k` `+` chains of size `m_i` expands to
+a sum of `∏ m_i` terms; an `n`-th power of a `k`-term sum expands to
+`C(n+k-1, k-1)` distinct terms. Use deliberately on equations where
+the expanded form makes pair-cancellation, factoring, or symbolic
+differentiation easier to read. Idempotent on already-expanded inputs.
+
+#### `t.factor()`
+
+Extract a common multiplicative factor from a sum:
+
+- `a·b + a·c → a · (b + c)`
+- `a/b + c/b → (a + c) / b`
+- `2·a·b − 2·a·c → 2·a · (b − c)`
+
+Both structural common factors and numeric GCDs are pulled out:
+
+- `2·a·b + 2·a·c → 2·a · (b + c)`
+- `2·a·b − 2·a·c → 2·a · (b − c)`
+- `4·a·b + 6·a·c → 2·a · (2·b + 3·c)`
+- `6·x + 9·y → 3 · (2·x + 3·y)`
+
+The numeric GCD pass only fires when every decomposed coefficient is
+integer-valued; otherwise the coefficient factor stays at 1. The
+factor analysis still does not reason about power identities, so
+`a² + a³` is not factored to `a² · (1 + a)` — that's a deferred
+extension. Tree size shrinks (or stays the same). Idempotent.
 
 #### `t.substitute(target_name, replacement[, parameter_names])`
 

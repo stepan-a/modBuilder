@@ -503,6 +503,11 @@ classdef ast
                 op = o.value;
                 operands = ast.flatten(o, op);
                 operands = ast.cancel_pairs(operands, op);
+                if strcmp(op, '+')
+                    operands = ast.collect_like_terms(operands);
+                else
+                    operands = ast.collect_powers(operands);
+                end
                 if isempty(operands)
                     % All operands cancelled: '+'-chain reduces to 0, '*'-chain to 1.
                     if strcmp(op, '+')
@@ -561,6 +566,174 @@ classdef ast
                 end
                 previous_key = key;
                 o = ast.simplify_pass(o);
+            end
+        end % function
+
+        function o = expand(o)
+        % Distribute multiplication over addition and unroll integer powers of sums.
+        %
+        % INPUTS:
+        % - o   [ast]    tree to expand
+        %
+        % OUTPUTS:
+        % - o   [ast]    expanded tree, in canonical form
+        %
+        % REMARKS:
+        % - Applies the rules a · (b + c) → a·b + a·c, (a + b) · c → a·c + b·c, and
+        %   (a + b)^n → (a + b) · (a + b) · ... (n times) for non-negative integer n,
+        %   then re-canonicalises the result.
+        % - Tree size grows: a product of k '+' chains of size m_i expands to a sum of
+        %   ∏ m_i terms. Use deliberately on equations where the expanded form makes
+        %   pair-cancellation or symbolic differentiation easier to read.
+        % - Idempotent on already-expanded inputs (a sum of products).
+            o = o.canonicalise();
+            for i = 1:numel(o.children)
+                o.children{i} = o.children{i}.expand();
+            end
+            % Expand a power of a sum directly via the multinomial theorem
+            %   (a₁ + ... + a_k)^n = Σ (n choose m₁, ..., m_k) · a₁^m₁ · ... · a_k^m_k
+            % over all non-negative integer multi-indices summing to n. Only the
+            % distinct terms are emitted, each with its multinomial coefficient — so
+            % no costly collect-like-terms pass is needed afterwards.
+            if strcmp(o.type, 'binop') && strcmp(o.value, '^')
+                base = o.children{1};
+                exponent = o.children{2};
+                if strcmp(exponent.type, 'num') && exponent.value >= 2 && rem(exponent.value, 1) == 0 && strcmp(base.type, 'binop') && strcmp(base.value, '+')
+                    n = exponent.value;
+                    summands = ast.flatten(base, '+');
+                    k = numel(summands);
+                    indices = ast.multi_indices(k, n);
+                    nfac = factorial(n);
+                    terms = cell(1, size(indices, 1));
+                    for i = 1:size(indices, 1)
+                        m = indices(i, :);
+                        coef = nfac;
+                        for j = 1:k
+                            coef = coef / factorial(m(j));
+                        end
+                        factors = {};
+                        if coef ~= 1
+                            factors{end+1} = ast('num', coef, {});
+                        end
+                        for j = 1:k
+                            if m(j) == 1
+                                factors{end+1} = summands{j};
+                            elseif m(j) > 1
+                                factors{end+1} = ast('binop', '^', {summands{j}, ast('num', m(j), {})});
+                            end
+                        end
+                        if isempty(factors)
+                            terms{i} = ast('num', 1, {});
+                        else
+                            terms{i} = ast.product_of(factors);
+                        end
+                    end
+                    o = ast.sum_of(terms).simplify();
+                    return
+                end
+            end
+            % Distribute '*' over any '+' operand sitting in this product.
+            if strcmp(o.type, 'binop') && strcmp(o.value, '*')
+                L = o.children{1};
+                R = o.children{2};
+                if strcmp(L.type, 'binop') && strcmp(L.value, '+')
+                    terms = ast.flatten(L, '+');
+                    products = cell(1, numel(terms));
+                    for i = 1:numel(terms)
+                        products{i} = ast('binop', '*', {terms{i}, R}).expand();
+                    end
+                    o = ast.sum_of(products).simplify();
+                    return
+                end
+                if strcmp(R.type, 'binop') && strcmp(R.value, '+')
+                    terms = ast.flatten(R, '+');
+                    products = cell(1, numel(terms));
+                    for i = 1:numel(terms)
+                        products{i} = ast('binop', '*', {L, terms{i}}).expand();
+                    end
+                    o = ast.sum_of(products).simplify();
+                    return
+                end
+            end
+            o = o.simplify();
+        end % function
+
+        function o = factor(o)
+        % Extract a common multiplicative factor from a sum.
+        %
+        % INPUTS:
+        % - o   [ast]    tree to factor
+        %
+        % OUTPUTS:
+        % - o   [ast]    factored tree, in canonical form
+        %
+        % REMARKS:
+        % - For a '+' chain, finds factors that appear in every term (multiset
+        %   intersection of the '*'-chain factor lists, with uminus(t) treated as
+        %   (-1)·t for the purpose of factoring) and rewrites
+        %     t1 + t2 + ... + tk = g · (r1 + r2 + ... + rk)
+        %   where g is the common factor and ri = ti / g.
+        % - Both structural common factors and numeric GCDs are pulled out:
+        %     2·a·b + 2·a·c  →  2·a · (b + c)
+        %     2·a·b − 2·a·c  →  2·a · (b − c)
+        %   The numeric GCD is computed only when all decomposed coefficients are
+        %   integer-valued; otherwise the coefficient factor stays at 1.
+        % - The factor analysis does not understand power identities, so
+        %   a² + a³ is not factored to a²·(1 + a). That is a deferred extension.
+        % - Tree size shrinks (or stays the same). Idempotent.
+            o = o.canonicalise();
+            for i = 1:numel(o.children)
+                o.children{i} = o.children{i}.factor();
+            end
+            if strcmp(o.type, 'binop') && strcmp(o.value, '+')
+                operands = ast.flatten(o, '+');
+                if numel(operands) < 2
+                    return
+                end
+                % Decompose each operand into (coefficient, list of non-numeric factors).
+                coefs = zeros(1, numel(operands));
+                monomial_lists = cell(1, numel(operands));
+                for i = 1:numel(operands)
+                    [coefs(i), monomial_lists{i}] = ast.decompose_factors(operands{i});
+                end
+                % Multiset intersection of structural factors.
+                common_monos = monomial_lists{1};
+                for i = 2:numel(operands)
+                    common_monos = ast.multiset_intersect(common_monos, monomial_lists{i});
+                end
+                % Numeric GCD across coefficients (only when all are integers).
+                coef_gcd = 1;
+                if all(coefs == round(coefs)) && any(coefs ~= 0)
+                    g = abs(coefs(1));
+                    for i = 2:numel(coefs)
+                        g = gcd(g, abs(coefs(i)));
+                    end
+                    if g >= 1
+                        coef_gcd = g;
+                    end
+                end
+                if isempty(common_monos) && coef_gcd == 1
+                    return
+                end
+                % Build residuals: (coef/g) · product(monomial_factors \ common_monos)
+                residuals = cell(1, numel(operands));
+                for i = 1:numel(operands)
+                    leftover = ast.multiset_difference(monomial_lists{i}, common_monos);
+                    new_coef = coefs(i) / coef_gcd;
+                    pieces = {};
+                    if new_coef ~= 1 || isempty(leftover)
+                        pieces{end+1} = ast('num', new_coef, {}); %#ok<AGROW>
+                    end
+                    pieces = [pieces, leftover];
+                    residuals{i} = ast.product_of(pieces);
+                end
+                residual_sum = ast.sum_of(residuals).simplify();
+                common_factors = common_monos;
+                if coef_gcd ~= 1
+                    common_factors = [{ast('num', coef_gcd, {})}, common_factors];
+                end
+                factor_node = ast.product_of(common_factors).simplify();
+                o = ast('binop', '*', {factor_node, residual_sum}).simplify();
             end
         end % function
 
@@ -1027,6 +1200,252 @@ classdef ast
             operands = operands(~canceled);
         end % function
 
+        function [base, exp] = power_components(o)
+        % Decompose o as base^exp.
+        % - For binop('^', b, e), returns (b, e).
+        % - Otherwise treats o as o^1 and returns (o, num(1)).
+            if strcmp(o.type, 'binop') && strcmp(o.value, '^')
+                base = o.children{1};
+                exp = o.children{2};
+            else
+                base = o;
+                exp = ast('num', 1, {});
+            end
+        end % function
+
+        function [coef, monomial] = decompose_term(o)
+        % Decompose o as coef · monomial, where coef is a numeric scalar pulled
+        % out of any leading numeric factors (and any uminus contributes -1) and
+        % monomial is the residual product of non-numeric factors.
+        % - uminus(X)             →  -1 · X
+        % - num · X · ...         →  num · (rest)
+        % - X (no leading num)    →   1 · X
+            if strcmp(o.type, 'uminus')
+                [c, m] = ast.decompose_term(o.children{1});
+                coef = -c;
+                monomial = m;
+                return
+            end
+            factors = ast.flatten(o, '*');
+            coef = 1;
+            monomial_factors = {};
+            for i = 1:numel(factors)
+                if strcmp(factors{i}.type, 'num')
+                    coef = coef * factors{i}.value;
+                else
+                    monomial_factors{end+1} = factors{i}; %#ok<AGROW>
+                end
+            end
+            if isempty(monomial_factors)
+                monomial = ast('num', 1, {});
+            else
+                monomial = ast.product_of(monomial_factors);
+            end
+        end % function
+
+        function [coef, monomial_factors] = decompose_factors(o)
+        % Decompose o as coef · monomial_factors, where coef is a numeric scalar
+        % collected from any leading numeric factors (and any uminus contributes
+        % a -1) and monomial_factors is a cell-array list of the residual,
+        % non-numeric factors. Used by factor for both the structural multiset
+        % intersection and the numeric-GCD pass.
+            if strcmp(o.type, 'uminus')
+                [c, mf] = ast.decompose_factors(o.children{1});
+                coef = -c;
+                monomial_factors = mf;
+                return
+            end
+            factors = ast.flatten(o, '*');
+            coef = 1;
+            monomial_factors = {};
+            for i = 1:numel(factors)
+                if strcmp(factors{i}.type, 'num')
+                    coef = coef * factors{i}.value;
+                else
+                    monomial_factors{end+1} = factors{i}; %#ok<AGROW>
+                end
+            end
+        end % function
+
+        function operands = collect_like_terms(operands)
+        % Combine like terms in a flattened '+' chain by summing the numeric
+        % coefficients of operands that share a structurally equal monomial part.
+        % Zero-total terms are dropped.
+            n = numel(operands);
+            if n < 2, return; end
+            coefs = zeros(1, n);
+            monomials = cell(1, n);
+            for i = 1:n
+                [coefs(i), monomials{i}] = ast.decompose_term(operands{i});
+            end
+            used = false(1, n);
+            new_operands = {};
+            for i = 1:n
+                if used(i), continue; end
+                c = coefs(i);
+                for j = i+1:n
+                    if used(j), continue; end
+                    if ast.ast_equal(monomials{i}, monomials{j})
+                        c = c + coefs(j);
+                        used(j) = true;
+                    end
+                end
+                used(i) = true;
+                if c == 0
+                    continue
+                end
+                m = monomials{i};
+                if ast.is_one(m)
+                    new_operands{end+1} = ast('num', c, {}); %#ok<AGROW>
+                elseif c == 1
+                    new_operands{end+1} = m; %#ok<AGROW>
+                elseif c == -1
+                    new_operands{end+1} = ast.negate(m); %#ok<AGROW>
+                else
+                    new_operands{end+1} = ast('binop', '*', {ast('num', c, {}), m}); %#ok<AGROW>
+                end
+            end
+            operands = new_operands;
+        end % function
+
+        function operands = collect_powers(operands)
+        % Combine powers in a flattened '*' chain by grouping operands with a
+        % structurally equal base and summing their exponents (treating a bare X
+        % as X^1). Zero-total exponents drop the operand (X^0 = 1).
+            n = numel(operands);
+            if n < 2, return; end
+            bases = cell(1, n);
+            exps = cell(1, n);
+            for i = 1:n
+                [bases{i}, exps{i}] = ast.power_components(operands{i});
+            end
+            used = false(1, n);
+            new_operands = {};
+            for i = 1:n
+                if used(i), continue; end
+                total = exps{i};
+                for j = i+1:n
+                    if used(j), continue; end
+                    if ast.ast_equal(bases{i}, bases{j})
+                        total = ast('binop', '+', {total, exps{j}});
+                        used(j) = true;
+                    end
+                end
+                used(i) = true;
+                total_s = total.simplify();
+                if ast.is_zero(total_s)
+                    continue
+                elseif ast.is_one(total_s)
+                    new_operands{end+1} = bases{i}; %#ok<AGROW>
+                else
+                    new_operands{end+1} = ast('binop', '^', {bases{i}, total_s}); %#ok<AGROW>
+                end
+            end
+            operands = new_operands;
+        end % function
+
+        function f = factors_of(o)
+        % Return the multiplicative factors of o as a flat cell array.
+        % - For a '*' chain, returns its flattened operand list.
+        % - For uminus(x), returns [num(-1), factors_of(x)] so that the (-1) becomes
+        %   visible to factor analysis.
+        % - For anything else, returns {o}.
+            if strcmp(o.type, 'uminus')
+                f = [{ast('num', -1, {})}, ast.factors_of(o.children{1})];
+                return
+            end
+            f = ast.flatten(o, '*');
+        end % function
+
+        function c = multiset_intersect(a, b)
+        % Multiset intersection of two cell-array operand lists, using ast.ast_equal
+        % for structural equality. Each element of b is consumed at most once.
+            c = {};
+            bcopy = b;
+            for i = 1:numel(a)
+                x = a{i};
+                for j = 1:numel(bcopy)
+                    if ast.ast_equal(x, bcopy{j})
+                        c{end+1} = x; %#ok<AGROW>
+                        bcopy(j) = [];
+                        break
+                    end
+                end
+            end
+        end % function
+
+        function d = multiset_difference(a, b)
+        % Multiset difference a \ b: each element of b consumes at most one matching
+        % element of a. Used to compute residuals after extracting a common factor.
+            bcopy = b;
+            d = {};
+            for i = 1:numel(a)
+                x = a{i};
+                found = false;
+                for j = 1:numel(bcopy)
+                    if ast.ast_equal(x, bcopy{j})
+                        bcopy(j) = [];
+                        found = true;
+                        break
+                    end
+                end
+                if ~found
+                    d{end+1} = x; %#ok<AGROW>
+                end
+            end
+        end % function
+
+        function p = product_of(factors)
+        % Build a '*' chain from a cell of factors.
+        % An empty list returns num(1) (the multiplicative identity).
+            if isempty(factors)
+                p = ast('num', 1, {});
+                return
+            end
+            p = factors{1};
+            for i = 2:numel(factors)
+                p = ast('binop', '*', {p, factors{i}});
+            end
+        end % function
+
+        function indices = multi_indices(k, n)
+        % Generate all non-negative integer vectors (m1, ..., m_k) summing to n.
+        %
+        % Used by expand to apply the multinomial theorem directly without going
+        % through k^n raw products.
+        %
+        % INPUTS:
+        % - k        [integer]  scalar, number of slots (>= 1)
+        % - n        [integer]  scalar, target sum (>= 0)
+        %
+        % OUTPUTS:
+        % - indices  [integer]  C(n+k-1, k-1) × k matrix; each row is a valid
+        %                       multi-index.
+            if k == 1
+                indices = n;
+                return
+            end
+            indices = zeros(0, k);
+            for i = 0:n
+                sub = ast.multi_indices(k-1, n-i);
+                col = repmat(i, size(sub, 1), 1);
+                indices = [indices; [col, sub]]; %#ok<AGROW>
+            end
+        end % function
+
+        function s = sum_of(terms)
+        % Build a '+' chain from a cell of terms.
+        % An empty list returns num(0) (the additive identity).
+            if isempty(terms)
+                s = ast('num', 0, {});
+                return
+            end
+            s = terms{1};
+            for i = 2:numel(terms)
+                s = ast('binop', '+', {s, terms{i}});
+            end
+        end % function
+
         function k = sort_key(o)
         % Return a stable string sort key used to order operands of commutative chains.
         %
@@ -1144,6 +1563,20 @@ classdef ast
                             end
                             if ast.is_one(L), o = R; return; end
                             if ast.is_one(R), o = L; return; end
+                            % (-1) · x  →  -x   (and x · (-1) → -x for safety; canonicalise
+                            % normally puts the num on the left, so the first arm dominates).
+                            if ast.is_neg_one(L), o = ast.negate(R); return; end
+                            if ast.is_neg_one(R), o = ast.negate(L); return; end
+                            % Propagate uminus out of '*' so that a sign always sits on top
+                            % of its product:  L · (-R)  →  -(L · R),  (-L) · R  →  -(L · R).
+                            if strcmp(L.type, 'uminus')
+                                o = ast.negate(ast('binop', '*', {L.children{1}, R}));
+                                return
+                            end
+                            if strcmp(R.type, 'uminus')
+                                o = ast.negate(ast('binop', '*', {L, R.children{1}}));
+                                return
+                            end
                             % f * f^(-1) → 1
                             if strcmp(R.type, 'binop') && strcmp(R.value, '^') && ast.is_neg_one(R.children{2}) && ast.ast_equal(L, R.children{1})
                                 o = ast('num', 1, {}); return
