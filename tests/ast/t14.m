@@ -39,3 +39,35 @@ assert(eq_canon(n, ast('0')), 'self-division of a tsym');
 % Division of a permuted product by itself
 n = ast('(alpha*K) / (K*alpha) - 1').simplify();
 assert(eq_canon(n, ast('0')), 'permuted product self-division');
+
+% --- Pair-cancellation across flattened chains ---
+
+% Partial cancellation in a long sum
+n = ast('a + b - a').simplify();
+assert(eq_canon(n, ast('b')), 'a + b - a → b');
+
+% Partial cancellation of a permuted compound
+n = ast('((a + b) * c + d) - (d + c * (b + a))').simplify();
+assert(eq_canon(n, ast('0')), 'nested commutative chain cancels');
+
+% Multiple cancellations in one chain
+n = ast('a + b + c - a - b').simplify();
+assert(eq_canon(n, ast('c')), 'a + b + c - a - b → c');
+
+% Multiplicative pair-cancellation
+n = ast('(a * b * c) / (a * c)').simplify();
+assert(eq_canon(n, ast('b')), '(a*b*c) / (a*c) → b');
+
+% Inverse pushed through a product
+n = ast('a * b * (a*c)^(-1)').simplify();
+% pushes (a*c)^(-1) through * to a^(-1) * c^(-1), then cancels (a, a^(-1))
+% leaving b * c^(-1) (which renders as b/c)
+assert(eq_canon(n, ast('b / c')), 'a*b*(a*c)^(-1) → b/c');
+
+% Subtracting a negated expression: a - (-b) → a + b (no double-uminus left)
+n = ast('a - (-b)').simplify();
+assert(eq_canon(n, ast('a + b')), 'a - (-b) → a + b');
+
+% Double negation collapses
+n = ast('uminus', [], {ast('uminus', [], {ast('sym', 'x', {})})}).canonicalise();
+assert(ast.ast_equal(n, ast('sym', 'x', {})), 'canonicalise removes double negation');

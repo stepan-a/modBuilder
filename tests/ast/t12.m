@@ -27,12 +27,10 @@ n = ast('x + 5').canonicalise();
 expected = ast('5 + x');
 assert(ast.ast_equal(n, expected), 'numbers sort before symbols');
 
-% Commutativity detection works across forms: a*b - b*a → -(a*b) + a*b
-% (uminus operands sort before their non-negated twin, so it appears first).
+% Commutativity is detected across forms: a*b - b*a → 0 (both products
+% canonicalise to the same a*b shape, which is then pair-cancelled in the '+' chain).
 n = ast('a*b - b*a').canonicalise();
-inner = ast('a * b').canonicalise();
-expected = ast('binop', '+', {ast('uminus', [], {inner}), inner});
-assert(ast.ast_equal(n, expected), 'a*b and b*a canonicalise to the same a*b form');
+assert(ast.ast_equal(n, ast('num', 0, {})), 'a*b - b*a canonicalises to 0');
 
 % Idempotent: canonicalise(canonicalise(t)) == canonicalise(t)
 n1 = ast('alpha * x(-1) + beta').canonicalise();

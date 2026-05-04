@@ -1309,12 +1309,13 @@ classdef modBuilder < handle
         % REMARKS:
         % - Returns a partial matching when no perfect matching exists; the caller
         %   inspects unmatched_eqs / unmatched_vars to report the structural gap.
-        % - The cancellation filter is at its strongest when the caller passes
-        %   simplified residuals (i.e. trees produced by ast.staticise().simplify()).
-        %   Beyond multiplicative-factor cancellations (λ in λ·R·τ − λ·τ), the
-        %   simplify pass also collapses identities such as w/w → 1 and f − f → 0,
-        %   so a candidate that survives only as a self-cancelling sub-expression is
-        %   correctly excluded.
+        % - The constructor passes simplified static residuals (ast.staticise().simplify()):
+        %   the question that auto-matching answers is "which variable does this equation
+        %   pin down in the steady state?", since the equation/variable mapping is mainly
+        %   used downstream to assist the user in writing the analytical steady-state
+        %   block. Variables that disappear from the simplified static residual (e.g. c
+        %   inside a c(t)/c(t+1) factor in an Euler equation) are correctly excluded —
+        %   the steady state does not determine them through that equation.
         %
         % REFERENCES:
         % - Assignment problem (linear-sum bipartite matching):

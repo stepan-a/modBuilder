@@ -485,25 +485,45 @@ classdef ast
             for i = 1:numel(o.children)
                 o.children{i} = o.children{i}.canonicalise();
             end
+            if strcmp(o.type, 'uminus') && strcmp(o.children{1}.type, 'uminus')
+                % --x → x
+                o = o.children{1}.children{1};
+            end
             if strcmp(o.type, 'binop') && strcmp(o.value, '-')
-                o = ast('binop', '+', {o.children{1}, ast('uminus', [], {o.children{2}})});
+                % a - b → a + (-b), with the double-negation case a - (-b) → a + b
+                % handled by ast.negate so we never construct uminus(uminus(_)).
+                o = ast('binop', '+', {o.children{1}, ast.negate(o.children{2})});
             end
             if strcmp(o.type, 'binop') && strcmp(o.value, '/')
-                o = ast('binop', '*', {o.children{1}, ast('binop', '^', {o.children{2}, ast('num', -1, {})})});
+                % a / b → a · b^(-1), with the case a / b^(-1) → a · b handled by
+                % ast.invert so we never construct (b^(-1))^(-1).
+                o = ast('binop', '*', {o.children{1}, ast.invert(o.children{2})});
             end
             if strcmp(o.type, 'binop') && (strcmp(o.value, '+') || strcmp(o.value, '*'))
                 op = o.value;
                 operands = ast.flatten(o, op);
-                if numel(operands) > 1
-                    keys = cellfun(@ast.sort_key, operands, 'UniformOutput', false);
-                    [~, idx] = sort(keys);
-                    operands = operands(idx);
-                    result = operands{1};
-                    for i = 2:numel(operands)
-                        result = ast('binop', op, {result, operands{i}});
+                operands = ast.cancel_pairs(operands, op);
+                if isempty(operands)
+                    % All operands cancelled: '+'-chain reduces to 0, '*'-chain to 1.
+                    if strcmp(op, '+')
+                        o = ast('num', 0, {});
+                    else
+                        o = ast('num', 1, {});
                     end
-                    o = result;
+                    return
                 end
+                if isscalar(operands)
+                    o = operands{1};
+                    return
+                end
+                keys = cellfun(@ast.sort_key, operands, 'UniformOutput', false);
+                [~, idx] = sort(keys);
+                operands = operands(idx);
+                result = operands{1};
+                for i = 2:numel(operands)
+                    result = ast('binop', op, {result, operands{i}});
+                end
+                o = result;
             end
         end % function
 
@@ -918,16 +938,93 @@ classdef ast
         % - op   [char]   binary operator to flatten ('+' or '*')
         %
         % OUTPUTS:
-        % - operands  [cell]  1×k cell of subtrees that, combined with op, reproduce o.
+        % - operands  [cell]  1×k cell of subtrees that, combined with op, reproduce o
+        %                     (up to commutativity).
         %
         % REMARKS:
         % - Used by canonicalise and simplify on commutative operators ('+', '*') to
         %   normalise the chain shape and detect identical / cancelling subtrees.
+        % - For '+' chains, the function pushes a unary minus through inner '+' chains
+        %   (uminus(a + b + c) → [-a, -b, -c]) so that pair-cancellation can find
+        %   inverse operands across nested structure.
+        % - For '*' chains, the function similarly pushes ^(-1) through inner '*' chains
+        %   ((a · b · c)^(-1) → [a^(-1), b^(-1), c^(-1)]).
             if strcmp(o.type, 'binop') && strcmp(o.value, op)
                 operands = [ast.flatten(o.children{1}, op), ast.flatten(o.children{2}, op)];
-            else
-                operands = {o};
+                return
             end
+            if strcmp(op, '+') && strcmp(o.type, 'uminus') && strcmp(o.children{1}.type, 'binop') && strcmp(o.children{1}.value, '+')
+                inner = ast.flatten(o.children{1}, '+');
+                operands = cell(1, numel(inner));
+                for i = 1:numel(inner)
+                    operands{i} = ast.negate(inner{i});
+                end
+                return
+            end
+            if strcmp(op, '*') && strcmp(o.type, 'binop') && strcmp(o.value, '^') && ast.is_neg_one(o.children{2}) && strcmp(o.children{1}.type, 'binop') && strcmp(o.children{1}.value, '*')
+                inner = ast.flatten(o.children{1}, '*');
+                operands = cell(1, numel(inner));
+                for i = 1:numel(inner)
+                    operands{i} = ast.invert(inner{i});
+                end
+                return
+            end
+            operands = {o};
+        end % function
+
+        function n = negate(x)
+        % Return the canonical negation of x: uminus(x), with double-negation removed.
+            if strcmp(x.type, 'uminus')
+                n = x.children{1};
+            else
+                n = ast('uminus', [], {x});
+            end
+        end % function
+
+        function n = invert(x)
+        % Return the canonical multiplicative inverse of x: x^(-1), or x.children{1}
+        % when x is already y^(-1) (so applying invert twice is the identity).
+            if strcmp(x.type, 'binop') && strcmp(x.value, '^') && ast.is_neg_one(x.children{2})
+                n = x.children{1};
+            else
+                n = ast('binop', '^', {x, ast('num', -1, {})});
+            end
+        end % function
+
+        function b = is_inverse_pair(x, y, op)
+        % True iff x and y are inverse operands under op:
+        %   '+': y is uminus(x) or x is uminus(y) (additive inverses)
+        %   '*': y is x^(-1) or x is y^(-1)        (multiplicative inverses)
+            switch op
+                case '+'
+                    b = (strcmp(y.type, 'uminus') && ast.ast_equal(x, y.children{1})) || ...
+                        (strcmp(x.type, 'uminus') && ast.ast_equal(y, x.children{1}));
+                case '*'
+                    b = (strcmp(y.type, 'binop') && strcmp(y.value, '^') && ast.is_neg_one(y.children{2}) && ast.ast_equal(x, y.children{1})) || ...
+                        (strcmp(x.type, 'binop') && strcmp(x.value, '^') && ast.is_neg_one(x.children{2}) && ast.ast_equal(y, x.children{1}));
+                otherwise
+                    b = false;
+            end
+        end % function
+
+        function operands = cancel_pairs(operands, op)
+        % Remove inverse pairs from a flat operand list of a '+' or '*' chain.
+        % A linear scan with one-shot pairing per element; commutativity is exploited
+        % by treating the operand list as a multiset.
+            n = numel(operands);
+            canceled = false(1, n);
+            for i = 1:n
+                if canceled(i), continue; end
+                for j = i+1:n
+                    if canceled(j), continue; end
+                    if ast.is_inverse_pair(operands{i}, operands{j}, op)
+                        canceled(i) = true;
+                        canceled(j) = true;
+                        break
+                    end
+                end
+            end
+            operands = operands(~canceled);
         end % function
 
         function k = sort_key(o)
