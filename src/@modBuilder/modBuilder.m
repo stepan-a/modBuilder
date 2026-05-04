@@ -2011,6 +2011,9 @@ classdef modBuilder < handle
                         o.params{length(idp)+1,modBuilder.COL_VALUE} = pvalue;
                         o.params{length(idp)+1,modBuilder.COL_LONG_NAME} = long_name;
                         o.params{length(idp)+1,modBuilder.COL_TEX_NAME} = texname;
+
+                        % Mark symbol tables as dirty (untyped → parameter promotion)
+                        o.tables_dirty = true;
                     end
                 end
 
@@ -2130,6 +2133,9 @@ classdef modBuilder < handle
                         o.varexo{length(idx)+1,modBuilder.COL_VALUE} = xvalue;
                         o.varexo{length(idx)+1,modBuilder.COL_LONG_NAME} = long_name;
                         o.varexo{length(idx)+1,modBuilder.COL_TEX_NAME} = texname;
+
+                        % Mark symbol tables as dirty (untyped → exogenous promotion)
+                        o.tables_dirty = true;
                     end
                 end
 
