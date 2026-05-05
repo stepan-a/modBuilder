@@ -1,4 +1,4 @@
-% Tier 1 — joint AR(1): two equations mutually referencing each other plus self-references.
+% steady_plan: joint AR(1): two equations mutually referencing each other plus self-references.
 % Expected: a single SCC of size 2.
 
 m = modBuilder();

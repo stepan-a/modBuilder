@@ -4983,11 +4983,14 @@ classdef modBuilder < handle
         %
         % OUTPUT:
         % - blocks    [struct array]   one entry per SCC, in topological order:
-        %               .vars     [cell]   endogenous variable names in the block
-        %               .eqs      [cell]   equation names paired to those vars (= .vars in this codebase)
-        %               .kind     [char]   'trivial' | 'self-recursive' | 'simultaneous'
-        %               .deps     [cell]   already-solved endogenous names referenced from this block
-        %               .extdeps  [cell]   parameter / exogenous names referenced from this block
+        %               .vars         [cell]    endogenous variable names in the block
+        %               .eqs          [cell]    equation names paired to those vars (= .vars in this codebase)
+        %               .kind         [char]    'trivial' | 'self-recursive' | 'simultaneous'
+        %               .deps         [cell]    already-solved endogenous names referenced from this block
+        %               .extdeps      [cell]    parameter / exogenous names referenced from this block
+        %               .closed_form  [struct]  for singleton blocks where ast.isolate could derive a
+        %                                       closed form: struct with fields .var (char) and .expr
+        %                                       (char, the RHS). Empty otherwise.
         %
         % REMARKS:
         % - 'trivial':         single equation, the paired variable does not appear in its own equation
@@ -4995,12 +4998,12 @@ classdef modBuilder < handle
         % - 'self-recursive':  single equation, the paired variable appears in its own equation (typically
         %                      via a lag, so the equation staticises to an equation in the variable itself).
         % - 'simultaneous':    SCC of size > 1; the variables are jointly determined by the equations and
-        %                      require either further reduction (Tier 2 / Tier 3) or a numerical solver.
+        %                      require either further symbolic reduction or a numerical solver.
         % - The dependency analysis collects symbol names from each equation via the AST, regardless of
         %   lag. The static dependency graph and its SCC structure are identical to what one obtains by
         %   first staticising every equation, since name equality is unchanged by staticise.
-        % - The plan is purely structural: no closed forms, no numerical evaluation. Tier 2 / Tier 3
-        %   would extend it.
+        % - For singleton blocks (trivial / self-recursive), ast.isolate is invoked on the static residual
+        %   to derive a closed form. Simultaneous blocks are left without a closed form.
 
             if o.tables_dirty
                 o.updatesymboltables();
@@ -5123,7 +5126,8 @@ classdef modBuilder < handle
                     end
                 end
 
-                % Tier 2-A: linear isolation for singleton (trivial / self-recursive) blocks.
+                % Closed-form isolation for singleton (trivial / self-recursive) blocks via
+                % ast.isolate (linear / monomial / invertible-call recognisers).
                 cf = [];
                 if numel(members) == 1
                     i = members(1);
@@ -5139,13 +5143,9 @@ classdef modBuilder < handle
                     else
                         f = [];
                     end
-                    if ~isempty(f) && f.is_linear_in(var)
-                        [a_coef, b_const] = f.split_linear(var);
-                        % Drop pairings where the variable's coefficient folds to 0 — the
-                        % equation is independent of the variable and pins nothing.
-                        if ~(strcmp(a_coef.type, 'num') && a_coef.value == 0)
-                            neg_b = ast.negate_sum(b_const);
-                            rhs_tree = ast('binop', '/', {neg_b, a_coef}).simplify();
+                    if ~isempty(f)
+                        rhs_tree = f.isolate(var);
+                        if ~isempty(rhs_tree)
                             cf = struct('var', var, 'expr', rhs_tree.string());
                         end
                     end
@@ -5170,10 +5170,8 @@ classdef modBuilder < handle
         % REMARKS:
         % - Each block is shown with its kind, its variable(s), the already-solved endogenous
         %   variables it depends on, and its external constants (parameters / exogenous).
-        % - For singleton blocks (trivial / self-recursive), the linear-isolation pass (Tier 2-A)
-        %   may have produced a closed-form assignment; if so, it is rendered as "x = expr".
-        % - 'simultaneous' blocks are flagged "needs solver" — Tier 1+2-A do no joint reduction;
-        %   Tier 3 may close some of them in a follow-up.
+        % - When ast.isolate produced a closed form for a singleton block, it is rendered as
+        %   "x = expr". Otherwise, simultaneous blocks are flagged "needs solver".
             if nargin < 2
                 blocks = o.steady_plan();
             end
@@ -5218,10 +5216,10 @@ classdef modBuilder < handle
         %
         % REMARKS:
         % - Iterates over the plan in topological order and calls m.steady(var, expr) for
-        %   every block whose closed_form is non-empty (currently: trivial / self-recursive
-        %   singletons that the Tier 2-A linear isolation pass closed).
-        % - simultaneous blocks are skipped — Tier 1+2-A do not reduce them; the user must
-        %   either provide steady-state values manually (m.steady) or call m.solve_system.
+        %   every block whose closed_form is non-empty (singleton blocks where ast.isolate
+        %   could derive a closed form).
+        % - Simultaneous blocks are skipped; the user must provide steady-state values
+        %   manually (m.steady) or call m.solve_system.
         % - m.steady replaces an existing entry in place, so calling apply_steady_plan twice
         %   is idempotent for the closed-form blocks.
             if nargin < 2

@@ -1,4 +1,4 @@
-% Tier 1 — single AR(1) equation: self-recursive block (the variable appears at a lag in
+% steady_plan: single AR(1) equation: self-recursive block (the variable appears at a lag in
 % its own equation, so the static form references the variable on both sides).
 
 m = modBuilder();

@@ -629,6 +629,203 @@ classdef ast
             b = ast.sum_of(b_terms).simplify();
         end % function
 
+        function tf = is_monomial_in(o, x)
+        % Test whether the tree has the form α·x^d + β with α, β, d independent of x,
+        % and at least one term containing x (so the split is meaningful).
+        %
+        % INPUTS:
+        % - o   [ast]    tree to test
+        % - x   [char]   symbol name
+        %
+        % OUTPUTS:
+        % - tf  [logical] true iff o = α·x^d + β with α and d both x-free, x present.
+        %
+        % REMARKS:
+        % - Canonicalises and simplifies first, so x · x^n → x^(n+1) and constant-folding
+        %   are applied before the structural check.
+        % - Each x-bearing term must be of the form coef · x or coef · x^d (possibly with
+        %   uminus). All x-bearing terms must share the SAME exponent d.
+        % - The d=1 case overlaps with is_linear_in; both return true for that case.
+        % - x inside a 'call' (e.g. exp(x)), in a denominator, or appearing more than
+        %   once in a single term breaks the monomial structure.
+            o = o.canonicalise().simplify();
+            terms = ast.flatten(o, '+');
+            d_seen = [];
+            has_x = false;
+            for i = 1:numel(terms)
+                t = terms{i};
+                nx = ast.count_occurrences(t, x);
+                if nx == 0
+                    continue
+                end
+                if nx > 1
+                    tf = false; return
+                end
+                [ok, ~, d_t] = ast.extract_monomial(t, x);
+                if ~ok
+                    tf = false; return
+                end
+                if isempty(d_seen)
+                    d_seen = d_t;
+                    has_x = true;
+                elseif ~ast.ast_equal(d_seen, d_t)
+                    tf = false; return
+                end
+            end
+            tf = has_x;
+        end % function
+
+        function [a, d, b] = split_monomial(o, x)
+        % Decompose o = a · x^d + b. Errors if not monomial in x.
+        %
+        % OUTPUTS:
+        % - a   [ast]    coefficient of x^d (independent of x)
+        % - d   [ast]    exponent (independent of x)
+        % - b   [ast]    x-free additive constant
+        %
+        % REMARKS:
+        % - The closed form for o = 0 is x = (-b/a)^(1/d).
+        % - When several x-bearing terms share the same exponent (e.g. 2·x^d + 3·x^d),
+        %   their coefficients are summed into a; this matches what split_linear does
+        %   for d = 1.
+            if ~o.is_monomial_in(x)
+                error('ast:split_monomial', 'Expression is not monomial in "%s".', x);
+            end
+            o = o.canonicalise().simplify();
+            terms = ast.flatten(o, '+');
+            a_terms = {};
+            b_terms = {};
+            d = [];
+            for i = 1:numel(terms)
+                t = terms{i};
+                if ast.count_occurrences(t, x) == 0
+                    b_terms{end+1} = t; %#ok<AGROW>
+                else
+                    [~, coef, d_t] = ast.extract_monomial(t, x);
+                    a_terms{end+1} = coef; %#ok<AGROW>
+                    if isempty(d)
+                        d = d_t;
+                    end
+                end
+            end
+            a = ast.sum_of(a_terms).simplify();
+            b = ast.sum_of(b_terms).simplify();
+        end % function
+
+        function tf = is_invertible_call_in(o, x)
+        % Test whether the tree has the form coef · f(P(x)) + rest with f ∈ {exp, log},
+        % P(x) linear or monomial in x, and x not appearing elsewhere.
+        %
+        % REMARKS:
+        % - The allowlist is intentionally small; multi-branch transcendentals (sin, cos)
+        %   are excluded because their inverses are set-valued.
+        % - Used by ast.isolate to unwrap exp/log wrappers around the unknown before
+        %   delegating to the linear or monomial recogniser on the inverted equation.
+            o = o.canonicalise().simplify();
+            terms = ast.flatten(o, '+');
+            x_term = [];
+            for i = 1:numel(terms)
+                t = terms{i};
+                if ast.count_occurrences(t, x) > 0
+                    if ~isempty(x_term)
+                        tf = false; return
+                    end
+                    x_term = t;
+                end
+            end
+            if isempty(x_term)
+                tf = false; return
+            end
+            [tf, ~, ~, ~] = ast.extract_call_factor(x_term, x);
+        end % function
+
+        function [fname, P, coef, rest] = split_invertible_call(o, x)
+        % Decompose o into (fname, P, coef, rest) such that o = coef · fname(P) + rest,
+        % where fname ∈ {exp, log}, P is linear or monomial in x, and x appears nowhere
+        % else. Errors if no such decomposition exists.
+        %
+        % REMARKS:
+        % - Setting o = 0 gives fname(P) = -rest/coef, hence P = fname^{-1}(-rest/coef);
+        %   ast.isolate then recurses on P - fname^{-1}(-rest/coef) to extract x.
+            if ~o.is_invertible_call_in(x)
+                error('ast:split_invertible_call', 'Expression is not in invertible-call form for "%s".', x);
+            end
+            o = o.canonicalise().simplify();
+            terms = ast.flatten(o, '+');
+            x_term = [];
+            rest_terms = {};
+            for i = 1:numel(terms)
+                t = terms{i};
+                if ast.count_occurrences(t, x) > 0
+                    x_term = t;
+                else
+                    rest_terms{end+1} = t; %#ok<AGROW>
+                end
+            end
+            [~, fname, P, coef] = ast.extract_call_factor(x_term, x);
+            rest = ast.sum_of(rest_terms).simplify();
+        end % function
+
+        function rhs = isolate(o, x)
+        % Try to isolate x from the equation o = 0, returning an AST tree for x or [].
+        %
+        % INPUTS:
+        % - o   [ast]    tree representing the static residual; the equation is o = 0
+        % - x   [char]   symbol name of the variable to isolate
+        %
+        % OUTPUTS:
+        % - rhs [ast]    AST such that x = rhs is structurally equivalent, or [] if no
+        %                recogniser applies.
+        %
+        % REMARKS:
+        % - Tries the invertible-call recogniser first; if it succeeds, recurses on the
+        %   inverted equation. Then the linear recogniser, then the monomial one. The
+        %   order matters: unwrapping a call often exposes a linear or monomial pattern
+        %   that the next recogniser then handles.
+        % - Returns [] when the variable's coefficient folds to 0 (the equation does not
+        %   actually pin x) or when none of the recognisers apply.
+            o = o.canonicalise().simplify();
+
+            % Invertible-call recogniser
+            if o.is_invertible_call_in(x)
+                [fname, P, coef, rest] = o.split_invertible_call(x);
+                target = ast.neg_div(rest, coef);
+                switch fname
+                    case 'exp'
+                        inv_target = ast('call', 'log', {target});
+                    case 'log'
+                        inv_target = ast('call', 'exp', {target});
+                    otherwise
+                        rhs = []; return
+                end
+                residual = ast('binop', '-', {P, inv_target});
+                rhs = residual.isolate(x);
+                return
+            end
+
+            % Linear recogniser
+            if o.is_linear_in(x)
+                [a, b] = o.split_linear(x);
+                if ~(strcmp(a.type, 'num') && a.value == 0)
+                    rhs = ast.neg_div(b, a).simplify();
+                    return
+                end
+            end
+
+            % Monomial recogniser
+            if o.is_monomial_in(x)
+                [a, d, b] = o.split_monomial(x);
+                if ~(strcmp(a.type, 'num') && a.value == 0)
+                    base = ast.neg_div(b, a);
+                    inv_d = ast('binop', '/', {ast('num', 1, {}), d});
+                    rhs = ast('binop', '^', {base, inv_d}).simplify();
+                    return
+                end
+            end
+
+            rhs = [];
+        end % function
+
         function names = symbol_names(o)
         % Return the unique set of symbol names referenced in the tree.
         %
@@ -1386,6 +1583,19 @@ classdef ast
             end
         end % function
 
+        function r = neg_div(num, denom)
+        % Build -num/denom with sign normalisation: when denom is uminus(d'), the two
+        % minuses cancel and the result is num/d'. Otherwise this returns negate_sum(num)/denom.
+        % The local simplify pass cannot reduce (-num)/(-d') because (-d')^(-1) does not fold to
+        % -(d'^(-1)) in general — so callers that compute "-num/denom" need this helper to keep
+        % the rendered closed form clean.
+            if strcmp(denom.type, 'uminus')
+                r = ast('binop', '/', {num, denom.children{1}});
+            else
+                r = ast('binop', '/', {ast.negate_sum(num), denom});
+            end
+        end % function
+
         function n = invert(x)
         % Return the canonical multiplicative inverse of x: x^(-1), or x.children{1}
         % when x is already y^(-1) (so applying invert twice is the identity).
@@ -1726,6 +1936,132 @@ classdef ast
                     for i = 1:numel(o.children)
                         n = n + ast.count_occurrences(o.children{i}, x);
                     end
+            end
+        end % function
+
+        function [ok, coef, d] = extract_monomial(t, x)
+        % From a term containing x at most once, identify the structure t = coef · x^d.
+        % Returns ok = false when the term cannot be matched (e.g. x inside a 'call',
+        % x in a non-constant exponent, more than one x-bearing factor in a '*' chain).
+            switch t.type
+                case 'sym'
+                    if strcmp(t.value, x)
+                        ok = true; coef = ast('num', 1, {}); d = ast('num', 1, {});
+                    else
+                        ok = false; coef = []; d = [];
+                    end
+                case 'tsym'
+                    if strcmp(t.value{1}, x)
+                        ok = true; coef = ast('num', 1, {}); d = ast('num', 1, {});
+                    else
+                        ok = false; coef = []; d = [];
+                    end
+                case 'uminus'
+                    [ok, inner_coef, d] = ast.extract_monomial(t.children{1}, x);
+                    if ok
+                        coef = ast.negate(inner_coef);
+                    else
+                        coef = [];
+                    end
+                case 'binop'
+                    switch t.value
+                        case '*'
+                            factors = ast.flatten(t, '*');
+                            nonx = {};
+                            x_factor = [];
+                            for k = 1:numel(factors)
+                                f = factors{k};
+                                if ast.count_occurrences(f, x) > 0
+                                    if ~isempty(x_factor)
+                                        ok = false; coef = []; d = []; return
+                                    end
+                                    x_factor = f;
+                                else
+                                    nonx{end+1} = f; %#ok<AGROW>
+                                end
+                            end
+                            if isempty(x_factor)
+                                ok = false; coef = []; d = []; return
+                            end
+                            [ok_inner, inner_coef, d_inner] = ast.extract_monomial(x_factor, x);
+                            if ~ok_inner
+                                ok = false; coef = []; d = []; return
+                            end
+                            coef_factors = nonx;
+                            if ~(strcmp(inner_coef.type, 'num') && inner_coef.value == 1)
+                                coef_factors{end+1} = inner_coef; %#ok<AGROW>
+                            end
+                            coef = ast.product_of(coef_factors);
+                            d = d_inner;
+                            ok = true;
+                        case '^'
+                            base = t.children{1};
+                            exp_node = t.children{2};
+                            if ast.count_occurrences(exp_node, x) > 0 || ast.count_occurrences(base, x) ~= 1
+                                ok = false; coef = []; d = []; return
+                            end
+                            if (strcmp(base.type, 'sym') && strcmp(base.value, x)) || ...
+                               (strcmp(base.type, 'tsym') && strcmp(base.value{1}, x))
+                                ok = true; coef = ast('num', 1, {}); d = exp_node;
+                            else
+                                ok = false; coef = []; d = [];
+                            end
+                        otherwise
+                            ok = false; coef = []; d = [];
+                    end
+                otherwise
+                    ok = false; coef = []; d = [];
+            end
+        end % function
+
+        function [ok, fname, P, coef] = extract_call_factor(t, x)
+        % Identify a term as coef · f(P(x)) with f ∈ {exp, log} and x appearing only
+        % inside f. Returns ok = false otherwise.
+            switch t.type
+                case 'call'
+                    if (strcmp(t.value, 'exp') || strcmp(t.value, 'log')) && numel(t.children) == 1 && ...
+                       ast.count_occurrences(t.children{1}, x) > 0
+                        ok = true; fname = t.value; P = t.children{1}; coef = ast('num', 1, {});
+                    else
+                        ok = false; fname = ''; P = []; coef = [];
+                    end
+                case 'uminus'
+                    [ok_inner, fname, P, inner_coef] = ast.extract_call_factor(t.children{1}, x);
+                    if ok_inner
+                        coef = ast.negate(inner_coef);
+                        ok = true;
+                    else
+                        ok = false; coef = [];
+                    end
+                case 'binop'
+                    if ~strcmp(t.value, '*')
+                        ok = false; fname = ''; P = []; coef = []; return
+                    end
+                    factors = ast.flatten(t, '*');
+                    nonx = {};
+                    x_factor = [];
+                    for k = 1:numel(factors)
+                        f = factors{k};
+                        if ast.count_occurrences(f, x) > 0
+                            if ~isempty(x_factor)
+                                ok = false; fname = ''; P = []; coef = []; return
+                            end
+                            x_factor = f;
+                        else
+                            nonx{end+1} = f; %#ok<AGROW>
+                        end
+                    end
+                    if isempty(x_factor) || ~strcmp(x_factor.type, 'call') || ...
+                       ~(strcmp(x_factor.value, 'exp') || strcmp(x_factor.value, 'log')) || ...
+                       numel(x_factor.children) ~= 1
+                        ok = false; fname = ''; P = []; coef = []; return
+                    end
+                    ok = true;
+                    fname = x_factor.value;
+                    P = x_factor.children{1};
+                    coef = ast.product_of(nonx);
+                otherwise
+                    ok = false; fname = ''; P = []; coef = [];
             end
         end % function
 

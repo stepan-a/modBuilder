@@ -1,4 +1,4 @@
-% Tier 1 — two equations in a recursive chain: AR(1) for a, then y depending on a.
+% steady_plan: two equations in a recursive chain: AR(1) for a, then y depending on a.
 % Expected order: a (self-recursive, no endo deps) before y (trivial, depends on a).
 
 m = modBuilder();

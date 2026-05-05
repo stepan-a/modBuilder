@@ -1,4 +1,4 @@
-% Tier 1 — print_steady_plan smoke test: must not error and must produce non-empty output.
+% print_steady_plan smoke test: must not error and must produce non-empty output.
 
 m = modBuilder();
 m.add('y', 'y = exp(a)*k^alpha');

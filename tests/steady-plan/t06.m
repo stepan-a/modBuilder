@@ -1,4 +1,4 @@
-% Tier 1 — full rbc3 model: joint AR {a, b} plus the four-variable simultaneous block
+% steady_plan: full rbc3 model: joint AR {a, b} plus the four-variable simultaneous block
 % {y, c, h, k}. The plan should expose exactly those two SCCs in topological order.
 
 m = modBuilder();

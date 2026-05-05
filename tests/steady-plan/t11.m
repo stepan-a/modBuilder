@@ -1,4 +1,4 @@
-% Tier 2-A — apply_steady_plan writes closed forms into o.steady_state.
+% apply_steady_plan writes closed forms into o.steady_state.
 
 addpath ../utils
 

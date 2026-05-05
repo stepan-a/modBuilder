@@ -1,4 +1,4 @@
-% Tier 1 — single equation, no self-reference: trivial block.
+% steady_plan: single equation, no self-reference: trivial block.
 
 m = modBuilder();
 m.add('y', 'y = alpha*x');

@@ -1,4 +1,4 @@
-% Tier 2-A — closed-form linear isolation in trivial blocks.
+% steady_plan: closed-form linear isolation in trivial blocks.
 
 addpath ../utils
 

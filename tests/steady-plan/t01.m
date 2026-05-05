@@ -1,4 +1,4 @@
-% Tier 1 — empty model returns an empty plan struct array.
+% steady_plan: empty model returns an empty plan struct array.
 
 m = modBuilder();
 plan = m.steady_plan();

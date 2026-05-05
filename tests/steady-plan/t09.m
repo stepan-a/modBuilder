@@ -1,4 +1,4 @@
-% Tier 2-A — closed-form linear isolation in self-recursive AR(1) block:
+% steady_plan: closed-form linear isolation in self-recursive AR(1) block:
 % a = rho*a(-1) + e  must collapse to a = e/(1-rho).
 
 addpath ../utils

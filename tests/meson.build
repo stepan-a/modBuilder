@@ -72,6 +72,9 @@ listoftests = [
   'ast/t17',
   'ast/t18',
   'ast/t19',
+  'ast/t20',
+  'ast/t21',
+  'ast/t22',
   'solvers/t00.m',
   'solvers/t01.m',
   'solvers/t02.m',
@@ -255,6 +258,8 @@ listoftests = [
   'steady-plan/t09.m',
   'steady-plan/t10.m',
   'steady-plan/t11.m',
+  'steady-plan/t12.m',
+  'steady-plan/t13.m',
   'examples/steady.m',
 ]
 
