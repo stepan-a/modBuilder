@@ -4977,6 +4977,201 @@ classdef modBuilder < handle
             end
         end % function
 
+        function blocks = steady_plan(o)
+        % Compute the structural steady-state plan: SCC decomposition of the dependency graph
+        % induced by the variable↔equation pairing.
+        %
+        % OUTPUT:
+        % - blocks    [struct array]   one entry per SCC, in topological order:
+        %               .vars     [cell]   endogenous variable names in the block
+        %               .eqs      [cell]   equation names paired to those vars (= .vars in this codebase)
+        %               .kind     [char]   'trivial' | 'self-recursive' | 'simultaneous'
+        %               .deps     [cell]   already-solved endogenous names referenced from this block
+        %               .extdeps  [cell]   parameter / exogenous names referenced from this block
+        %
+        % REMARKS:
+        % - 'trivial':         single equation, the paired variable does not appear in its own equation
+        %                      (no self-reference at any lag). Solvable in one step in the recursive order.
+        % - 'self-recursive':  single equation, the paired variable appears in its own equation (typically
+        %                      via a lag, so the equation staticises to an equation in the variable itself).
+        % - 'simultaneous':    SCC of size > 1; the variables are jointly determined by the equations and
+        %                      require either further reduction (Tier 2 / Tier 3) or a numerical solver.
+        % - The dependency analysis collects symbol names from each equation via the AST, regardless of
+        %   lag. The static dependency graph and its SCC structure are identical to what one obtains by
+        %   first staticising every equation, since name equality is unchanged by staticise.
+        % - The plan is purely structural: no closed forms, no numerical evaluation. Tier 2 / Tier 3
+        %   would extend it.
+
+            if o.tables_dirty
+                o.updatesymboltables();
+            end
+
+            n = size(o.equations, 1);
+            blocks = struct('vars', {}, 'eqs', {}, 'kind', {}, 'deps', {}, 'extdeps', {});
+            if n == 0
+                return
+            end
+
+            var_names = o.equations(:, modBuilder.EQ_COL_NAME);
+            var_idx = containers.Map(var_names, num2cell(1:n));
+
+            % Collect the symbol names referenced by each equation (via AST) and partition into
+            % endogenous deps vs external constants (parameters / exogenous).
+            % LHS-as-bare-paired-variable (the standard "y = expr" form) does not count as a
+            % self-reference: the LHS occurrence is the equation's pairing target, not a use.
+            endo_deps = cell(n, 1);
+            ext_deps = cell(n, 1);
+            for i = 1:n
+                eqname_i = var_names{i};
+                eq_str = o.equations{i, modBuilder.EQ_COL_EXPR};
+                LHSRHS = strsplit(eq_str, '=');
+                names = {};
+                if isscalar(LHSRHS)
+                    names = ast(strtrim(LHSRHS{1})).symbol_names();
+                elseif length(LHSRHS) == 2
+                    lhs_tree = ast(strtrim(LHSRHS{1}));
+                    rhs_tree = ast(strtrim(LHSRHS{2}));
+                    if strcmp(lhs_tree.type, 'sym') && strcmp(lhs_tree.value, eqname_i)
+                        % "y = expr" form: skip the bare LHS use of y.
+                        names = rhs_tree.symbol_names();
+                    else
+                        names = unique([lhs_tree.symbol_names(), rhs_tree.symbol_names()], 'stable');
+                    end
+                end
+                names = unique(names, 'stable');
+                en = {}; ex = {};
+                for k = 1:numel(names)
+                    s = names{k};
+                    if isKey(var_idx, s)
+                        en{end+1} = s; %#ok<AGROW>
+                    elseif o.isparameter(s) || o.isexogenous(s)
+                        ex{end+1} = s; %#ok<AGROW>
+                    end
+                end
+                endo_deps{i} = en;
+                ext_deps{i} = ex;
+            end
+
+            % Build the directed dependency graph: edge j -> i if x_j ∈ endo_deps(i) and j ≠ i.
+            src = []; tgt = [];
+            for i = 1:n
+                for k = 1:numel(endo_deps{i})
+                    j_name = endo_deps{i}{k};
+                    j = var_idx(j_name);
+                    if j ~= i
+                        src(end+1) = j; %#ok<AGROW>
+                        tgt(end+1) = i; %#ok<AGROW>
+                    end
+                end
+            end
+            G = digraph(src, tgt, [], n);
+
+            % Strongly connected components and their topological ordering.
+            bins = conncomp(G, 'Type', 'strong');
+            n_scc = max(bins);
+
+            csrc = []; ctgt = [];
+            for e = 1:numedges(G)
+                [s, t] = findedge(G, e);
+                if bins(s) ~= bins(t)
+                    csrc(end+1) = bins(s); %#ok<AGROW>
+                    ctgt(end+1) = bins(t); %#ok<AGROW>
+                end
+            end
+            if isempty(csrc)
+                ord = 1:n_scc;
+            else
+                Gc = simplify(digraph(csrc, ctgt, [], n_scc));
+                ord = toposort(Gc);
+            end
+
+            % Group equation indices by SCC, in topological order.
+            for k = 1:numel(ord)
+                members = find(bins == ord(k));
+                vs = var_names(members)';
+                if isrow(vs)
+                    vars_block = vs;
+                else
+                    vars_block = vs';
+                end
+
+                if numel(members) > 1
+                    kind = 'simultaneous';
+                else
+                    i = members(1);
+                    if ismember(var_names{i}, endo_deps{i})
+                        kind = 'self-recursive';
+                    else
+                        kind = 'trivial';
+                    end
+                end
+
+                already_solved = {};
+                consts = {};
+                for ii = members(:)'
+                    for s_cell = endo_deps{ii}
+                        s = s_cell{1};
+                        if ~ismember(s, vars_block) && ~ismember(s, already_solved)
+                            already_solved{end+1} = s; %#ok<AGROW>
+                        end
+                    end
+                    for s_cell = ext_deps{ii}
+                        s = s_cell{1};
+                        if ~ismember(s, consts)
+                            consts{end+1} = s; %#ok<AGROW>
+                        end
+                    end
+                end
+
+                blocks(end+1).vars = vars_block; %#ok<AGROW>
+                blocks(end).eqs = vars_block;
+                blocks(end).kind = kind;
+                blocks(end).deps = already_solved;
+                blocks(end).extdeps = consts;
+            end
+        end % function
+
+        function print_steady_plan(o, blocks)
+        % Render the structural steady-state plan as a human-readable summary.
+        %
+        % INPUTS:
+        % - o        [modBuilder]
+        % - blocks   [struct array]   optional; if omitted, computed by o.steady_plan().
+        %
+        % REMARKS:
+        % - Each block is shown with its kind, its variable(s), the already-solved endogenous
+        %   variables it depends on, and its external constants (parameters / exogenous).
+        % - 'simultaneous' blocks are flagged "needs solver" — Tier 1 does no algebraic reduction;
+        %   Tier 2 / Tier 3 may close some of them in a follow-up.
+            if nargin < 2
+                blocks = o.steady_plan();
+            end
+
+            modBuilder.dprintf('Steady-state plan: %d block(s)', numel(blocks));
+            modBuilder.skipline();
+
+            for k = 1:numel(blocks)
+                b = blocks(k);
+                if strcmp(b.kind, 'simultaneous')
+                    label = sprintf('[simultaneous, %d vars]', numel(b.vars));
+                else
+                    label = sprintf('[%s]', b.kind);
+                end
+                modBuilder.dprintf('  Block %d %s', k, label);
+                modBuilder.dprintf('    vars: %s', strjoin(b.vars, ', '));
+                if ~isempty(b.deps)
+                    modBuilder.dprintf('    depends on (already solved): %s', strjoin(b.deps, ', '));
+                end
+                if ~isempty(b.extdeps)
+                    modBuilder.dprintf('    external constants: %s', strjoin(b.extdeps, ', '));
+                end
+                if strcmp(b.kind, 'simultaneous')
+                    modBuilder.dprintf('    -- numerical solver required --');
+                end
+                modBuilder.skipline();
+            end
+        end % function
+
         function o = solve(o, eqname, sname, sinit)
         % Numerically solve an equation for a symbol (parameter, endogenous, or exogenous)
         %

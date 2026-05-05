@@ -242,6 +242,13 @@ listoftests = [
   'steady-state-model/t13.m',
   'steady-state-model/t14.m',
   'steady-state-model/t15.m',
+  'steady-plan/t01.m',
+  'steady-plan/t02.m',
+  'steady-plan/t03.m',
+  'steady-plan/t04.m',
+  'steady-plan/t05.m',
+  'steady-plan/t06.m',
+  'steady-plan/t07.m',
   'examples/steady.m',
 ]
 

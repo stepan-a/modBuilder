@@ -572,6 +572,38 @@ classdef ast
             end
         end % function
 
+        function names = symbol_names(o)
+        % Return the unique set of symbol names referenced in the tree.
+        %
+        % OUTPUTS:
+        % - names   [cell]   1×k cell of unique char arrays, in encounter order
+        %
+        % REMARKS:
+        % - Includes 'sym' (the name), 'tsym' (the variable name, lag dropped) and 'ss'
+        %   (the wrapped name) leaves.
+        % - Does NOT include 'call' function names (e.g. 'exp', 'log').
+        % - Used by modBuilder.steady_plan to discover which endogenous variables a
+        %   given equation depends on, regardless of lag.
+            accum = {};
+            accum = walk(o, accum);
+            names = unique(accum, 'stable');
+
+            function acc = walk(node, acc)
+                switch node.type
+                    case 'sym'
+                        acc{end+1} = node.value;
+                    case 'tsym'
+                        acc{end+1} = node.value{1};
+                    case 'ss'
+                        acc{end+1} = node.value;
+                    otherwise
+                        for j = 1:numel(node.children)
+                            acc = walk(node.children{j}, acc);
+                        end
+                end
+            end
+        end % function
+
         function o = canonicalise(o)
         % Return a canonical form of the tree.
         %
