@@ -130,8 +130,7 @@
 \makeatletter
 \@ifclassloaded{beamer}{
 \setbeamertemplate{footline}{
-  {\hfill\vspace*{1pt}\href{https://creativecommons.org/publicdomain/zero/1.0/}{\cczero}\hspace{.1cm}
-    \href{https://mnemosyne.ithaca.fr/stephane/ispra-2025}{\faCodeFork}\enspace--\enspace\today\enspace
+  {\hfill\vspace*{1pt}\href{https://creativecommons.org/publicdomain/zero/1.0/}{\cczero}\hspace{.1cm}\today\enspace
   }}
 \setbeamertemplate{navigation symbols}{}
 \setbeamertemplate{blocks}[rounded][shadow=true]
@@ -153,7 +152,7 @@
 
 \title{modBuilder}
 \author[]{\texttt{stephane.adjemian@univ-lemans.fr}}
-\date{October,  2025}
+\date{May,  2026}
 
 \begin{frame}
   \titlepage{}
@@ -260,24 +259,15 @@ model =
 \begin{frame}[fragile]
   \frametitle{Instantiate a model from a \texttt{.mod} file -- III' --}
 
+  \begin{itemize}
+  \item When the JSON has no equation \texttt{name} tag, the constructor auto-matches each equation to one of the endogenous variables it contains by bipartite matching, with a static-cancellation filter that skips variables which drop out at the steady state. No tag preparation needed.
+  \end{itemize}
+
+  \medskip
+
   \begin{lstlisting}[style=MatlabConsole]
 
-    >> dynare rbc12b json=compute
-    ...
-    >> model = modBuilder(M_, oo_, 'rbc12b/model/json/modfile-original.json', 'endogenous')
-
-model =
-
-  modBuilder with properties:
-
-       params: {8x4 cell}
-       varexo: {2x4 cell}
-          var: {6x4 cell}
-         tags: [1x1 struct]
-      symbols: {1x0 cell}
-    equations: {6x2 cell}
-            T: [1x1 struct]
-         date: 04-Oct-2025 09:26:43
+    >> model = modBuilder(M_, oo_, 'rbc12b/model/json/modfile-original.json');
    \end{lstlisting}
 
 \end{frame}
@@ -415,17 +405,13 @@ model =
   \frametitle{Change an equation}
 
   \begin{itemize}
-  \item \verb+change+ method: change a whole equation.
-  \item \verb+subs+ method: substitute an expression in a set of equations.
-  \item \verb+substitute+ method: same as \verb+subs+ but with a regular expression.
-  \item \verb+rename+ method: rename a symbol in all equations.
+  \item \verb+change+ method: replace a whole equation.
+  \item \verb+subs+ method: replace an expression by another expression. Both arguments are parsed into AST trees, so the replacement is precedence-safe and lag-aware: substituting \verb+mc+ by \verb+w/mpl+ correctly rewrites \verb+mc(-1)+ as \verb+w(-1)/mpl(-1)+.
+  \item \verb+substitute+ method: regex-based rewrite on the equation text. Use when the target is a textual pattern (e.g.\ an indexed family) rather than a parsable expression. Warns when the target is a single symbol that \verb+subs+ would handle better.
+  \item \verb+rename+ method: rename a symbol in all equations (preserves lag and \verb+STEADY_STATE+ wrapping).
   \end{itemize}
 
     \medskip
-
-    \dnote{It is recommended to use regular expressions with the \texttt{subs} method; consult the Mathworks documentation for more information: \href{https://fr.mathworks.com/help/matlab/ref/regexprep.html}{regexprep}.}
-
-    \bigskip
 
     \dnote{If new symbols are introduced with the changes, they must be typed after.}
 
