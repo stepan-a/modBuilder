@@ -572,6 +572,63 @@ classdef ast
             end
         end % function
 
+        function tf = is_linear_in(o, x)
+        % Test whether the tree is linear in symbol x.
+        %
+        % INPUTS:
+        % - o   [ast]    tree to test
+        % - x   [char]   1×n array, symbol name
+        %
+        % OUTPUTS:
+        % - tf  [logical] true iff o = a · x + b structurally, with a and b independent of x.
+        %
+        % REMARKS:
+        % - Canonicalises and simplifies the tree first, so a/b is rewritten as a·b^(-1),
+        %   constants are folded, and obvious cancellations are removed.
+        % - x is matched against 'sym' and 'tsym' leaves (lag is ignored, as expected
+        %   for a static-equation analysis); 'ss' nodes are constants and never count
+        %   as a use of x.
+        % - x inside a 'call' (e.g. exp(x)), in a denominator, raised to a non-1 exponent,
+        %   or appearing more than once in any single multiplicative chain, breaks linearity.
+            o = o.canonicalise().simplify();
+            [tf, ~] = ast.linear_walk(o, x);
+        end % function
+
+        function [a, b] = split_linear(o, x)
+        % Split the tree into (a, b) such that o = a · x + b, with a and b independent of x.
+        %
+        % INPUTS:
+        % - o   [ast]    tree (must be linear in x; check with is_linear_in first)
+        % - x   [char]   1×n array, symbol name
+        %
+        % OUTPUTS:
+        % - a   [ast]    coefficient tree (independent of x)
+        % - b   [ast]    constant-term tree (independent of x)
+        %
+        % REMARKS:
+        % - Errors with id 'ast:split_linear' if o is not linear in x.
+        % - Both a and b are simplified before returning.
+        % - Used by modBuilder.steady_plan to generate closed-form steady-state assignments
+        %   for trivial / self-recursive blocks: from f(x) = LHS - RHS = 0, x = -b/a.
+            if ~o.is_linear_in(x)
+                error('ast:split_linear', 'Expression is not linear in "%s".', x);
+            end
+            o = o.canonicalise().simplify();
+            terms = ast.flatten(o, '+');
+            a_terms = {};
+            b_terms = {};
+            for i = 1:numel(terms)
+                t = terms{i};
+                if ast.count_occurrences(t, x) == 0
+                    b_terms{end+1} = t; %#ok<AGROW>
+                else
+                    a_terms{end+1} = ast.peel_x(t, x); %#ok<AGROW>
+                end
+            end
+            a = ast.sum_of(a_terms).simplify();
+            b = ast.sum_of(b_terms).simplify();
+        end % function
+
         function names = symbol_names(o)
         % Return the unique set of symbol names referenced in the tree.
         %
@@ -1311,6 +1368,24 @@ classdef ast
             end
         end % function
 
+        function n = negate_sum(x)
+        % Negate x. If x is a '+' chain, negate each term individually (so that
+        % uminus is absorbed into already-uminus terms via ast.negate); otherwise
+        % delegate to ast.negate. Used by callers that build "-b" from a b that
+        % has the canonical form sum-of-(possibly-uminus) terms — a configuration
+        % the local simplify pass cannot reduce further on its own.
+            if strcmp(x.type, 'binop') && strcmp(x.value, '+')
+                terms = ast.flatten(x, '+');
+                negated = cell(1, numel(terms));
+                for i = 1:numel(terms)
+                    negated{i} = ast.negate(terms{i});
+                end
+                n = ast.sum_of(negated);
+            else
+                n = ast.negate(x);
+            end
+        end % function
+
         function n = invert(x)
         % Return the canonical multiplicative inverse of x: x^(-1), or x.children{1}
         % when x is already y^(-1) (so applying invert twice is the identity).
@@ -1562,6 +1637,152 @@ classdef ast
             p = factors{1};
             for i = 2:numel(factors)
                 p = ast('binop', '*', {p, factors{i}});
+            end
+        end % function
+
+        function [ok, n] = linear_walk(o, x)
+        % Recursive walker used by ast.is_linear_in. Returns (ok, n):
+        %   ok is true if the subtree is acceptable in a linear-in-x context.
+        %   n  is the count of x occurrences (only meaningful when ok = true).
+        % Caller is expected to have canonicalised the tree first, so a/b appears
+        % as a·b^(-1) and uminus has been propagated upward where possible.
+            switch o.type
+                case 'num'
+                    ok = true; n = 0;
+                case 'sym'
+                    ok = true; n = double(strcmp(o.value, x));
+                case 'tsym'
+                    ok = true; n = double(strcmp(o.value{1}, x));
+                case 'ss'
+                    ok = true; n = 0;
+                case 'call'
+                    n = 0;
+                    for i = 1:numel(o.children)
+                        [c_ok, c_n] = ast.linear_walk(o.children{i}, x);
+                        if ~c_ok || c_n > 0
+                            ok = false; n = 0; return
+                        end
+                    end
+                    ok = true;
+                case 'uminus'
+                    [ok, n] = ast.linear_walk(o.children{1}, x);
+                case 'binop'
+                    L = o.children{1};
+                    R = o.children{2};
+                    switch o.value
+                        case {'+', '-'}
+                            [okL, nL] = ast.linear_walk(L, x);
+                            [okR, nR] = ast.linear_walk(R, x);
+                            ok = okL && okR; n = nL + nR;
+                        case '*'
+                            [okL, nL] = ast.linear_walk(L, x);
+                            [okR, nR] = ast.linear_walk(R, x);
+                            if ~okL || ~okR || (nL > 0 && nR > 0)
+                                ok = false; n = 0;
+                            else
+                                ok = true; n = nL + nR;
+                            end
+                        case '/'
+                            [okL, nL] = ast.linear_walk(L, x);
+                            [okR, nR] = ast.linear_walk(R, x);
+                            if ~okL || ~okR || nR > 0
+                                ok = false; n = 0;
+                            else
+                                ok = true; n = nL;
+                            end
+                        case '^'
+                            [okB, nB] = ast.linear_walk(L, x);
+                            [okE, nE] = ast.linear_walk(R, x);
+                            if ~okB || ~okE || nE > 0
+                                ok = false; n = 0; return
+                            end
+                            if nB == 0
+                                ok = true; n = 0;
+                            elseif strcmp(R.type, 'num') && R.value == 1
+                                ok = true; n = nB;
+                            else
+                                ok = false; n = 0;
+                            end
+                        otherwise
+                            ok = false; n = 0;
+                    end
+                otherwise
+                    ok = false; n = 0;
+            end
+        end % function
+
+        function n = count_occurrences(o, x)
+        % Count occurrences of name x as a 'sym' or 'tsym' leaf in the tree.
+        % 'ss' leaves are NOT counted (STEADY_STATE(x) is a constant w.r.t. x).
+            switch o.type
+                case 'sym'
+                    n = double(strcmp(o.value, x));
+                case 'tsym'
+                    n = double(strcmp(o.value{1}, x));
+                case {'num', 'ss'}
+                    n = 0;
+                otherwise
+                    n = 0;
+                    for i = 1:numel(o.children)
+                        n = n + ast.count_occurrences(o.children{i}, x);
+                    end
+            end
+        end % function
+
+        function c = peel_x(t, x)
+        % Extract the coefficient of x from a term that contains x exactly once at the
+        % top of its multiplicative chain (i.e. the term is a · x for some x-free a).
+        %
+        % This is the per-term extractor used inside ast.split_linear; the caller is
+        % expected to have already verified the term is linear in x.
+            switch t.type
+                case 'sym'
+                    if strcmp(t.value, x)
+                        c = ast('num', 1, {});
+                    else
+                        error('ast:peel_x', 'Term has no x.');
+                    end
+                case 'tsym'
+                    if strcmp(t.value{1}, x)
+                        c = ast('num', 1, {});
+                    else
+                        error('ast:peel_x', 'Term has no x.');
+                    end
+                case 'uminus'
+                    c = ast('uminus', [], {ast.peel_x(t.children{1}, x)});
+                case 'binop'
+                    switch t.value
+                        case '*'
+                            factors = ast.flatten(t, '*');
+                            nonx = {};
+                            found = 0;
+                            for k = 1:numel(factors)
+                                f = factors{k};
+                                if (strcmp(f.type, 'sym') && strcmp(f.value, x)) || ...
+                                   (strcmp(f.type, 'tsym') && strcmp(f.value{1}, x))
+                                    found = found + 1;
+                                else
+                                    nonx{end+1} = f; %#ok<AGROW>
+                                end
+                            end
+                            if found ~= 1
+                                error('ast:peel_x', 'Expected exactly 1 x factor, got %d.', found);
+                            end
+                            c = ast.product_of(nonx);
+                        case '/'
+                            % After canonicalise this should not appear in well-formed input;
+                            % defensive branch: extract from numerator, keep denominator (must be x-free).
+                            L = t.children{1};
+                            R = t.children{2};
+                            if ast.count_occurrences(R, x) > 0
+                                error('ast:peel_x', 'x in denominator — not linear.');
+                            end
+                            c = ast('binop', '/', {ast.peel_x(L, x), R});
+                        otherwise
+                            error('ast:peel_x', 'Unsupported binop "%s" in linear term.', t.value);
+                    end
+                otherwise
+                    error('ast:peel_x', 'Unexpected node type "%s" in linear term.', t.type);
             end
         end % function
 

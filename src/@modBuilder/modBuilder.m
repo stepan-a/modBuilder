@@ -5007,7 +5007,7 @@ classdef modBuilder < handle
             end
 
             n = size(o.equations, 1);
-            blocks = struct('vars', {}, 'eqs', {}, 'kind', {}, 'deps', {}, 'extdeps', {});
+            blocks = struct('vars', {}, 'eqs', {}, 'kind', {}, 'deps', {}, 'extdeps', {}, 'closed_form', {});
             if n == 0
                 return
             end
@@ -5123,11 +5123,40 @@ classdef modBuilder < handle
                     end
                 end
 
+                % Tier 2-A: linear isolation for singleton (trivial / self-recursive) blocks.
+                cf = [];
+                if numel(members) == 1
+                    i = members(1);
+                    var = vars_block{1};
+                    eq_str = o.equations{i, modBuilder.EQ_COL_EXPR};
+                    LHSRHS = strsplit(eq_str, '=');
+                    if isscalar(LHSRHS)
+                        f = ast(strtrim(LHSRHS{1})).staticise();
+                    elseif length(LHSRHS) == 2
+                        Lt = ast(strtrim(LHSRHS{1})).staticise();
+                        Rt = ast(strtrim(LHSRHS{2})).staticise();
+                        f = ast('binop', '-', {Lt, Rt});
+                    else
+                        f = [];
+                    end
+                    if ~isempty(f) && f.is_linear_in(var)
+                        [a_coef, b_const] = f.split_linear(var);
+                        % Drop pairings where the variable's coefficient folds to 0 — the
+                        % equation is independent of the variable and pins nothing.
+                        if ~(strcmp(a_coef.type, 'num') && a_coef.value == 0)
+                            neg_b = ast.negate_sum(b_const);
+                            rhs_tree = ast('binop', '/', {neg_b, a_coef}).simplify();
+                            cf = struct('var', var, 'expr', rhs_tree.string());
+                        end
+                    end
+                end
+
                 blocks(end+1).vars = vars_block; %#ok<AGROW>
                 blocks(end).eqs = vars_block;
                 blocks(end).kind = kind;
                 blocks(end).deps = already_solved;
                 blocks(end).extdeps = consts;
+                blocks(end).closed_form = cf;
             end
         end % function
 
@@ -5141,8 +5170,10 @@ classdef modBuilder < handle
         % REMARKS:
         % - Each block is shown with its kind, its variable(s), the already-solved endogenous
         %   variables it depends on, and its external constants (parameters / exogenous).
-        % - 'simultaneous' blocks are flagged "needs solver" — Tier 1 does no algebraic reduction;
-        %   Tier 2 / Tier 3 may close some of them in a follow-up.
+        % - For singleton blocks (trivial / self-recursive), the linear-isolation pass (Tier 2-A)
+        %   may have produced a closed-form assignment; if so, it is rendered as "x = expr".
+        % - 'simultaneous' blocks are flagged "needs solver" — Tier 1+2-A do no joint reduction;
+        %   Tier 3 may close some of them in a follow-up.
             if nargin < 2
                 blocks = o.steady_plan();
             end
@@ -5165,10 +5196,42 @@ classdef modBuilder < handle
                 if ~isempty(b.extdeps)
                     modBuilder.dprintf('    external constants: %s', strjoin(b.extdeps, ', '));
                 end
-                if strcmp(b.kind, 'simultaneous')
+                if ~isempty(b.closed_form)
+                    modBuilder.dprintf('    closed form: %s = %s', b.closed_form.var, b.closed_form.expr);
+                elseif strcmp(b.kind, 'simultaneous')
                     modBuilder.dprintf('    -- numerical solver required --');
                 end
                 modBuilder.skipline();
+            end
+        end % function
+
+        function o = apply_steady_plan(o, blocks)
+        % Write the closed-form assignments produced by steady_plan into o.steady_state.
+        %
+        % INPUTS:
+        % - o        [modBuilder]
+        % - blocks   [struct array]   optional; if omitted, computed by o.steady_plan().
+        %
+        % OUTPUTS:
+        % - o        [modBuilder]     updated object with steady_state populated for each block
+        %                             that has a closed form.
+        %
+        % REMARKS:
+        % - Iterates over the plan in topological order and calls m.steady(var, expr) for
+        %   every block whose closed_form is non-empty (currently: trivial / self-recursive
+        %   singletons that the Tier 2-A linear isolation pass closed).
+        % - simultaneous blocks are skipped — Tier 1+2-A do not reduce them; the user must
+        %   either provide steady-state values manually (m.steady) or call m.solve_system.
+        % - m.steady replaces an existing entry in place, so calling apply_steady_plan twice
+        %   is idempotent for the closed-form blocks.
+            if nargin < 2
+                blocks = o.steady_plan();
+            end
+            for k = 1:numel(blocks)
+                cf = blocks(k).closed_form;
+                if ~isempty(cf)
+                    o.steady(cf.var, cf.expr);
+                end
             end
         end % function
 
