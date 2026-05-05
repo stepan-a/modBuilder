@@ -12,7 +12,7 @@ m.exogenous('L', 1.0);
 
 m.substitute('alpha', 'gamma', 'Y');
 
-if ~strcmp(m{'Y'}.equations{2}, 'Y = gamma*K + beta*L')
+if ~equation_equal(m{'Y'}.equations{2}, 'Y = gamma*K + beta*L')
     error('Example 1 failed: simple regex substitution')
 end
 
@@ -27,7 +27,7 @@ m2.exogenous('K_$1', 1.0, {1, 2, 3});
 m2.substitute('alpha_$1', 'beta_$1', {1, 2, 3});
 
 expected = 'Y = beta_1*K_1 + beta_2*K_2 + beta_3*K_3';
-if ~strcmp(m2{'Y'}.equations{2}, expected)
+if ~equation_equal(m2{'Y'}.equations{2}, expected)
     error('Example 2 failed: implicit loop in all equations')
 end
 
@@ -42,10 +42,10 @@ m3.exogenous('K_$1', 1.0, {1, 2});
 
 m3.substitute('alpha_$1', 'beta_$1', 'Y', {1, 2});
 
-if ~strcmp(m3{'Y'}.equations{2}, 'Y = beta_1*K_1 + beta_2*K_2')
+if ~equation_equal(m3{'Y'}.equations{2}, 'Y = beta_1*K_1 + beta_2*K_2')
     error('Example 3 failed: Y equation')
 end
-if ~strcmp(m3{'C'}.equations{2}, 'C = alpha_1*Y')
+if ~equation_equal(m3{'C'}.equations{2}, 'C = alpha_1*Y')
     error('Example 3 failed: C equation should be unchanged')
 end
 
@@ -61,10 +61,10 @@ m4.exogenous('K_$1', 1.0, {1, 2});
 
 m4.substitute('alpha_$1', 'gamma_$1', 'Y', {1, 2});
 
-if ~strcmp(m4{'Y'}.equations{2}, 'Y = gamma_1*K_1 + gamma_2*K_2')
+if ~equation_equal(m4{'Y'}.equations{2}, 'Y = gamma_1*K_1 + gamma_2*K_2')
     error('Example 4 failed: Y equation')
 end
-if ~strcmp(m4{'C'}.equations{2}, 'C = beta*Y')
+if ~equation_equal(m4{'C'}.equations{2}, 'C = beta*Y')
     error('Example 4 failed: C equation should be unchanged')
 end
 

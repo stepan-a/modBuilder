@@ -2703,17 +2703,31 @@ classdef modBuilder < handle
                 end
             end
 
+            % Rename in every equation via an AST walk: parse each side of '=',
+            % rewrite matching sym / tsym / ss leaves, render back. This avoids
+            % the regex word-boundary edge cases of the previous text-based rewrite.
             for i=1:o.size('equations')
-                o.equations{i,modBuilder.EQ_COL_EXPR} = regexprep(o.equations{i,modBuilder.EQ_COL_EXPR}, ['(?<!\w)' oldsymbol  '(?!\w)'], newsymbol);
+                eq_str = o.equations{i,modBuilder.EQ_COL_EXPR};
+                LHSRHS = strsplit(eq_str, '=');
+                if length(LHSRHS) == 2
+                    new_lhs = ast(strtrim(LHSRHS{1})).rename(oldsymbol, newsymbol).string();
+                    new_rhs = ast(strtrim(LHSRHS{2})).rename(oldsymbol, newsymbol).string();
+                    o.equations{i,modBuilder.EQ_COL_EXPR} = sprintf('%s = %s', new_lhs, new_rhs);
+                elseif isscalar(LHSRHS)
+                    o.equations{i,modBuilder.EQ_COL_EXPR} = ast(strtrim(LHSRHS{1})).rename(oldsymbol, newsymbol).string();
+                else
+                    error('rename: equation #%d contains more than one "=" symbol.', i)
+                end
                 o.T.equations.(o.equations{i,modBuilder.EQ_COL_NAME}) = modBuilder.replaceincell(o.T.equations.(o.equations{i,modBuilder.EQ_COL_NAME}), oldsymbol, newsymbol);
             end
 
-            % Update steady-state expressions
+            % Update steady-state expressions (same AST walk; expressions are pure RHS,
+            % no '=' to split on).
             for i=1:size(o.steady_state, 1)
                 if strcmp(o.steady_state{i, modBuilder.SS_COL_NAME}, oldsymbol)
                     o.steady_state{i, modBuilder.SS_COL_NAME} = newsymbol;
                 end
-                o.steady_state{i, modBuilder.SS_COL_EXPR} = regexprep(o.steady_state{i, modBuilder.SS_COL_EXPR}, ['(?<!\w)' oldsymbol '(?!\w)'], newsymbol);
+                o.steady_state{i, modBuilder.SS_COL_EXPR} = ast(o.steady_state{i, modBuilder.SS_COL_EXPR}).rename(oldsymbol, newsymbol).string();
             end
 
             % Mark symbol tables as dirty (need updating)
@@ -4910,46 +4924,45 @@ classdef modBuilder < handle
             evaleq.resid = NaN;
 
             %
-            % Get static version of the equation
+            % Parse the equation into AST trees (LHS, RHS)
             %
             eqID = strcmp(eqname, o.equations(:,modBuilder.EQ_COL_NAME));
-            equation = regexprep(o.equations{eqID,modBuilder.EQ_COL_EXPR}, '(\w+)\([+-]?\d+\)', '$1');
-
-            %
-            % Is there an equal symbol? If not we just evaluate the expression and return resid.
-            %
-            LHSRHS = strsplit(equation, '=');
+            eq_str = o.equations{eqID, modBuilder.EQ_COL_EXPR};
+            LHSRHS = strsplit(eq_str, '=');
 
             if isscalar(LHSRHS)
-                LHS = LHSRHS{1};
-                RHS = '0';
+                LHS_tree = ast(strtrim(LHSRHS{1}));
+                RHS_tree = ast('num', 0, {});
             elseif length(LHSRHS)==2
-                LHS = LHSRHS{1};
-                RHS = LHSRHS{2};
+                LHS_tree = ast(strtrim(LHSRHS{1}));
+                RHS_tree = ast(strtrim(LHSRHS{2}));
             else
                 error('An equation cannot have more than one equal (=) symbol.')
             end
 
             %
-            % Evaluate the equation
+            % Build the value map for every symbol referenced by the equation, including the LHS
+            % endogenous itself (which is not listed in T.equations.(eqname))
             %
-            Symbols = o.T.equations.(eqname);
-            Symbols = [Symbols, eqname];
-
+            Symbols = [o.T.equations.(eqname), {eqname}];
+            values = struct();
             for i=1:length(Symbols)
                 symbol = Symbols{i};
-                val_str = num2str(o.get_value(symbol), 15);
-                LHS = regexprep(LHS, ['\<', symbol, '\>'], val_str);
-                RHS = regexprep(RHS, ['\<', symbol, '\>'], val_str);
+                values.(symbol) = o.get_value(symbol);
             end
 
-            evaleq.lhs = eval(LHS);
-            evaleq.rhs = eval(RHS);
-            evaleq.resid = evaleq.lhs-evaleq.rhs;
+            evaleq.lhs = LHS_tree.eval(values);
+            evaleq.rhs = RHS_tree.eval(values);
+            evaleq.resid = evaleq.lhs - evaleq.rhs;
 
             if printflag
+                if length(LHSRHS)==2
+                    static_eq = sprintf('%s = %s', LHS_tree.staticise().string(), RHS_tree.staticise().string());
+                else
+                    static_eq = LHS_tree.staticise().string();
+                end
                 modBuilder.skipline()
-                modBuilder.dprintf('Static equation: %s', equation);
+                modBuilder.dprintf('Static equation: %s', static_eq);
                 modBuilder.skipline()
                 modBuilder.dprintf('LHS:             %f', evaleq.lhs);
                 modBuilder.dprintf('RHS:             %f', evaleq.rhs);

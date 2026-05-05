@@ -13,7 +13,7 @@ m.substitute('alpha_$1', 'beta_$1', {1, 2, 3});
 
 % Verify substitution occurred
 expected_eq = 'Y = beta_1*K_1 + beta_2*K_2 + beta_3*K_3';
-if ~strcmp(m{'Y'}.equations{2}, expected_eq)
+if ~equation_equal(m{'Y'}.equations{2}, expected_eq)
     error('Substitution failed: expected "%s", got "%s"', expected_eq, m{'Y'}.equations{2})
 end
 

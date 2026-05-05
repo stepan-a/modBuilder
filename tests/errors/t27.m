@@ -1,5 +1,7 @@
 % Tests for rename exogenous (uncovered code path)
 
+addpath ../utils
+
 m = modBuilder();
 m.add('y', 'y = alpha*x + epsilon');
 m.parameter('alpha', 0.5);
@@ -11,4 +13,4 @@ assert(m.isexogenous('epsilon'), 'epsilon should be exogenous.');
 m.rename('epsilon', 'e');
 assert(m.isexogenous('e'), 'e should be exogenous after rename.');
 assert(~m.isexogenous('epsilon'), 'epsilon should no longer exist.');
-assert(strcmp(m.equations{1,2}, 'y = alpha*x + e'), 'Equation should use new name.');
+assert(equation_equal(m.equations{1,2}, 'y = alpha*x + e'), 'Equation should use new name.');

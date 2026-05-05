@@ -39,22 +39,29 @@ m0 = copy(model);
 
 m0.rename('k', 'PhysicalCapital');
 
-if ~strcmp(m0{'c'}.equations{2}, 'PhysicalCapital = exp(b)*(y-c)+(1-deltak)*PhysicalCapital(-1)')
-    error('Test of rename method failed (c).')
-end
+% Compare equations as ASTs (rendering may differ in spacing).
+check = @(eqname, expected_str) assert(ast.ast_equal(parse_eq(m0{eqname}.equations{2}), parse_eq(expected_str)), 'rename: %s mismatch', eqname);
 
-if ~strcmp(m0{'y'}.equations{2}, 'y = exp(a)*(PhysicalCapital(-1)^alpha)*(h^(1-alpha))')
-    error('Test of rename method failed (y).')
-end
-
-if ~strcmp(m0{'PhysicalCapital'}.equations{2}, '1/beta = ((exp(b)*c)/(exp(b(+1))*c(+1)))*(exp(b(+1))*alpha*y(+1)/PhysicalCapital+(1-deltak))')
-    error('Test of rename method failed (PhysicalCapital).')
-end
+check('c', 'PhysicalCapital = exp(b)*(y-c)+(1-deltak)*PhysicalCapital(-1)');
+check('y', 'y = exp(a)*(PhysicalCapital(-1)^alpha)*(h^(1-alpha))');
+check('PhysicalCapital', '1/beta = ((exp(b)*c)/(exp(b(+1))*c(+1)))*(exp(b(+1))*alpha*y(+1)/PhysicalCapital+(1-deltak))');
 
 if ~(strcmp(m0.T.params.beta{1}, 'PhysicalCapital') && length(m0.T.params.beta)==1)
-    error('Test of substitute method failed.')
+    error('Test of rename method failed (T.params.beta).')
 end
 
 if ~isequal(m0.T.equations.c , {'b'  'deltak'  'PhysicalCapital'  'y'})
-    error('Test of substitute method failed.')
+    error('Test of rename method failed (T.equations.c).')
+end
+
+% Helper: parse an equation string (LHS = RHS or pure expression) as an ast.
+function tree = parse_eq(eq_str)
+    LHSRHS = strsplit(eq_str, '=');
+    if length(LHSRHS) == 2
+        L = ast(strtrim(LHSRHS{1}));
+        R = ast(strtrim(LHSRHS{2}));
+        tree = ast('binop', '-', {L, R});
+    else
+        tree = ast(strtrim(LHSRHS{1}));
+    end
 end

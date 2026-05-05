@@ -17,13 +17,13 @@ m.substitute('alpha_$1', 'beta_$1', 'Y_$1', Countries);
 
 % Verify substitution in Y_FR
 expected_eq_FR = 'Y_FR = beta_FR*K_FR';
-if ~strcmp(m{'Y_FR'}.equations{2}, expected_eq_FR)
+if ~equation_equal(m{'Y_FR'}.equations{2}, expected_eq_FR)
     error('Substitution failed in Y_FR: expected "%s", got "%s"', expected_eq_FR, m{'Y_FR'}.equations{2})
 end
 
 % Verify substitution in Y_DE
 expected_eq_DE = 'Y_DE = beta_DE*K_DE';
-if ~strcmp(m{'Y_DE'}.equations{2}, expected_eq_DE)
+if ~equation_equal(m{'Y_DE'}.equations{2}, expected_eq_DE)
     error('Substitution failed in Y_DE: expected "%s", got "%s"', expected_eq_DE, m{'Y_DE'}.equations{2})
 end
 

@@ -487,6 +487,91 @@ classdef ast
             o = ast.replace_subtree_helper(o, target, replacement);
         end % function
 
+        function o = rename(o, oldname, newname)
+        % Rename every reference to a symbol, preserving lag for tsym and the
+        % steady-state operator wrapping for ss.
+        %
+        % INPUTS:
+        % - o          [ast]    tree to rewrite
+        % - oldname    [char]   1×n array, name to replace
+        % - newname    [char]   1×m array, replacement name
+        %
+        % OUTPUTS:
+        % - o          [ast]    new tree with every matching leaf renamed
+        %
+        % REMARKS:
+        % - Matches 'sym' (sym(oldname) → sym(newname)), 'tsym' (the lag is
+        %   preserved: tsym(oldname, k) → tsym(newname, k)) and 'ss'
+        %   (STEADY_STATE(oldname) → STEADY_STATE(newname)).
+        % - Distinct from substitute: that primitive replaces the whole symbol
+        %   node with an arbitrary subtree (and lag-shifts the replacement);
+        %   rename only swaps a name and is the right tool when the user wants
+        %   to relabel a variable everywhere it appears.
+        % - Function-call names (e.g. 'exp', 'log') are not touched.
+            switch o.type
+                case 'sym'
+                    if strcmp(o.value, oldname)
+                        o = ast('sym', newname, {});
+                    end
+                case 'tsym'
+                    if strcmp(o.value{1}, oldname)
+                        o = ast('tsym', {newname, o.value{2}}, {});
+                    end
+                case 'ss'
+                    if strcmp(o.value, oldname)
+                        o = ast('ss', newname, {});
+                    end
+                otherwise
+                    for i = 1:numel(o.children)
+                        o.children{i} = o.children{i}.rename(oldname, newname);
+                    end
+            end
+        end % function
+
+        function v = eval(o, values)
+        % Evaluate the tree numerically given a struct mapping symbol names to scalar values.
+        %
+        % INPUTS:
+        % - o        [ast]      tree to evaluate
+        % - values   [struct]   one field per symbol; values.(name) is the scalar to substitute
+        %                       for any 'sym', 'tsym' or 'ss' node carrying that name
+        %
+        % OUTPUTS:
+        % - v        [double]   numeric value of the expression
+        %
+        % REMARKS:
+        % - 'tsym' nodes are evaluated by their static value: the lag is ignored. This matches
+        %   the modBuilder convention that residuals are computed at the steady state.
+        % - 'ss' nodes look up the same field as 'sym' / 'tsym' (STEADY_STATE(x) and the static
+        %   value of x are identical when values carries steady-state calibrations).
+        % - 'call' nodes dispatch via feval; the function name has already been validated by the
+        %   parser against ast.RESERVED_FNAMES.
+            switch o.type
+                case 'num'
+                    v = o.value;
+                case 'sym'
+                    v = ast.lookup_value(o.value, values);
+                case 'tsym'
+                    v = ast.lookup_value(o.value{1}, values);
+                case 'ss'
+                    v = ast.lookup_value(o.value, values);
+                case 'uminus'
+                    v = -o.children{1}.eval(values);
+                case 'binop'
+                    a = o.children{1}.eval(values);
+                    b = o.children{2}.eval(values);
+                    v = ast.eval_binop(o.value, a, b);
+                case 'call'
+                    args = cell(1, numel(o.children));
+                    for i = 1:numel(o.children)
+                        args{i} = o.children{i}.eval(values);
+                    end
+                    v = feval(o.value, args{:});
+                otherwise
+                    error('ast:eval', 'Cannot evaluate node of type "%s".', o.type);
+            end
+        end % function
+
         function o = canonicalise(o)
         % Return a canonical form of the tree.
         %
@@ -1653,6 +1738,14 @@ classdef ast
                 otherwise
                     error('ast:eval_binop', 'Unknown operator "%s".', op);
             end
+        end % function
+
+        function v = lookup_value(name, values)
+        % Look up a symbol's numeric value in the values struct. Used by ast.eval.
+            if ~isfield(values, name)
+                error('ast:eval', 'No value provided for symbol "%s".', name);
+            end
+            v = values.(name);
         end % function
 
     end % methods (Static)

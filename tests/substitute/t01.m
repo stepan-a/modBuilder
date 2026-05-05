@@ -14,7 +14,7 @@ m.exogenous('h', 1.0);
 m.substitute('alpha', 'gamma', 'y');
 
 % Verify substitution occurred
-if ~strcmp(m{'y'}.equations{2}, 'y = gamma*k + beta*h')
+if ~equation_equal(m{'y'}.equations{2}, 'y = gamma*k + beta*h')
     error('Substitution failed: expected "y = gamma*k + beta*h", got "%s"', m{'y'}.equations{2})
 end
 

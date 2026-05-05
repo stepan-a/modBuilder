@@ -15,13 +15,13 @@ m.substitute('alpha_$1', 'gamma_$1', 'Y', {1, 2});
 
 % Verify substitution in Y
 expected_eq = 'Y = gamma_1*K_1 + gamma_2*K_2';
-if ~strcmp(m{'Y'}.equations{2}, expected_eq)
+if ~equation_equal(m{'Y'}.equations{2}, expected_eq)
     error('Substitution failed in Y: expected "%s", got "%s"', expected_eq, m{'Y'}.equations{2})
 end
 
 % Verify C equation unchanged
 expected_eq_C = 'C = beta*Y';
-if ~strcmp(m{'C'}.equations{2}, expected_eq_C)
+if ~equation_equal(m{'C'}.equations{2}, expected_eq_C)
     error('Equation C should be unchanged: expected "%s", got "%s"', expected_eq_C, m{'C'}.equations{2})
 end
 

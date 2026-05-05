@@ -40,22 +40,28 @@ m0 = copy(model);
 m0.rename('k', 'PhysicalCapital');
 m0.rename('alpha', 'ALPHA');
 
-if ~strcmp(m0{'y'}.equations{2}, 'y = exp(a)*(PhysicalCapital(-1)^ALPHA)*(h^(1-ALPHA))')
-    error('Test of rename method failed (y).')
-end
+check = @(eqname, expected_str) assert(ast.ast_equal(parse_eq(m0{eqname}.equations{2}), parse_eq(expected_str)), 'rename: %s mismatch', eqname);
 
-if ~strcmp(m0{'PhysicalCapital'}.equations{2}, '1/beta = ((exp(b)*c)/(exp(b(+1))*c(+1)))*(exp(b(+1))*ALPHA*y(+1)/PhysicalCapital+(1-deltak))')
-    error('Test of rename method failed (PhysicalCapital).')
-end
-
-if ~strcmp(m0{'h'}.equations{2}, 'c*theta*h^(1+psi)=(1-ALPHA)*y')
-    error('Test of rename method failed (h).')
-end
+check('y', 'y = exp(a)*(PhysicalCapital(-1)^ALPHA)*(h^(1-ALPHA))');
+check('PhysicalCapital', '1/beta = ((exp(b)*c)/(exp(b(+1))*c(+1)))*(exp(b(+1))*ALPHA*y(+1)/PhysicalCapital+(1-deltak))');
+check('h', 'c*theta*h^(1+psi)=(1-ALPHA)*y');
 
 if ~isfield(m0.T.params, 'ALPHA')
-    error('Test of rename method failed.')
+    error('Test of rename method failed (T.params.ALPHA).')
 end
 
 if ~isequal(m0.T.equations.PhysicalCapital, {'ALPHA'  'b'  'beta'  'c'  'deltak'  'y'})
-    error('Test of rename method failed.')
+    error('Test of rename method failed (T.equations.PhysicalCapital).')
+end
+
+% Helper: parse an equation string as an ast.
+function tree = parse_eq(eq_str)
+    LHSRHS = strsplit(eq_str, '=');
+    if length(LHSRHS) == 2
+        L = ast(strtrim(LHSRHS{1}));
+        R = ast(strtrim(LHSRHS{2}));
+        tree = ast('binop', '-', {L, R});
+    else
+        tree = ast(strtrim(LHSRHS{1}));
+    end
 end

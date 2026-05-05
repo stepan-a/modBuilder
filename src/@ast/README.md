@@ -7,11 +7,15 @@ Abstract syntax tree for `modBuilder` equations.
 The `ast` class parses an equation string into a tree of typed nodes that
 can be inspected, transformed, and rendered back to a string. It is used
 to provide a basis for symbolic operations on equations — static
-reduction, substitution, differentiation, LaTeX rendering — that other
-modules can layer on top of the same tree. The first concrete consumer
-is the static-cancellation check that `modBuilder.matchequations` will
-use to decide whether an endogenous variable is a candidate match for an
-equation.
+reduction, substitution, renaming, numeric evaluation, differentiation,
+LaTeX rendering — that other modules can layer on top of the same tree.
+Concrete consumers in `modBuilder` include `matchequations` (uses
+`staticise().simplify().check_factor` as the static-cancellation
+filter), `subs` (dispatches to `substitute` for symbol targets and
+`replace_subtree` for expression targets), `rename` (uses `rename` to
+swap symbol names preserving lag and steady-state wrapping), and
+`evaluate` (uses `eval` to compute residuals from current
+calibrations).
 
 `ast` is a value class, so transformations like `staticise` return a new
 tree rather than mutating the receiver.
@@ -221,6 +225,20 @@ exposes `(a+b)` and `c`, not `(a+c)`). When that's needed, the
 `simplify` or `factor` passes can sometimes reshape the equation to
 make the desired subtree appear.
 
+#### `t.rename(oldname, newname)`
+
+Return a new tree with every reference to `oldname` renamed to
+`newname`. Matches `sym(oldname) → sym(newname)`, `tsym(oldname, k) →
+tsym(newname, k)` (lag preserved) and `ss(oldname) → ss(newname)`
+(steady-state wrapping preserved). Function-call names (e.g. `exp`,
+`log`) are not touched.
+
+This is distinct from `substitute`: `substitute` replaces the whole
+symbol node with an arbitrary subtree (and lag-shifts the replacement);
+`rename` only swaps a name. `rename` is the right tool when the user
+wants to relabel a variable everywhere it appears. Used by
+`modBuilder.rename`.
+
 #### `t.shift_lag(k[, parameter_names])`
 
 Return a new tree with every time-varying variable's lag shifted by
@@ -248,6 +266,27 @@ For the static reduction context, call `staticise()` first. `ss` nodes
 never match: `STEADY_STATE(x)` is a constant w.r.t. the dynamic variable
 `x`. The check is purely structural; cases that require algebraic
 simplification (e.g. `w/w → 1`) are not detected — see *Limitations*.
+
+#### `t.eval(values)`
+
+Evaluate the tree numerically. `values` is a struct with one field per
+symbol; `values.(name)` is the scalar substituted for any `sym`,
+`tsym` or `ss` node carrying that name. Returns a `double`.
+
+- `tsym(name, k)` resolves to `values.(name)` — the lag is ignored.
+  Caller is responsible for staticising first if a different
+  semantics is wanted.
+- `ss(name)` also resolves to `values.(name)`: `STEADY_STATE(x)` and
+  the static value of `x` are identical when `values` carries
+  steady-state calibrations.
+- `call` nodes dispatch via `feval`; the function name has already
+  been validated by the parser against `ast.RESERVED_FNAMES`.
+- A symbol with no entry in `values` raises `ast:eval` with a clear
+  message — distinct from MATLAB's generic "undefined variable" from
+  the legacy `eval`-based path.
+
+Used by `modBuilder.evaluate` to compute LHS, RHS and residual of a
+static equation under the current calibration.
 
 #### `disp(t)`
 

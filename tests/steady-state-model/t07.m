@@ -22,7 +22,7 @@ if ~strcmp(m.steady_state{1, 1}, 'output')
 end
 
 % Check that steady_state expression for c was updated
-if ~strcmp(m.steady_state{2, 2}, 'output - delta*k')
+if ~equation_equal(m.steady_state{2, 2}, 'output - delta*k')
     error('Steady-state expression for c should reference output instead of y, got: %s', m.steady_state{2, 2})
 end
 
@@ -30,7 +30,7 @@ end
 m.rename('alpha', 'a');
 
 % Check that expression for output was updated
-if ~strcmp(m.steady_state{1, 2}, 'k^a')
+if ~equation_equal(m.steady_state{1, 2}, 'k^a')
     error('Steady-state expression for output should reference a instead of alpha, got: %s', m.steady_state{1, 2})
 end
 
