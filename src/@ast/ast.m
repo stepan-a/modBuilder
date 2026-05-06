@@ -2086,68 +2086,88 @@ classdef ast
             ok = true;
         end % function
 
-        function d = symbolic_det(A)
-        % Symbolic determinant of an n×n cell matrix of ASTs.
+        function [U, sign_flip, singular] = bareiss_triangulate(M)
+        % Fraction-free Gaussian elimination (Bareiss 1968) on an n×k cell matrix of
+        % ASTs (k ≥ n; passing an augmented matrix [A | c] eliminates A and transforms c
+        % in the same pass).
         %
-        % Implementation: fraction-free Gaussian elimination (Bareiss 1968). After n−1
-        % elimination steps the (n,n) entry equals det(A). Each step uses the recurrence
+        % OUTPUTS:
+        % - U          [cell]    n×k cell matrix; the leading n×n block is upper-triangular
+        % - sign_flip  [logical] true iff an odd number of row swaps were used (so that
+        %                        det(A) = (-1)^sign_flip · U{n,n})
+        % - singular   [logical] true iff a column had no non-zero pivot — the leading
+        %                        n×n block is then structurally singular and U is left in
+        %                        its partially-eliminated state
+        %
+        % The recurrence for entry (i,j), i,j > k, after k elimination steps:
         %   a_{ij}^{(k)} = (a_{kk}^{(k-1)} · a_{ij}^{(k-1)} − a_{ik}^{(k-1)} · a_{kj}^{(k-1)})
-        %                  / a_{k-1,k-1}^{(k-2)}
-        % with the convention p^{(0)} = 1. The numerator is exactly divisible by the
-        % previous pivot by Bareiss's invariant; at the AST level we rely on simplify's
-        % pair-cancellation across multiplicative chains to perform the division.
+        %                  / a_{k-1,k-1}^{(k-2)}     with a_{0,0}^{(-1)} = 1.
+        % The numerator is exactly divisible by the previous pivot by Bareiss's invariant;
+        % at the AST level the division is delegated to simplify's pair-cancellation
+        % across multiplicative chains. Partial row pivoting handles structurally-zero
+        % diagonal entries (the swap flips sign_flip). Below-diagonal entries are zeroed
+        % to mark elimination explicitly.
         %
-        % Complexity: O(n^3) elimination steps; intermediate entries stay polynomial,
-        % so expression bloat is bounded. Sparsity is preserved when pivots are non-zero
-        % at the natural diagonal position; on a structurally-zero pivot the routine
-        % swaps in a non-zero row from below (the row swap flips the determinant sign).
-        % Returns ast('num', 0, {}) if no non-zero pivot is available at some step.
-            n = size(A, 1);
-            if n == 0
-                d = ast('num', 1, {});
+        % Complexity: O(n^3) elimination steps; intermediate entries stay polynomial.
+            n = size(M, 1);
+            U = M;
+            sign_flip = false;
+            singular = false;
+            if n <= 1
                 return
             end
-            M = A;
-            sign_flip = false;
             prev_pivot = ast('num', 1, {});
             for k = 1:n-1
-                % Partial row pivoting on structurally-zero entries: if M{k,k} folds to
-                % numeric 0 after simplify, look for a non-zero row in the remaining rows
-                % and swap. If no such row exists, the matrix is structurally singular.
-                pivot = M{k, k};
+                pivot = U{k, k};
                 if strcmp(pivot.type, 'num') && pivot.value == 0
                     swap_row = 0;
                     for r = k+1:n
-                        cand = M{r, k};
+                        cand = U{r, k};
                         if ~(strcmp(cand.type, 'num') && cand.value == 0)
                             swap_row = r;
                             break
                         end
                     end
                     if swap_row == 0
-                        d = ast('num', 0, {});
+                        singular = true;
                         return
                     end
-                    tmp = M(k, :); M(k, :) = M(swap_row, :); M(swap_row, :) = tmp;
+                    tmp = U(k, :); U(k, :) = U(swap_row, :); U(swap_row, :) = tmp;
                     sign_flip = ~sign_flip;
-                    pivot = M{k, k};
+                    pivot = U{k, k};
                 end
                 for i = k+1:n
-                    for j = k+1:n
-                        % a_{ij}^{(k)} = (pivot · a_{ij} − a_{ik} · a_{kj}) / prev_pivot
+                    for j = k+1:size(U, 2)
                         num = ast('binop', '-', { ...
-                            ast('binop', '*', {pivot, M{i, j}}), ...
-                            ast('binop', '*', {M{i, k}, M{k, j}})});
+                            ast('binop', '*', {pivot, U{i, j}}), ...
+                            ast('binop', '*', {U{i, k}, U{k, j}})});
                         if strcmp(prev_pivot.type, 'num') && prev_pivot.value == 1
-                            M{i, j} = num.simplify();
+                            U{i, j} = num.simplify();
                         else
-                            M{i, j} = ast('binop', '/', {num, prev_pivot}).simplify();
+                            U{i, j} = ast('binop', '/', {num, prev_pivot}).simplify();
                         end
                     end
+                    U{i, k} = ast('num', 0, {});
                 end
                 prev_pivot = pivot;
             end
-            d = M{n, n};
+        end % function
+
+        function d = symbolic_det(A)
+        % Symbolic determinant via fraction-free Gaussian elimination (Bareiss 1968).
+        % Calls ast.bareiss_triangulate(A) and reads ±U{n,n}.
+        % Returns ast('num', 0, {}) when the matrix is structurally singular.
+            n = size(A, 1);
+            if n == 0
+                d = ast('num', 1, {});
+                return
+            end
+            [U, sign_flip, singular] = ast.bareiss_triangulate(A);
+            if singular
+                d = ast('num', 0, {});
+                return
+            end
+            d = U{n, n};
             if sign_flip
                 d = ast.negate(d);
             end
@@ -2155,23 +2175,56 @@ classdef ast
         end % function
 
         function rhs_list = solve_linear_system(A, b)
-        % Solve the system A · x + b = 0 (so A · x = -b) symbolically via Cramer's
-        % rule, with each determinant computed by ast.symbolic_det (Bareiss).
-        % Returns a 1×n cell of ASTs giving rhs_list{i} = det(A_i) / det(A) where A_i
-        % is A with column i replaced by -b. Caller is responsible for checking
-        % det(A) ≠ 0; the returned expressions are not validated for well-definedness.
+        % Solve A · x + b = 0 (i.e. A · x = -b) symbolically via Bareiss-triangulate
+        % followed by back-substitution.
+        %
+        % INPUTS:
+        % - A   [cell]   n×n cell matrix of ASTs
+        % - b   [cell]   n×1 cell vector of ASTs
+        %
+        % OUTPUTS:
+        % - rhs_list   [cell]   1×n cell of ASTs; rhs_list{i} is the closed form for
+        %                       x_i, expressed in terms of:
+        %                         - the original entries of A and -b,
+        %                         - the symbol names vars{i+1}, …, vars{n} when the
+        %                           caller wires this through (here we use the
+        %                           triangular entries inline; modBuilder.steady_plan
+        %                           rewires using vars_block to reference variables by
+        %                           name in the generated steady_state_model block).
+        %
+        % REMARKS:
+        % - The augmented matrix [A | -b] is triangulated in one Bareiss pass: U is the
+        %   upper-triangular block and the (n+1)-th column is the transformed RHS c̃.
+        % - Back-substitution: x_n = c̃_n / U_nn, x_i = (c̃_i − sum_{j>i} U_ij · x_j) / U_ii.
+        %   The x_j substituted into x_i's expression is the AST for x_j (so the result
+        %   is a single closed-form expression per variable, with no helper variables).
+        % - When the system is structurally singular, returns a cell of empty arrays —
+        %   caller is responsible for checking via ast.symbolic_det.
             n = numel(b);
-            detA = ast.symbolic_det(A);
-            rhs_list = cell(1, n);
+            if n == 0
+                rhs_list = {};
+                return
+            end
+            M = [A, cell(n, 1)];
             for i = 1:n
-                Ai = A;
-                for k = 1:n
-                    Ai{k, i} = ast.negate(b{k});
+                M{i, n+1} = ast.negate(b{i});
+            end
+            [U, ~, singular] = ast.bareiss_triangulate(M);
+            if singular
+                rhs_list = repmat({[]}, 1, n);
+                return
+            end
+            rhs_list = cell(1, n);
+            for i = n:-1:1
+                rhs_i = U{i, n+1};
+                for j = i+1:n
+                    term = ast('binop', '*', {U{i, j}, rhs_list{j}});
+                    rhs_i = ast('binop', '-', {rhs_i, term});
                 end
-                detAi = ast.symbolic_det(Ai);
-                rhs_list{i} = ast('binop', '/', {detAi, detA}).simplify();
+                rhs_list{i} = ast('binop', '/', {rhs_i, U{i, i}}).simplify();
             end
         end % function
+
 
         function n = count_occurrences(o, x)
         % Count occurrences of name x as a 'sym' or 'tsym' leaf in the tree.

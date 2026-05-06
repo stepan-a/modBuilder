@@ -2374,6 +2374,44 @@ classdef modBuilder < handle
             end
         end % function
 
+        function o = steady_aux(o, name, expression)
+        % Define an auxiliary computed expression in the steady_state_model block.
+        %
+        % INPUTS:
+        % - o            [modBuilder]
+        % - name         [char]   1×n array, name of the auxiliary intermediate
+        % - expression   [char]   1×m array, RHS expression
+        %
+        % OUTPUTS:
+        % - o            [modBuilder]
+        %
+        % REMARKS:
+        % - Aux variables are local intermediates inside the steady_state_model block.
+        %   They are NOT declared as endogenous, exogenous or parameters but can be
+        %   referenced by other steady-state assignments. Used by steady_plan to factor
+        %   out repeated subexpressions (e.g. the determinant when a simultaneous block
+        %   is solved by Bareiss + back-substitution).
+        % - The name must not collide with any existing symbol (parameter, exogenous,
+        %   endogenous) nor with another aux already defined; both kinds of collision
+        %   raise an error.
+        % - Aux entries live in o.steady_state alongside variable closed forms; the
+        %   topological sort in checksteady orders them correctly via Kahn's algorithm.
+            validateattributes(name, {'char'}, {'nonempty', 'row'}, 'steady_aux', 'name');
+            validateattributes(expression, {'char'}, {'nonempty', 'row'}, 'steady_aux', 'expression');
+
+            if o.issymbol(name)
+                [type, ~] = o.typeof(name);
+                error('Auxiliary name "%s" collides with an existing %s.', name, type);
+            end
+            if ~isempty(o.steady_state) && any(strcmp(name, o.steady_state(:, modBuilder.SS_COL_NAME)))
+                error('Auxiliary name "%s" is already defined in the steady-state table.', name);
+            end
+
+            n = size(o.steady_state, 1);
+            o.steady_state{n+1, modBuilder.SS_COL_NAME} = name;
+            o.steady_state{n+1, modBuilder.SS_COL_EXPR} = expression;
+        end % function
+
         function sorted_names = checksteady(o)
         % Validate steady-state expressions and return symbol names in topological order.
         %
@@ -2415,16 +2453,17 @@ classdef modBuilder < handle
                 syms_in_expr = modBuilder.getsymbols(expr);
                 for j = 1:numel(syms_in_expr)
                     sym = syms_in_expr{j};
-                    % Check that the symbol is known
-                    if ~o.issymbol(sym)
-                        error('Unknown symbol "%s" in steady-state expression for "%s".', sym, node_names{i})
-                    end
-                    % Check if this symbol is also a node
+                    % If sym is itself a node in the steady-state table (a model variable
+                    % with a steady-state expression OR an auxiliary intermediate added by
+                    % steady_aux), record the dependency edge. Otherwise it must be a
+                    % declared model symbol — error if it isn't.
                     node_idx = find(strcmp(sym, node_names));
                     if ~isempty(node_idx)
                         % Edge: node_idx → i (sym must be computed before node i)
                         adj{node_idx}(end+1) = i;
                         in_degree(i) = in_degree(i) + 1;
+                    elseif ~o.issymbol(sym)
+                        error('Unknown symbol "%s" in steady-state expression for "%s".', sym, node_names{i})
                     end
                 end
             end
@@ -5020,7 +5059,9 @@ classdef modBuilder < handle
         %                                             Length 0 if no closed form was found, length 1
         %                                             for singleton blocks closed by ast.isolate,
         %                                             length n for size-n simultaneous blocks closed
-        %                                             by ast.linearise_system + Cramer's rule.
+        %                                             by Bareiss + back-substitution. Entries are in
+        %                                             evaluation order; later assignments may
+        %                                             reference earlier-assigned variables by name.
         %
         % REMARKS:
         % - 'trivial':         single equation, the paired variable does not appear in its own equation
@@ -5159,9 +5200,10 @@ classdef modBuilder < handle
                 end
 
                 % Closed-form isolation: singleton blocks → ast.isolate (linear / monomial /
-                % invertible-call); small simultaneous blocks (size 2..4) → ast.linearise_system
-                % + Cramer's rule. closed_form is a struct array with one entry per resolved
-                % variable (length 0 = no closed form, length 1 = singleton, length n = system).
+                % invertible-call); small simultaneous blocks (size 2..8) → Bareiss
+                % triangulation + back-substitution, with each x_i referencing the
+                % already-solved x_j (j > i) by name so the generated assignments stay
+                % compact in the steady_state_model block.
                 cf = struct('var', {}, 'expr', {});
                 if numel(members) == 1
                     f = modBuilder.static_residual(o, members(1));
@@ -5174,8 +5216,8 @@ classdef modBuilder < handle
                     end
                 elseif numel(members) >= 2 && numel(members) <= 8
                     % The size cap is set by the readability of the generated assignments,
-                    % not by an algorithmic limit: the Bareiss-based ast.symbolic_det runs
-                    % in O(n^3) work and produces polynomial intermediate entries.
+                    % not by an algorithmic limit: Bareiss runs in O(n^3) work and produces
+                    % polynomial intermediate entries.
                     residuals = cell(1, numel(members));
                     for jj = 1:numel(members)
                         residuals{jj} = modBuilder.static_residual(o, members(jj));
@@ -5183,13 +5225,29 @@ classdef modBuilder < handle
                     if all(~cellfun(@isempty, residuals))
                         [ok_lin, A_mat, b_vec] = ast.linearise_system(residuals, vars_block);
                         if ok_lin
-                            % Refuse if the system is singular (det A folds to numeric 0).
-                            detA = ast.symbolic_det(A_mat);
-                            if ~(strcmp(detA.type, 'num') && detA.value == 0)
-                                rhs_list = ast.solve_linear_system(A_mat, b_vec);
-                                for jj = 1:numel(vars_block)
-                                    cf(jj).var = vars_block{jj};
-                                    cf(jj).expr = rhs_list{jj}.string();
+                            n_var = numel(vars_block);
+                            M = [A_mat, cell(n_var, 1)];
+                            for jj = 1:n_var
+                                M{jj, n_var + 1} = ast.negate(b_vec{jj});
+                            end
+                            [U, ~, singular] = ast.bareiss_triangulate(M);
+                            if ~singular
+                                var_refs = cell(1, n_var);
+                                rhs_in_order = cell(1, n_var);
+                                for jj = n_var:-1:1
+                                    rhs_jj = U{jj, n_var + 1};
+                                    for kk = jj+1:n_var
+                                        term = ast('binop', '*', {U{jj, kk}, var_refs{kk}});
+                                        rhs_jj = ast('binop', '-', {rhs_jj, term});
+                                    end
+                                    rhs_jj = ast('binop', '/', {rhs_jj, U{jj, jj}}).simplify();
+                                    rhs_in_order{jj} = rhs_jj;
+                                    var_refs{jj} = ast('sym', vars_block{jj}, {});
+                                end
+                                % Emit assignments in evaluation order: x_n, x_{n-1}, …, x_1.
+                                for jj = n_var:-1:1
+                                    cf(end+1).var = vars_block{jj}; %#ok<AGROW>
+                                    cf(end).expr = rhs_in_order{jj}.string();
                                 end
                             end
                         end
