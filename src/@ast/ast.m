@@ -629,6 +629,30 @@ classdef ast
             b = ast.sum_of(b_terms).simplify();
         end % function
 
+        function tf = is_linear_in_set(o, vars)
+        % Test whether the tree is jointly linear in the set of variable names vars.
+        %
+        % INPUTS:
+        % - o      [ast]    tree to test
+        % - vars   [cell]   1×n cell of char arrays, symbol names treated as unknowns
+        %
+        % OUTPUTS:
+        % - tf     [logical] true iff every term of the canonical sum-of-products form
+        %                    contains at most one occurrence of one of the vars (at the
+        %                    top of its multiplicative chain, exponent 1, not inside a
+        %                    call or denominator), with the rest of the term v-free.
+        %
+        % REMARKS:
+        % - This is the multi-variable extension of is_linear_in: the same predicate
+        %   applied to a *set*. A bilinear term like a·b is rejected when both a and b
+        %   are in vars (whereas is_linear_in(a) would accept a·b, treating b as a
+        %   constant coefficient).
+        % - Used to recognise small linear systems in simultaneous SCCs and pass them
+        %   to ast.linearise_system / ast.solve_linear_system for closed-form Cramer.
+            o = o.canonicalise().simplify();
+            [tf, ~] = ast.linear_set_walk(o, vars);
+        end % function
+
         function tf = is_monomial_in(o, x)
         % Test whether the tree has the form α·x^d + β with α, β, d independent of x,
         % and at least one term containing x (so the split is meaningful).
@@ -1918,6 +1942,189 @@ classdef ast
                     end
                 otherwise
                     ok = false; n = 0;
+            end
+        end % function
+
+        function [ok, n] = linear_set_walk(o, vars)
+        % Multi-variable companion of linear_walk. Returns (ok, n) where n is the count
+        % of leaves matching ANY name in vars; a term is rejected if it contains more
+        % than one such leaf (bilinear) or has any of those leaves in a non-linear
+        % position (inside a call, in a denominator, raised to a non-1 exponent).
+            switch o.type
+                case 'num'
+                    ok = true; n = 0;
+                case 'sym'
+                    ok = true; n = double(any(strcmp(o.value, vars)));
+                case 'tsym'
+                    ok = true; n = double(any(strcmp(o.value{1}, vars)));
+                case 'ss'
+                    ok = true; n = 0;
+                case 'call'
+                    n = 0;
+                    for i = 1:numel(o.children)
+                        [c_ok, c_n] = ast.linear_set_walk(o.children{i}, vars);
+                        if ~c_ok || c_n > 0
+                            ok = false; n = 0; return
+                        end
+                    end
+                    ok = true;
+                case 'uminus'
+                    [ok, n] = ast.linear_set_walk(o.children{1}, vars);
+                case 'binop'
+                    L = o.children{1};
+                    R = o.children{2};
+                    switch o.value
+                        case {'+', '-'}
+                            [okL, nL] = ast.linear_set_walk(L, vars);
+                            [okR, nR] = ast.linear_set_walk(R, vars);
+                            ok = okL && okR; n = nL + nR;
+                        case '*'
+                            [okL, nL] = ast.linear_set_walk(L, vars);
+                            [okR, nR] = ast.linear_set_walk(R, vars);
+                            if ~okL || ~okR || (nL > 0 && nR > 0)
+                                ok = false; n = 0;
+                            else
+                                ok = true; n = nL + nR;
+                            end
+                        case '/'
+                            [okL, nL] = ast.linear_set_walk(L, vars);
+                            [okR, nR] = ast.linear_set_walk(R, vars);
+                            if ~okL || ~okR || nR > 0
+                                ok = false; n = 0;
+                            else
+                                ok = true; n = nL;
+                            end
+                        case '^'
+                            [okB, nB] = ast.linear_set_walk(L, vars);
+                            [okE, nE] = ast.linear_set_walk(R, vars);
+                            if ~okB || ~okE || nE > 0
+                                ok = false; n = 0; return
+                            end
+                            if nB == 0
+                                ok = true; n = 0;
+                            elseif strcmp(R.type, 'num') && R.value == 1
+                                ok = true; n = nB;
+                            else
+                                ok = false; n = 0;
+                            end
+                        otherwise
+                            ok = false; n = 0;
+                    end
+                otherwise
+                    ok = false; n = 0;
+            end
+        end % function
+
+        function [coefs, const] = split_linear_set(o, vars)
+        % Per-equation extractor for the multi-variable linear case. Returns coefs (a
+        % 1×n cell of ASTs, one per var) and const (an AST) such that o equals
+        % sum_j coefs{j}·vars{j} + const. Caller is expected to have verified the
+        % expression is linear in the set via is_linear_in_set.
+            o = o.canonicalise().simplify();
+            terms = ast.flatten(o, '+');
+            coef_terms_per = cell(1, numel(vars));
+            for j = 1:numel(vars)
+                coef_terms_per{j} = {};
+            end
+            const_terms = {};
+            for i = 1:numel(terms)
+                t = terms{i};
+                which_var = -1;
+                for j = 1:numel(vars)
+                    if ast.count_occurrences(t, vars{j}) > 0
+                        which_var = j;
+                        break
+                    end
+                end
+                if which_var == -1
+                    const_terms{end+1} = t; %#ok<AGROW>
+                else
+                    coef = ast.peel_x(t, vars{which_var});
+                    coef_terms_per{which_var}{end+1} = coef; %#ok<AGROW>
+                end
+            end
+            coefs = cell(1, numel(vars));
+            for j = 1:numel(vars)
+                coefs{j} = ast.sum_of(coef_terms_per{j}).simplify();
+            end
+            const = ast.sum_of(const_terms).simplify();
+        end % function
+
+        function [ok, A, b] = linearise_system(residuals, vars)
+        % Express the system { residuals{i} = 0 } as A · x + b = 0, with x the column
+        % vector of vars.
+        %
+        % INPUTS:
+        % - residuals  [cell]  1×n cell of ASTs (one per equation)
+        % - vars       [cell]  1×n cell of variable names
+        %
+        % OUTPUTS:
+        % - ok  [logical] true iff every residual is jointly linear in vars
+        % - A   [cell]    n×n cell of ASTs; A{i,j} is the coefficient of vars{j} in residuals{i}
+        % - b   [cell]    n×1 cell of ASTs; b{i} is the constant term of residuals{i}
+        %
+        % REMARKS:
+        % - System must be square: numel(residuals) must equal numel(vars).
+        % - On failure (any residual not jointly linear), returns ok = false and A, b = {}.
+            n = numel(residuals);
+            if n ~= numel(vars)
+                error('ast:linearise_system', 'System must be square: %d residuals, %d variables.', ...
+                      n, numel(vars));
+            end
+            A = cell(n, n);
+            b = cell(n, 1);
+            for i = 1:n
+                if ~residuals{i}.is_linear_in_set(vars)
+                    ok = false; A = {}; b = {}; return
+                end
+                [coefs, const] = ast.split_linear_set(residuals{i}, vars);
+                for j = 1:n
+                    A{i, j} = coefs{j};
+                end
+                b{i} = const;
+            end
+            ok = true;
+        end % function
+
+        function d = symbolic_det(A)
+        % Symbolic determinant of an n×n cell matrix of ASTs, computed by recursive
+        % cofactor expansion along the first row. Used by solve_linear_system to apply
+        % Cramer's rule. Result has n! terms before simplification; intended for small n.
+            n = size(A, 1);
+            if n == 1
+                d = A{1, 1};
+                return
+            end
+            terms = cell(1, n);
+            for j = 1:n
+                minor = A(2:end, [1:j-1, j+1:end]);
+                mdet = ast.symbolic_det(minor);
+                term = ast('binop', '*', {A{1, j}, mdet});
+                if mod(j-1, 2) == 1
+                    term = ast.negate(term);
+                end
+                terms{j} = term;
+            end
+            d = ast.sum_of(terms);
+        end % function
+
+        function rhs_list = solve_linear_system(A, b)
+        % Symbolic Cramer's rule for the system A · x + b = 0 (so A · x = -b).
+        % Returns a 1×n cell of ASTs giving the closed form for each variable:
+        %   rhs_list{i} = det(A_i) / det(A)
+        % where A_i is A with column i replaced by -b. Caller is responsible for
+        % checking det(A) ≠ 0; the returned expressions are not validated for
+        % well-definedness.
+            n = numel(b);
+            detA = ast.symbolic_det(A).simplify();
+            rhs_list = cell(1, n);
+            for i = 1:n
+                Ai = A;
+                for k = 1:n
+                    Ai{k, i} = ast.negate(b{k});
+                end
+                detAi = ast.symbolic_det(Ai).simplify();
+                rhs_list{i} = ast('binop', '/', {detAi, detA}).simplify();
             end
         end % function
 

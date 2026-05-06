@@ -1280,6 +1280,33 @@ classdef modBuilder < handle
 
     methods(Static)
 
+        function f = static_residual(o, eq_idx)
+        % Build the static residual AST for the equation at row eq_idx of o.equations.
+        %
+        % INPUTS:
+        % - o        [modBuilder]
+        % - eq_idx   [integer]    row index in o.equations
+        %
+        % OUTPUTS:
+        % - f        [ast]   staticised "LHS - RHS" tree (or "LHS" if the equation has
+        %                    no '=' symbol). Empty if the equation cannot be parsed.
+        %
+        % REMARKS:
+        % - Used by steady_plan to feed ast.isolate / ast.linearise_system without
+        %   duplicating the LHS/RHS-split-and-staticise boilerplate.
+            eq_str = o.equations{eq_idx, modBuilder.EQ_COL_EXPR};
+            LHSRHS = strsplit(eq_str, '=');
+            if isscalar(LHSRHS)
+                f = ast(strtrim(LHSRHS{1})).staticise();
+            elseif length(LHSRHS) == 2
+                Lt = ast(strtrim(LHSRHS{1})).staticise();
+                Rt = ast(strtrim(LHSRHS{2})).staticise();
+                f = ast('binop', '-', {Lt, Rt});
+            else
+                f = [];
+            end
+        end % function
+
         function [eq2var, unmatched_eqs, unmatched_vars] = matchequations(eqasts, eqlhs_symbols, candidates)
         % Match each equation to a unique endogenous variable using bipartite matching.
         %
@@ -4988,9 +5015,12 @@ classdef modBuilder < handle
         %               .kind         [char]    'trivial' | 'self-recursive' | 'simultaneous'
         %               .deps         [cell]    already-solved endogenous names referenced from this block
         %               .extdeps      [cell]    parameter / exogenous names referenced from this block
-        %               .closed_form  [struct]  for singleton blocks where ast.isolate could derive a
-        %                                       closed form: struct with fields .var (char) and .expr
-        %                                       (char, the RHS). Empty otherwise.
+        %               .closed_form  [struct array]  one entry per resolved variable, each with
+        %                                             fields .var (char) and .expr (char, the RHS).
+        %                                             Length 0 if no closed form was found, length 1
+        %                                             for singleton blocks closed by ast.isolate,
+        %                                             length n for size-n simultaneous blocks closed
+        %                                             by ast.linearise_system + Cramer's rule.
         %
         % REMARKS:
         % - 'trivial':         single equation, the paired variable does not appear in its own equation
@@ -5003,7 +5033,9 @@ classdef modBuilder < handle
         %   lag. The static dependency graph and its SCC structure are identical to what one obtains by
         %   first staticising every equation, since name equality is unchanged by staticise.
         % - For singleton blocks (trivial / self-recursive), ast.isolate is invoked on the static residual
-        %   to derive a closed form. Simultaneous blocks are left without a closed form.
+        %   to derive a closed form. For simultaneous blocks of size 2..4, ast.linearise_system attempts
+        %   to extract a coefficient matrix; if the system is jointly linear and the matrix is non-singular,
+        %   ast.solve_linear_system returns the closed forms via Cramer's rule.
 
             if o.tables_dirty
                 o.updatesymboltables();
@@ -5126,27 +5158,37 @@ classdef modBuilder < handle
                     end
                 end
 
-                % Closed-form isolation for singleton (trivial / self-recursive) blocks via
-                % ast.isolate (linear / monomial / invertible-call recognisers).
-                cf = [];
+                % Closed-form isolation: singleton blocks → ast.isolate (linear / monomial /
+                % invertible-call); small simultaneous blocks (size 2..4) → ast.linearise_system
+                % + Cramer's rule. closed_form is a struct array with one entry per resolved
+                % variable (length 0 = no closed form, length 1 = singleton, length n = system).
+                cf = struct('var', {}, 'expr', {});
                 if numel(members) == 1
-                    i = members(1);
-                    var = vars_block{1};
-                    eq_str = o.equations{i, modBuilder.EQ_COL_EXPR};
-                    LHSRHS = strsplit(eq_str, '=');
-                    if isscalar(LHSRHS)
-                        f = ast(strtrim(LHSRHS{1})).staticise();
-                    elseif length(LHSRHS) == 2
-                        Lt = ast(strtrim(LHSRHS{1})).staticise();
-                        Rt = ast(strtrim(LHSRHS{2})).staticise();
-                        f = ast('binop', '-', {Lt, Rt});
-                    else
-                        f = [];
-                    end
+                    f = modBuilder.static_residual(o, members(1));
                     if ~isempty(f)
-                        rhs_tree = f.isolate(var);
+                        rhs_tree = f.isolate(vars_block{1});
                         if ~isempty(rhs_tree)
-                            cf = struct('var', var, 'expr', rhs_tree.string());
+                            cf(1).var = vars_block{1};
+                            cf(1).expr = rhs_tree.string();
+                        end
+                    end
+                elseif numel(members) >= 2 && numel(members) <= 4
+                    residuals = cell(1, numel(members));
+                    for jj = 1:numel(members)
+                        residuals{jj} = modBuilder.static_residual(o, members(jj));
+                    end
+                    if all(~cellfun(@isempty, residuals))
+                        [ok_lin, A_mat, b_vec] = ast.linearise_system(residuals, vars_block);
+                        if ok_lin
+                            % Refuse if the system is singular (det A folds to numeric 0).
+                            detA = ast.symbolic_det(A_mat).simplify();
+                            if ~(strcmp(detA.type, 'num') && detA.value == 0)
+                                rhs_list = ast.solve_linear_system(A_mat, b_vec);
+                                for jj = 1:numel(vars_block)
+                                    cf(jj).var = vars_block{jj};
+                                    cf(jj).expr = rhs_list{jj}.string();
+                                end
+                            end
                         end
                     end
                 end
@@ -5195,7 +5237,9 @@ classdef modBuilder < handle
                     modBuilder.dprintf('    external constants: %s', strjoin(b.extdeps, ', '));
                 end
                 if ~isempty(b.closed_form)
-                    modBuilder.dprintf('    closed form: %s = %s', b.closed_form.var, b.closed_form.expr);
+                    for jj = 1:numel(b.closed_form)
+                        modBuilder.dprintf('    closed form: %s = %s', b.closed_form(jj).var, b.closed_form(jj).expr);
+                    end
                 elseif strcmp(b.kind, 'simultaneous')
                     modBuilder.dprintf('    -- numerical solver required --');
                 end
@@ -5227,8 +5271,8 @@ classdef modBuilder < handle
             end
             for k = 1:numel(blocks)
                 cf = blocks(k).closed_form;
-                if ~isempty(cf)
-                    o.steady(cf.var, cf.expr);
+                for jj = 1:numel(cf)
+                    o.steady(cf(jj).var, cf(jj).expr);
                 end
             end
         end % function
