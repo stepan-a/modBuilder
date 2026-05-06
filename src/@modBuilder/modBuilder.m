@@ -1287,6 +1287,19 @@ classdef modBuilder < handle
 
     methods(Static)
 
+        function n = total_residual_count(blocks)
+        % Count the total number of unresolved variables across all simultaneous blocks
+        % of a steady-state plan. Used by suggest_calibrations to score candidate swaps.
+            n = 0;
+            for k = 1:numel(blocks)
+                b = blocks(k);
+                if strcmp(b.kind, 'simultaneous')
+                    resolved = {b.closed_form.var};
+                    n = n + numel(setdiff(b.vars, resolved));
+                end
+            end
+        end % function
+
         function f = static_residual(o, eq_idx)
         % Build the static residual AST for the equation at row eq_idx of o.equations.
         %
@@ -2466,6 +2479,15 @@ classdef modBuilder < handle
                 if any(strcmp(param_name, o.calibration_swaps(:, 3)))
                     error('modBuilder:calibrate', 'Parameter "%s" is already in a calibration swap.', param_name);
                 end
+            end
+            if o.tables_dirty
+                o.updatesymboltables();
+            end
+            if ~isfield(o.T.equations, endo_name) || ~ismember(param_name, o.T.equations.(endo_name))
+                error('modBuilder:calibrate', ...
+                      ['Parameter "%s" does not appear in the equation paired with "%s"; ' ...
+                       'a non-local role swap would require re-running matchequations on the ' ...
+                       'swapped unknown set, which is not currently supported.'], param_name, endo_name);
             end
 
             n = size(o.calibration_swaps, 1);
@@ -3977,6 +3999,7 @@ classdef modBuilder < handle
             p.symbols = o.symbols;
             p.equations = o.equations;
             p.steady_state = o.steady_state;
+            p.calibration_swaps = o.calibration_swaps;
             p.T = o.T;
             p.tags = o.tags;
             p.tables_dirty = o.tables_dirty;
@@ -5363,6 +5386,95 @@ classdef modBuilder < handle
             end
         end % function
 
+        function suggestions = suggest_calibrations(o, blocks)
+        % Scan candidate calibration role swaps that would close a residual sub-block.
+        %
+        % INPUTS:
+        % - o        [modBuilder]
+        % - blocks   [struct array]   optional; if omitted, computed by o.steady_plan().
+        %
+        % OUTPUTS:
+        % - suggestions  [struct array]  one entry per candidate that strictly shrinks
+        %                                the total residual, with fields:
+        %                                  .endo       [char]   endogenous to pin
+        %                                  .param      [char]   parameter to elevate
+        %                                  .residual   [int]    total #variables left
+        %                                                       open across the plan
+        %                                                       after virtually applying
+        %                                                       this swap (0 = full
+        %                                                       closure)
+        %                                Sorted by ascending .residual (full closures
+        %                                first).
+        %
+        % REMARKS:
+        % - For each residual variable, scan parameters that appear in its anchor
+        %   equation. Each (endo, param) pair is virtually applied (m.copy +
+        %   m.calibrate, then steady_plan re-runs) and the new total residual is
+        %   recorded.
+        % - Cost: one steady_plan re-run per candidate. Bounded by
+        %   #residual_vars × max_params_per_residual_eq, which is small in practice
+        %   for DSGE blocks.
+        % - Without economic intuition, some suggestions may be algebraically sound but
+        %   meaningless (calibrating output to identify the discount factor). The user
+        %   reads the menu critically; the framework only exposes the algebraic options.
+            if nargin < 2
+                blocks = o.steady_plan();
+            end
+            suggestions = struct('endo', {}, 'param', {}, 'residual', {});
+            if ~isempty(o.calibration_swaps)
+                % If swaps are already declared, the plan reflects the user's intent —
+                % don't propose more on top.
+                return
+            end
+            old_total = modBuilder.total_residual_count(blocks);
+            if old_total == 0
+                return
+            end
+
+            seen = containers.Map('KeyType', 'char', 'ValueType', 'logical');
+            for k = 1:numel(blocks)
+                b = blocks(k);
+                if ~strcmp(b.kind, 'simultaneous'), continue, end
+                resolved = {b.closed_form.var};
+                residual = setdiff(b.vars, resolved);
+                if isempty(residual), continue, end
+
+                for r = 1:numel(residual)
+                    endo = residual{r};
+                    if ~isfield(o.T.equations, endo), continue, end
+                    eq_symbols = o.T.equations.(endo);
+                    for p_idx = 1:numel(eq_symbols)
+                        p = eq_symbols{p_idx};
+                        if ~o.isparameter(p), continue, end
+                        key = sprintf('%s|%s', endo, p);
+                        if isKey(seen, key), continue, end
+                        seen(key) = true;
+
+                        m_copy = o.copy();
+                        target = o.get_value(endo);
+                        if isnan(target), target = 0; end
+                        try
+                            m_copy.calibrate(endo, target, p);
+                            new_blocks = m_copy.steady_plan();
+                        catch
+                            continue
+                        end
+                        new_total = modBuilder.total_residual_count(new_blocks);
+                        if new_total < old_total
+                            suggestions(end+1).endo = endo; %#ok<AGROW>
+                            suggestions(end).param = p;
+                            suggestions(end).residual = new_total;
+                        end
+                    end
+                end
+            end
+
+            if ~isempty(suggestions)
+                [~, order] = sort([suggestions.residual]);
+                suggestions = suggestions(order);
+            end
+        end % function
+
         function print_steady_plan(o, blocks)
         % Render the structural steady-state plan as a human-readable summary.
         %
@@ -5412,6 +5524,26 @@ classdef modBuilder < handle
                     modBuilder.dprintf('    -- numerical solver required --');
                 end
                 modBuilder.skipline();
+            end
+
+            % If the plan has any residual and the user has not yet declared a
+            % calibration swap, scan candidate (endo, param) pairs and surface them
+            % as a ranked menu. Full-closure candidates appear first.
+            if isempty(o.calibration_swaps) && modBuilder.total_residual_count(blocks) > 0
+                suggestions = o.suggest_calibrations(blocks);
+                if ~isempty(suggestions)
+                    modBuilder.dprintf('Suggested calibration swaps:');
+                    for s = 1:numel(suggestions)
+                        if suggestions(s).residual == 0
+                            tag = 'closes fully';
+                        else
+                            tag = sprintf('shrinks residual to %d', suggestions(s).residual);
+                        end
+                        modBuilder.dprintf('  m.calibrate(''%s'', <target>, ''%s'')   [%s]', ...
+                            suggestions(s).endo, suggestions(s).param, tag);
+                    end
+                    modBuilder.skipline();
+                end
             end
         end % function
 
