@@ -5223,6 +5223,7 @@ classdef modBuilder < handle
                         residuals{jj} = modBuilder.static_residual(o, members(jj));
                     end
                     if all(~cellfun(@isempty, residuals))
+                        % First attempt: jointly linear → Bareiss + back-substitution.
                         [ok_lin, A_mat, b_vec] = ast.linearise_system(residuals, vars_block);
                         if ok_lin
                             n_var = numel(vars_block);
@@ -5244,11 +5245,25 @@ classdef modBuilder < handle
                                     rhs_in_order{jj} = rhs_jj;
                                     var_refs{jj} = ast('sym', vars_block{jj}, {});
                                 end
-                                % Emit assignments in evaluation order: x_n, x_{n-1}, …, x_1.
                                 for jj = n_var:-1:1
                                     cf(end+1).var = vars_block{jj}; %#ok<AGROW>
                                     cf(end).expr = rhs_in_order{jj}.string();
                                 end
+                            end
+                        end
+                        % Fallback: iterated symbolic elimination via the per-equation
+                        % recognisers. Substitution between equations may turn a
+                        % non-linear residual into a linear / monomial / call-wrapped
+                        % one that the recognisers then handle.
+                        if isempty(cf)
+                            param_names = {};
+                            if ~isempty(o.params)
+                                param_names = o.params(:, modBuilder.COL_NAME)';
+                            end
+                            elim_cf = ast.iterated_elimination(residuals, vars_block, param_names);
+                            for jj = 1:numel(elim_cf)
+                                cf(end+1).var = elim_cf(jj).var; %#ok<AGROW>
+                                cf(end).expr = elim_cf(jj).expr.string();
                             end
                         end
                     end
@@ -5300,6 +5315,13 @@ classdef modBuilder < handle
                 if ~isempty(b.closed_form)
                     for jj = 1:numel(b.closed_form)
                         modBuilder.dprintf('    closed form: %s = %s', b.closed_form(jj).var, b.closed_form(jj).expr);
+                    end
+                    % Flag any residual sub-block that the recognisers did not close.
+                    resolved_vars = {b.closed_form.var};
+                    residual_vars = setdiff(b.vars, resolved_vars);
+                    if ~isempty(residual_vars)
+                        modBuilder.dprintf('    residual (still open): %s', strjoin(residual_vars, ', '));
+                        modBuilder.dprintf('    -- numerical solver required for the residual --');
                     end
                 elseif strcmp(b.kind, 'simultaneous')
                     modBuilder.dprintf('    -- numerical solver required --');

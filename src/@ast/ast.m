@@ -614,19 +614,19 @@ classdef ast
                 error('ast:split_linear', 'Expression is not linear in "%s".', x);
             end
             o = o.canonicalise().simplify();
-            terms = ast.flatten(o, '+');
-            a_terms = {};
-            b_terms = {};
-            for i = 1:numel(terms)
-                t = terms{i};
-                if ast.count_occurrences(t, x) == 0
-                    b_terms{end+1} = t; %#ok<AGROW>
-                else
-                    a_terms{end+1} = ast.peel_x(t, x); %#ok<AGROW>
-                end
-            end
-            a = ast.sum_of(a_terms).simplify();
-            b = ast.sum_of(b_terms).simplify();
+            % Use the substitution identity for an expression that is linear in x:
+            %   b = expr at x = 0
+            %   a = expr at x = 1 minus b
+            % This is robust against any structure that passes is_linear_in (where x cannot
+            % appear inside a call, in a denominator, or with a non-1 exponent — so x = 0
+            % is always a valid evaluation point). Cleaner than a structural extraction
+            % that assumes x sits at the top of a multiplicative chain, which can fail
+            % after substitution + simplify pushes x deeper into a sub-expression.
+            zero = ast('num', 0, {});
+            one = ast('num', 1, {});
+            b = o.substitute(x, zero).simplify();
+            expr_at_one = o.substitute(x, one).simplify();
+            a = ast('binop', '-', {expr_at_one, b}).simplify();
         end % function
 
         function tf = is_linear_in_set(o, vars)
@@ -2222,6 +2222,105 @@ classdef ast
                     rhs_i = ast('binop', '-', {rhs_i, term});
                 end
                 rhs_list{i} = ast('binop', '/', {rhs_i, U{i, i}}).simplify();
+            end
+        end % function
+
+        function cf_list = iterated_elimination(residuals, vars, parameter_names)
+        % Iterated symbolic elimination on a simultaneous block: try to isolate one
+        % variable at a time via the linear / monomial / invertible-call recognisers
+        % (ast.isolate), substitute the closed form into every other equation,
+        % simplify, and repeat until the block is either fully resolved or no more
+        % isolations succeed.
+        %
+        % INPUTS:
+        % - residuals        [cell]   1×n cell of static-residual ASTs (one per
+        %                             equation, paired with vars{i} = the variable
+        %                             the equation pins in matchequations)
+        % - vars             [cell]   1×n cell of variable name strings
+        % - parameter_names  [cell]   (optional) names treated as time-invariant
+        %                             during substitution; defaults to {}
+        %
+        % OUTPUTS:
+        % - cf_list  [struct array]   .var (char), .expr (ast) for each variable that
+        %                             got isolated, in *evaluation order*: the variable
+        %                             eliminated last appears first in the array
+        %                             (because its closed form does not reference any
+        %                             other unresolved variable in the block).
+        %
+        % REMARKS:
+        % - Greedy selection per iteration: prefer the (var, eq) pair that, on success,
+        %   eliminates the most other-equation occurrences of var (highest "gain"); break
+        %   ties on shorter rendered closed-form length.
+        % - The closed form for an early-eliminated variable may reference other vars in
+        %   the block that are eliminated later. The output ordering ensures the
+        %   evaluation chain is well-defined: for steady_state_model emission, write the
+        %   entries in the returned order so each assignment refers only to already-
+        %   computed values.
+        % - When some variables remain unresolved (no recogniser fires after any
+        %   substitution), they are simply absent from cf_list. The caller can compare
+        %   cf_list against the input vars to find the residual sub-block.
+            n = numel(residuals);
+            cf_list = struct('var', {}, 'expr', {});
+            if n == 0
+                return
+            end
+            if nargin < 3
+                parameter_names = {};
+            end
+
+            active = true(1, n);
+            elim = struct('var', {}, 'expr', {});
+
+            while any(active)
+                active_idx = find(active);
+                best_score = -inf;
+                best_pos = -1;
+                best_rhs = [];
+                for ii = 1:numel(active_idx)
+                    pos = active_idx(ii);
+                    v = vars{pos};
+                    f = residuals{pos};
+                    if ast.count_occurrences(f, v) == 0
+                        continue
+                    end
+                    rhs = f.isolate(v);
+                    if isempty(rhs)
+                        continue
+                    end
+                    gain = 0;
+                    for jj = 1:numel(active_idx)
+                        other = active_idx(jj);
+                        if other ~= pos && ast.count_occurrences(residuals{other}, v) > 0
+                            gain = gain + 1;
+                        end
+                    end
+                    score = gain * 1e6 - length(rhs.string());
+                    if score > best_score
+                        best_score = score;
+                        best_pos = pos;
+                        best_rhs = rhs;
+                    end
+                end
+
+                if best_pos == -1
+                    break
+                end
+
+                v = vars{best_pos};
+                for ii = 1:numel(active_idx)
+                    other = active_idx(ii);
+                    if other ~= best_pos
+                        residuals{other} = residuals{other}.substitute(v, best_rhs, parameter_names).simplify();
+                    end
+                end
+                elim(end+1).var = v; %#ok<AGROW>
+                elim(end).expr = best_rhs;
+                active(best_pos) = false;
+            end
+
+            for i = numel(elim):-1:1
+                cf_list(end+1).var = elim(i).var; %#ok<AGROW>
+                cf_list(end).expr = elim(i).expr;
             end
         end % function
 
