@@ -60,6 +60,13 @@ classdef modBuilder < handle
         % Row order = insertion order (used for tie-breaking in topological sort)
         steady_state = cell(0, 2);
 
+        % Calibration role swaps recorded by m.calibrate.
+        % Each row holds {endo_name, target_value, param_name}: at steady-state
+        % analysis time the endogenous is treated as a known constant pinned to
+        % target_value, and the parameter is treated as an unknown to be solved.
+        % The swap is metadata only — it does not modify params / var / varexo.
+        calibration_swaps = cell(0, 3);
+
         % Symbol table: maps symbols to equations where they appear
         % T.params.<NAME> = {eq1, eq2, ...} - equations using parameter NAME
         % T.varexo.<NAME> = {eq1, eq2, ...} - equations using exogenous variable NAME
@@ -2410,6 +2417,61 @@ classdef modBuilder < handle
             n = size(o.steady_state, 1);
             o.steady_state{n+1, modBuilder.SS_COL_NAME} = name;
             o.steady_state{n+1, modBuilder.SS_COL_EXPR} = expression;
+        end % function
+
+        function o = calibrate(o, endo_name, target_value, param_name)
+        % Declare a calibration role swap: pin an endogenous variable to a target
+        % value at the steady state and solve for a parameter whose value is computed
+        % to make the swap consistent with the model.
+        %
+        % INPUTS:
+        % - o             [modBuilder]
+        % - endo_name     [char]    name of an endogenous variable; will be treated as
+        %                           a known constant equal to target_value during
+        %                           steady-state analysis.
+        % - target_value  [double]  scalar, the steady-state value to pin endo_name to.
+        % - param_name    [char]    name of a parameter; will be treated as an unknown
+        %                           to be solved during steady-state analysis.
+        %
+        % OUTPUTS:
+        % - o             [modBuilder]
+        %
+        % REMARKS:
+        % - This is a metadata declaration, not a model rewrite: o.var, o.params and
+        %   o.varexo are left unchanged. The swap is consumed by steady_plan, which
+        %   permutes the unknown set before running the dependency analysis and the
+        %   recogniser pipeline.
+        % - endo_name must currently be an endogenous variable; param_name must
+        %   currently be a parameter; neither may already appear in another
+        %   calibration swap. Errors with id 'modBuilder:calibrate' otherwise.
+        % - Captures the typical DSGE manoeuvre: pin hours h to 1/3 and solve for the
+        %   labour-disutility weight theta; or pin the K/Y ratio and solve for the
+        %   depreciation rate. With h fixed, the labour FOC becomes linear in theta —
+        %   and the rest of the RBC steady state reduces step-by-step under the
+        %   iterated-elimination pipeline.
+            validateattributes(endo_name, {'char'}, {'nonempty', 'row'}, 'calibrate', 'endo_name');
+            validateattributes(target_value, {'double'}, {'scalar', 'real'}, 'calibrate', 'target_value');
+            validateattributes(param_name, {'char'}, {'nonempty', 'row'}, 'calibrate', 'param_name');
+
+            if ~o.isendogenous(endo_name)
+                error('modBuilder:calibrate', '"%s" must be an endogenous variable.', endo_name);
+            end
+            if ~o.isparameter(param_name)
+                error('modBuilder:calibrate', '"%s" must be a parameter.', param_name);
+            end
+            if ~isempty(o.calibration_swaps)
+                if any(strcmp(endo_name, o.calibration_swaps(:, 1)))
+                    error('modBuilder:calibrate', 'Endogenous "%s" is already in a calibration swap.', endo_name);
+                end
+                if any(strcmp(param_name, o.calibration_swaps(:, 3)))
+                    error('modBuilder:calibrate', 'Parameter "%s" is already in a calibration swap.', param_name);
+                end
+            end
+
+            n = size(o.calibration_swaps, 1);
+            o.calibration_swaps{n+1, 1} = endo_name;
+            o.calibration_swaps{n+1, 2} = target_value;
+            o.calibration_swaps{n+1, 3} = param_name;
         end % function
 
         function sorted_names = checksteady(o)
@@ -5088,11 +5150,34 @@ classdef modBuilder < handle
                 return
             end
 
+            % Default pairing: equation i is pinned to its LHS endogenous (the name
+            % stored in o.equations(:, EQ_COL_NAME)). Calibration role swaps re-pair
+            % the anchor equation of each calibrated endogenous to its swapped parameter.
             var_names = o.equations(:, modBuilder.EQ_COL_NAME);
+            calibrated_endos = {};
+            if ~isempty(o.calibration_swaps)
+                calibrated_endos = o.calibration_swaps(:, 1)';
+                for s = 1:size(o.calibration_swaps, 1)
+                    endo = o.calibration_swaps{s, 1};
+                    param = o.calibration_swaps{s, 3};
+                    eq_idx = find(strcmp(endo, var_names));
+                    if isempty(eq_idx)
+                        error('modBuilder:steady_plan', ...
+                              'Calibrated endogenous "%s" is not paired with any equation.', endo);
+                    end
+                    if ~ismember(param, o.T.equations.(endo))
+                        error('modBuilder:steady_plan', ...
+                              ['Parameter "%s" does not appear in the equation paired with "%s"; ' ...
+                               'a non-local role swap would require re-running matchequations on the ' ...
+                               'swapped unknown set, which is not currently supported.'], param, endo);
+                    end
+                    var_names{eq_idx} = param;
+                end
+            end
             var_idx = containers.Map(var_names, num2cell(1:n));
 
             % Collect the symbol names referenced by each equation (via AST) and partition into
-            % endogenous deps vs external constants (parameters / exogenous).
+            % endogenous deps vs external constants (parameters / exogenous / calibrated endos).
             % LHS-as-bare-paired-variable (the standard "y = expr" form) does not count as a
             % self-reference: the LHS occurrence is the equation's pairing target, not a use.
             endo_deps = cell(n, 1);
@@ -5120,7 +5205,7 @@ classdef modBuilder < handle
                     s = names{k};
                     if isKey(var_idx, s)
                         en{end+1} = s; %#ok<AGROW>
-                    elseif o.isparameter(s) || o.isexogenous(s)
+                    elseif o.isparameter(s) || o.isexogenous(s) || ismember(s, calibrated_endos)
                         ex{end+1} = s; %#ok<AGROW>
                     end
                 end
@@ -5351,6 +5436,15 @@ classdef modBuilder < handle
         %   is idempotent for the closed-form blocks.
             if nargin < 2
                 blocks = o.steady_plan();
+            end
+            % Calibration role swaps: pin each calibrated endogenous to its target value
+            % before writing the block closed forms. The closed forms for elevated
+            % parameters reference the calibrated names symbolically; the toposort in
+            % checksteady places the calibration anchors before the dependent expressions.
+            if ~isempty(o.calibration_swaps)
+                for s = 1:size(o.calibration_swaps, 1)
+                    o.steady(o.calibration_swaps{s, 1}, num2str(o.calibration_swaps{s, 2}, 15));
+                end
             end
             for k = 1:numel(blocks)
                 cf = blocks(k).closed_form;
