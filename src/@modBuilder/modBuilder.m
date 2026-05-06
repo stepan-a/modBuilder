@@ -5172,7 +5172,10 @@ classdef modBuilder < handle
                             cf(1).expr = rhs_tree.string();
                         end
                     end
-                elseif numel(members) >= 2 && numel(members) <= 4
+                elseif numel(members) >= 2 && numel(members) <= 8
+                    % The size cap is set by the readability of the generated assignments,
+                    % not by an algorithmic limit: the Bareiss-based ast.symbolic_det runs
+                    % in O(n^3) work and produces polynomial intermediate entries.
                     residuals = cell(1, numel(members));
                     for jj = 1:numel(members)
                         residuals{jj} = modBuilder.static_residual(o, members(jj));
@@ -5181,7 +5184,7 @@ classdef modBuilder < handle
                         [ok_lin, A_mat, b_vec] = ast.linearise_system(residuals, vars_block);
                         if ok_lin
                             % Refuse if the system is singular (det A folds to numeric 0).
-                            detA = ast.symbolic_det(A_mat).simplify();
+                            detA = ast.symbolic_det(A_mat);
                             if ~(strcmp(detA.type, 'num') && detA.value == 0)
                                 rhs_list = ast.solve_linear_system(A_mat, b_vec);
                                 for jj = 1:numel(vars_block)

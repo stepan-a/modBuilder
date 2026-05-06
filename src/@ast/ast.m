@@ -2087,43 +2087,88 @@ classdef ast
         end % function
 
         function d = symbolic_det(A)
-        % Symbolic determinant of an n×n cell matrix of ASTs, computed by recursive
-        % cofactor expansion along the first row. Used by solve_linear_system to apply
-        % Cramer's rule. Result has n! terms before simplification; intended for small n.
+        % Symbolic determinant of an n×n cell matrix of ASTs.
+        %
+        % Implementation: fraction-free Gaussian elimination (Bareiss 1968). After n−1
+        % elimination steps the (n,n) entry equals det(A). Each step uses the recurrence
+        %   a_{ij}^{(k)} = (a_{kk}^{(k-1)} · a_{ij}^{(k-1)} − a_{ik}^{(k-1)} · a_{kj}^{(k-1)})
+        %                  / a_{k-1,k-1}^{(k-2)}
+        % with the convention p^{(0)} = 1. The numerator is exactly divisible by the
+        % previous pivot by Bareiss's invariant; at the AST level we rely on simplify's
+        % pair-cancellation across multiplicative chains to perform the division.
+        %
+        % Complexity: O(n^3) elimination steps; intermediate entries stay polynomial,
+        % so expression bloat is bounded. Sparsity is preserved when pivots are non-zero
+        % at the natural diagonal position; on a structurally-zero pivot the routine
+        % swaps in a non-zero row from below (the row swap flips the determinant sign).
+        % Returns ast('num', 0, {}) if no non-zero pivot is available at some step.
             n = size(A, 1);
-            if n == 1
-                d = A{1, 1};
+            if n == 0
+                d = ast('num', 1, {});
                 return
             end
-            terms = cell(1, n);
-            for j = 1:n
-                minor = A(2:end, [1:j-1, j+1:end]);
-                mdet = ast.symbolic_det(minor);
-                term = ast('binop', '*', {A{1, j}, mdet});
-                if mod(j-1, 2) == 1
-                    term = ast.negate(term);
+            M = A;
+            sign_flip = false;
+            prev_pivot = ast('num', 1, {});
+            for k = 1:n-1
+                % Partial row pivoting on structurally-zero entries: if M{k,k} folds to
+                % numeric 0 after simplify, look for a non-zero row in the remaining rows
+                % and swap. If no such row exists, the matrix is structurally singular.
+                pivot = M{k, k};
+                if strcmp(pivot.type, 'num') && pivot.value == 0
+                    swap_row = 0;
+                    for r = k+1:n
+                        cand = M{r, k};
+                        if ~(strcmp(cand.type, 'num') && cand.value == 0)
+                            swap_row = r;
+                            break
+                        end
+                    end
+                    if swap_row == 0
+                        d = ast('num', 0, {});
+                        return
+                    end
+                    tmp = M(k, :); M(k, :) = M(swap_row, :); M(swap_row, :) = tmp;
+                    sign_flip = ~sign_flip;
+                    pivot = M{k, k};
                 end
-                terms{j} = term;
+                for i = k+1:n
+                    for j = k+1:n
+                        % a_{ij}^{(k)} = (pivot · a_{ij} − a_{ik} · a_{kj}) / prev_pivot
+                        num = ast('binop', '-', { ...
+                            ast('binop', '*', {pivot, M{i, j}}), ...
+                            ast('binop', '*', {M{i, k}, M{k, j}})});
+                        if strcmp(prev_pivot.type, 'num') && prev_pivot.value == 1
+                            M{i, j} = num.simplify();
+                        else
+                            M{i, j} = ast('binop', '/', {num, prev_pivot}).simplify();
+                        end
+                    end
+                end
+                prev_pivot = pivot;
             end
-            d = ast.sum_of(terms);
+            d = M{n, n};
+            if sign_flip
+                d = ast.negate(d);
+            end
+            d = d.simplify();
         end % function
 
         function rhs_list = solve_linear_system(A, b)
-        % Symbolic Cramer's rule for the system A · x + b = 0 (so A · x = -b).
-        % Returns a 1×n cell of ASTs giving the closed form for each variable:
-        %   rhs_list{i} = det(A_i) / det(A)
-        % where A_i is A with column i replaced by -b. Caller is responsible for
-        % checking det(A) ≠ 0; the returned expressions are not validated for
-        % well-definedness.
+        % Solve the system A · x + b = 0 (so A · x = -b) symbolically via Cramer's
+        % rule, with each determinant computed by ast.symbolic_det (Bareiss).
+        % Returns a 1×n cell of ASTs giving rhs_list{i} = det(A_i) / det(A) where A_i
+        % is A with column i replaced by -b. Caller is responsible for checking
+        % det(A) ≠ 0; the returned expressions are not validated for well-definedness.
             n = numel(b);
-            detA = ast.symbolic_det(A).simplify();
+            detA = ast.symbolic_det(A);
             rhs_list = cell(1, n);
             for i = 1:n
                 Ai = A;
                 for k = 1:n
                     Ai{k, i} = ast.negate(b{k});
                 end
-                detAi = ast.symbolic_det(Ai).simplify();
+                detAi = ast.symbolic_det(Ai);
                 rhs_list{i} = ast('binop', '/', {detAi, detA}).simplify();
             end
         end % function
