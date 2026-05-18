@@ -674,7 +674,7 @@ full_model = production.copy();
 full_model.merge(consumption);
 ```
 
-#### `solve(eqname, sname, sinit)`
+#### `solve(eqname, sname, sinit[, tol, maxit])`
 
 Numerically solve a single equation for one symbol using Newton's method with automatic differentiation.
 
@@ -682,12 +682,17 @@ Numerically solve a single equation for one symbol using Newton's method with au
 - `eqname` — Name of the equation to solve
 - `sname` — Symbol to solve for (parameter, endogenous, or exogenous)
 - `sinit` — Initial guess
+- `tol` (optional) — Convergence tolerance (default: `1e-10`)
+- `maxit` (optional) — Maximum iterations (default: `100`)
 
 **Example:**
 
 ```matlab
 % Solve for steady state capital
 m.solve('k_ss_eq', 'k_ss', 10);  % Initial guess = 10
+
+% With a looser tolerance
+m.solve('k_ss_eq', 'k_ss', 10, 1e-6);
 ```
 
 #### `solve_system(eqnames, snames[, tol, maxit])`
