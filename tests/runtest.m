@@ -3,7 +3,7 @@ function runtest(unittest)
     whereami = fileparts(mfilename('fullpath'));
     rootfold = whereami(1:end-5);
     addpath([rootfold 'src']);
-    addpath([rootfold 'src/missing/stats']);
+    modBuilder_setup();        % adds src/, src/missing/math/, and conditionally src/missing/stats/
     % run('subdir/script.m') fails when 'script' clashes with a MATLAB class
     % folder name (e.g. the deprecated 'inline' class), even though the file
     % is on disk. cd into the script's directory first to bypass the lookup.

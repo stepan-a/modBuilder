@@ -58,13 +58,22 @@ m.write('my_model');
 
 Requires **MATLAB R2023a** or later (uses `combinations`).
 
-Add the `src` directory to your MATLAB path:
+Add the `src` directory to your MATLAB path, then run the setup helper:
 
 ```matlab
 addpath('/path/to/modBuilder/src');
+modBuilder_setup();
 ```
 
-Or use MATLAB's `Set Path` dialog to add it permanently.
+`modBuilder_setup` is idempotent. It also puts `src/missing/math/` on the
+path unconditionally (Dynare-style aliases such as `ln`, which MATLAB does
+not ship in any toolbox) and `src/missing/stats/` only when the Statistics
+Toolbox is unavailable (so a licensed install keeps using the canonical
+`normcdf`/`normpdf`).
+
+For a permanent install, either keep both lines in your `startup.m`, or
+use MATLAB's `Set Path` dialog to add `src`, `src/missing/math`, and —
+only if you don't have the Statistics Toolbox — `src/missing/stats`.
 
 ## Public Methods
 

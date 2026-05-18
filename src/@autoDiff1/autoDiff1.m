@@ -107,6 +107,16 @@ classdef autoDiff1
             end
         end % function
 
+        function q = ln(o)
+        % Overload the natural logarithm function (Dynare-style alias for log).
+        % Dispatched here by ast.eval when an equation contains ln(...): the
+        % parser produces a 'call' node with name 'ln' (listed in
+        % dynare_reserved_function_names), and ast.eval feval's it on the
+        % autoDiff1 operand. Without this method the call would fall through
+        % to a missing built-in and error out.
+            q = log(o);
+        end % function
+
         function q = sqrt(o)
         % Overload the square root function.
             if o.x>=0
