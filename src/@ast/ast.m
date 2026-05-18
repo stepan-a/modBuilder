@@ -1686,22 +1686,9 @@ classdef ast
         % - uminus(X)             →  -1 · X
         % - num · X · ...         →  num · (rest)
         % - X (no leading num)    →   1 · X
-            if strcmp(o.type, 'uminus')
-                [c, m] = ast.decompose_term(o.children{1});
-                coef = -c;
-                monomial = m;
-                return
-            end
-            factors = ast.flatten(o, '*');
-            coef = 1;
-            monomial_factors = {};
-            for i = 1:numel(factors)
-                if strcmp(factors{i}.type, 'num')
-                    coef = coef * factors{i}.value;
-                else
-                    monomial_factors{end+1} = factors{i}; %#ok<AGROW>
-                end
-            end
+        % Implemented as a thin wrapper over decompose_factors that rebuilds the
+        % residual factors into a product AST.
+            [coef, monomial_factors] = ast.decompose_factors(o);
             if isempty(monomial_factors)
                 monomial = ast('num', 1, {});
             else
@@ -1713,8 +1700,9 @@ classdef ast
         % Decompose o as coef · monomial_factors, where coef is a numeric scalar
         % collected from any leading numeric factors (and any uminus contributes
         % a -1) and monomial_factors is a cell-array list of the residual,
-        % non-numeric factors. Used by factor for both the structural multiset
-        % intersection and the numeric-GCD pass.
+        % non-numeric factors. Canonical low-level implementation shared with
+        % decompose_term and used directly by factor for both the structural
+        % multiset intersection and the numeric-GCD pass.
             if strcmp(o.type, 'uminus')
                 [c, mf] = ast.decompose_factors(o.children{1});
                 coef = -c;
@@ -1880,69 +1868,8 @@ classdef ast
         %   n  is the count of x occurrences (only meaningful when ok = true).
         % Caller is expected to have canonicalised the tree first, so a/b appears
         % as a·b^(-1) and uminus has been propagated upward where possible.
-            switch o.type
-                case 'num'
-                    ok = true; n = 0;
-                case 'sym'
-                    ok = true; n = double(strcmp(o.value, x));
-                case 'tsym'
-                    ok = true; n = double(strcmp(o.value{1}, x));
-                case 'ss'
-                    ok = true; n = 0;
-                case 'call'
-                    n = 0;
-                    for i = 1:numel(o.children)
-                        [c_ok, c_n] = ast.linear_walk(o.children{i}, x);
-                        if ~c_ok || c_n > 0
-                            ok = false; n = 0; return
-                        end
-                    end
-                    ok = true;
-                case 'uminus'
-                    [ok, n] = ast.linear_walk(o.children{1}, x);
-                case 'binop'
-                    L = o.children{1};
-                    R = o.children{2};
-                    switch o.value
-                        case {'+', '-'}
-                            [okL, nL] = ast.linear_walk(L, x);
-                            [okR, nR] = ast.linear_walk(R, x);
-                            ok = okL && okR; n = nL + nR;
-                        case '*'
-                            [okL, nL] = ast.linear_walk(L, x);
-                            [okR, nR] = ast.linear_walk(R, x);
-                            if ~okL || ~okR || (nL > 0 && nR > 0)
-                                ok = false; n = 0;
-                            else
-                                ok = true; n = nL + nR;
-                            end
-                        case '/'
-                            [okL, nL] = ast.linear_walk(L, x);
-                            [okR, nR] = ast.linear_walk(R, x);
-                            if ~okL || ~okR || nR > 0
-                                ok = false; n = 0;
-                            else
-                                ok = true; n = nL;
-                            end
-                        case '^'
-                            [okB, nB] = ast.linear_walk(L, x);
-                            [okE, nE] = ast.linear_walk(R, x);
-                            if ~okB || ~okE || nE > 0
-                                ok = false; n = 0; return
-                            end
-                            if nB == 0
-                                ok = true; n = 0;
-                            elseif strcmp(R.type, 'num') && R.value == 1
-                                ok = true; n = nB;
-                            else
-                                ok = false; n = 0;
-                            end
-                        otherwise
-                            ok = false; n = 0;
-                    end
-                otherwise
-                    ok = false; n = 0;
-            end
+        % Thin wrapper over linear_walk_impl with a single-target predicate.
+            [ok, n] = ast.linear_walk_impl(o, @(name) strcmp(name, x));
         end % function
 
         function [ok, n] = linear_set_walk(o, vars)
@@ -1950,53 +1877,63 @@ classdef ast
         % of leaves matching ANY name in vars; a term is rejected if it contains more
         % than one such leaf (bilinear) or has any of those leaves in a non-linear
         % position (inside a call, in a denominator, raised to a non-1 exponent).
+        % Thin wrapper over linear_walk_impl with a set-membership predicate.
+            [ok, n] = ast.linear_walk_impl(o, @(name) any(strcmp(name, vars)));
+        end % function
+
+        function [ok, n] = linear_walk_impl(o, is_target)
+        % Shared implementation behind linear_walk and linear_set_walk.
+        % is_target is a function handle name → logical that decides whether
+        % a sym / tsym leaf counts as an occurrence of the target. All other
+        % node-type handling is identical for the single-target and
+        % set-membership variants — see the wrappers for the contract.
             switch o.type
                 case 'num'
                     ok = true; n = 0;
                 case 'sym'
-                    ok = true; n = double(any(strcmp(o.value, vars)));
+                    ok = true; n = double(is_target(o.value));
                 case 'tsym'
-                    ok = true; n = double(any(strcmp(o.value{1}, vars)));
+                    ok = true; n = double(is_target(o.value{1}));
                 case 'ss'
                     ok = true; n = 0;
                 case 'call'
                     n = 0;
                     for i = 1:numel(o.children)
-                        [c_ok, c_n] = ast.linear_set_walk(o.children{i}, vars);
+                        [c_ok, c_n] = ast.linear_walk_impl(o.children{i}, is_target);
                         if ~c_ok || c_n > 0
                             ok = false; n = 0; return
                         end
                     end
                     ok = true;
                 case 'uminus'
-                    [ok, n] = ast.linear_set_walk(o.children{1}, vars);
+                    [ok, n] = ast.linear_walk_impl(o.children{1}, is_target);
                 case 'binop'
                     L = o.children{1};
                     R = o.children{2};
                     switch o.value
                         case {'+', '-'}
-                            [okL, nL] = ast.linear_set_walk(L, vars);
-                            [okR, nR] = ast.linear_set_walk(R, vars);
+                            [okL, nL] = ast.linear_walk_impl(L, is_target);
+                            [okR, nR] = ast.linear_walk_impl(R, is_target);
                             ok = okL && okR; n = nL + nR;
                         case '*'
-                            [okL, nL] = ast.linear_set_walk(L, vars);
-                            [okR, nR] = ast.linear_set_walk(R, vars);
+                            [okL, nL] = ast.linear_walk_impl(L, is_target);
+                            [okR, nR] = ast.linear_walk_impl(R, is_target);
                             if ~okL || ~okR || (nL > 0 && nR > 0)
                                 ok = false; n = 0;
                             else
                                 ok = true; n = nL + nR;
                             end
                         case '/'
-                            [okL, nL] = ast.linear_set_walk(L, vars);
-                            [okR, nR] = ast.linear_set_walk(R, vars);
+                            [okL, nL] = ast.linear_walk_impl(L, is_target);
+                            [okR, nR] = ast.linear_walk_impl(R, is_target);
                             if ~okL || ~okR || nR > 0
                                 ok = false; n = 0;
                             else
                                 ok = true; n = nL;
                             end
                         case '^'
-                            [okB, nB] = ast.linear_set_walk(L, vars);
-                            [okE, nE] = ast.linear_set_walk(R, vars);
+                            [okB, nB] = ast.linear_walk_impl(L, is_target);
+                            [okE, nE] = ast.linear_walk_impl(R, is_target);
                             if ~okB || ~okE || nE > 0
                                 ok = false; n = 0; return
                             end
