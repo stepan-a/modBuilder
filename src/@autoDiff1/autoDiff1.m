@@ -49,23 +49,34 @@ classdef autoDiff1
         function q = mpower(o, p)
         % Overload the ^ binary operator.
             if isa(o, 'autoDiff1') && isnumeric(p)
-                q = autoDiff1(o.x^p, p*o.dx*o.x^(p-1));
+                if p == 0
+                    % x^0 ≡ 1 with identically-zero derivative; the
+                    % general formula p*o.dx*o.x^(p-1) collapses to the
+                    % indeterminate 0*Inf at o.x = 0 and must be short-
+                    % circuited.
+                    q = autoDiff1(1, 0);
+                else
+                    q = autoDiff1(o.x^p, p*o.dx*o.x^(p-1));
+                end
             elseif isnumeric(o) && isa(p, 'autoDiff1')
-
                 if o>0
                     tmp = o^p.x;
                     q = autoDiff1(tmp, log(o)*tmp*p.dx);
                 else
-                    error('Domain error: base must be positive.')
+                    error('autoDiff1:mpower:nonPositiveBase', ...
+                          'Base must be positive when the exponent is differentiable (got %g).', o);
                 end
             elseif isa(o, 'autoDiff1') && isa(p, 'autoDiff1')
-
                 if o.x>0
                     tmp = o.x^p.x;
                     q = autoDiff1(tmp, tmp*(p.dx*log(o.x)+p.x*o.dx/o.x ));
                 else
-                    error('Domain error: base must be positive.')
+                    error('autoDiff1:mpower:nonPositiveBase', ...
+                          'Base must be positive when both operands are differentiable (got %g).', o.x);
                 end
+            else
+                error('autoDiff1:mpower:typeError', ...
+                      'Unsupported operand types for ^.');
             end
         end % function
 
@@ -94,7 +105,8 @@ classdef autoDiff1
             if o.x>0
                 q = autoDiff1(log(o.x), o.dx/o.x);
             else
-                error('Domain error: argument must be positive.')
+                error('autoDiff1:log:domain', ...
+                      'log argument must be positive (got %g).', o.x);
             end
         end % function
 
@@ -103,7 +115,8 @@ classdef autoDiff1
             if o.x>0
                 q = autoDiff1(log10(o.x), o.dx/(o.x*log(10)));
             else
-                error('Domain error: argument must be positive.')
+                error('autoDiff1:log10:domain', ...
+                      'log10 argument must be positive (got %g).', o.x);
             end
         end % function
 
@@ -119,22 +132,26 @@ classdef autoDiff1
 
         function q = sqrt(o)
         % Overload the square root function.
+        % At o.x = 0 the derivative is ±Inf via IEEE division by zero;
+        % the Newton solvers catch a non-finite derivative on the next
+        % iteration and raise a structured error.
             if o.x>=0
                 tmp = sqrt(o.x);
-                q = autoDiff1(tmp, o.dx/(2*tmp)); % derivative is Inf at x=0
+                q = autoDiff1(tmp, o.dx/(2*tmp));
             else
-                error('Domain error: argument must be non-negative.')
+                error('autoDiff1:sqrt:domain', ...
+                      'sqrt argument must be non-negative (got %g).', o.x);
             end
         end % function
 
         function q = cbrt(o)
         % Overload the cubic root function.
-            if abs(o.x)>0
-                tmp = nthroot(o.x, 3);
-                q = autoDiff1(tmp, o.dx/(3*tmp*tmp));
-            else
-                error('Domain error: argument must be nonzero.')
-            end
+        % Domain is all reals; nthroot handles negatives natively. At
+        % o.x = 0 the derivative is ±Inf via IEEE division by zero; the
+        % Newton solvers catch a non-finite derivative on the next
+        % iteration and raise a structured error.
+            tmp = nthroot(o.x, 3);
+            q = autoDiff1(tmp, o.dx/(3*tmp*tmp));
         end % function
 
         function q = sign(o)
@@ -168,17 +185,17 @@ classdef autoDiff1
                 % For the purpose of the toolbox (finding the zero of a static equation for the steady state) we probably
                 % do not need such an approximation. Note that Dynare will return 0 if x is equal to 0 (see the reference
                 % manual).
-                error('Domain error: argument must be nonzero.')
+                error('autoDiff1:sign:nonDifferentiable', ...
+                      'sign is not differentiable at x = 0.')
             end
         end % function
 
         function q = abs(o)
         % Overload the absolute value function.
-            if abs(o.x)>0
-                q = autoDiff1(abs(o.x), sign(o.x)*o.dx);
-            else
-                q = autoDiff1(0, NaN); % Should we throw an error instead? We could also consider a smooth approximation.
-            end
+        % At o.x = 0 the chain-rule factor sign(0)*o.dx is 0*o.dx = 0,
+        % which is the standard sub-gradient choice (and consistent with
+        % Dynare's convention that sign(0) = 0). No branch needed.
+            q = autoDiff1(abs(o.x), sign(o.x)*o.dx);
         end % function
 
         function q = sin(o)
@@ -193,30 +210,42 @@ classdef autoDiff1
 
         function q = tan(o)
         % Overload the tangent function.
-            n = (o.x - pi/2)/pi;
-
-            if abs(n - round(n)) > 1e-15
-                q = autoDiff1(tan(o.x), o.dx/cos(o.x)^2);
+        % Asymptote detection thresholds the actual denominator
+        % cos(o.x) with an eps-scaled tolerance so the test stays
+        % meaningful far from the origin (the modular check
+        % (o.x - pi/2)/pi loses precision at large o.x).
+            c = cos(o.x);
+            if abs(c) > eps(o.x) * 1e2
+                q = autoDiff1(tan(o.x), o.dx/c^2);
             else
-                error('Domain error: tan(x) has asymptotes if x = pi/2+n*pi (n is an integer).')
+                error('autoDiff1:tan:asymptote', ...
+                      'tan(x) has an asymptote near x = %g.', o.x);
             end
         end % function
 
         function q = asin(o)
         % Overload the inverse sine function.
-            if abs(o.x)<1
+        % At |o.x| = 1 the value asin(±1) = ±pi/2 is well-defined and
+        % the derivative is ±Inf via IEEE division by zero; the Newton
+        % solvers catch a non-finite derivative on the next iteration.
+            if abs(o.x)<=1
                 q = autoDiff1(asin(o.x), o.dx/sqrt(1-o.x^2));
             else
-                error('Domain error: argument must be less than one in absolute value.')
+                error('autoDiff1:asin:domain', ...
+                      'asin argument must satisfy |x| <= 1 (got %g).', o.x);
             end
         end % function
 
         function q = acos(o)
         % Overload the inverse cosine function.
-            if abs(o.x)<1
+        % At |o.x| = 1 the value acos(±1) is well-defined (0 or pi) and
+        % the derivative is ∓Inf via IEEE division by zero; the Newton
+        % solvers catch a non-finite derivative on the next iteration.
+            if abs(o.x)<=1
                 q = autoDiff1(acos(o.x), -o.dx/sqrt(1-o.x^2));
             else
-                error('Domain error: argument must be less than one in absolute value.')
+                error('autoDiff1:acos:domain', ...
+                      'acos argument must satisfy |x| <= 1 (got %g).', o.x);
             end
         end % function
 
@@ -248,19 +277,25 @@ classdef autoDiff1
 
         function q = acosh(o)
         % Overload the inverse hyperbolic cosine function.
-            if o.x>1
+        % At o.x = 1 the value acosh(1) = 0 is well-defined and the
+        % derivative is +Inf via IEEE division by zero.
+            if o.x>=1
                 q = autoDiff1(acosh(o.x), o.dx/sqrt(o.x^2-1));
             else
-                error('Domain error: argument must be greater than 1.')
+                error('autoDiff1:acosh:domain', ...
+                      'acosh argument must satisfy x >= 1 (got %g).', o.x);
             end
         end % function
 
         function q = atanh(o)
         % Overload the inverse hyperbolic tangent function.
+        % At |o.x| = 1 the function diverges to ±Inf, so the boundary
+        % is excluded from the domain.
             if abs(o.x)<1
                 q = autoDiff1(atanh(o.x), o.dx/(1-o.x^2));
             else
-                error('Domain error: argument must be smaller than 1.')
+                error('autoDiff1:atanh:domain', ...
+                      'atanh argument must satisfy |x| < 1 (got %g).', o.x);
             end
         end % function
 
