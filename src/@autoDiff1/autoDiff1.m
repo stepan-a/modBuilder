@@ -307,7 +307,8 @@ classdef autoDiff1
             elseif o.x<p.x
                 q = autoDiff1(p.x, p.dx);
             else
-                error('Domain error: non differentiable when both arguments are equal.')
+                error('autoDiff1:max:nonDifferentiable', ...
+                      'Domain error: non differentiable when both arguments are equal.')
             end
         end % function
 
@@ -319,7 +320,8 @@ classdef autoDiff1
             elseif o.x<p.x
                 q = autoDiff1(o.x, o.dx);
             else
-                error('Domain error: non differentiable when both arguments are equal.')
+                error('autoDiff1:min:nonDifferentiable', ...
+                      'Domain error: non differentiable when both arguments are equal.')
             end
         end % function
 
@@ -419,7 +421,7 @@ classdef autoDiff1
             elseif isnumeric(o) && isa(p, 'autoDiff1')
                 b = op(o, p.x);
             else
-                error('Type error.')
+                error('autoDiff1:compare_op:badType', 'Type error.')
             end
         end % function
 

@@ -228,6 +228,7 @@ listoftests = [
   'errors/t26.m',
   'errors/t27.m',
   'errors/t28.m',
+  'errors/t29.m',
   'eq/t01.m',
   'eq/t02.m',
   'eq/t03.m',

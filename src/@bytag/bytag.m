@@ -28,7 +28,7 @@ classdef bytag
         % bytag('sector', 'manufacturing')
         % bytag('sector', 'manuf.*', 'type', 'production')
             if mod(nargin, 2) ~= 0
-                error('Arguments must be name-value pairs.')
+                error('bytag:badPair', 'Arguments must be name-value pairs.')
             end
             for i = 1:2:nargin
                 validateattributes(varargin{i}, {'char'}, {'nonempty', 'row'}, 'bytag', sprintf('tagname (argument %d)', i));

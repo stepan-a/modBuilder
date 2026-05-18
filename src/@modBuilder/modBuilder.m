@@ -261,7 +261,7 @@ classdef modBuilder < handle
                 if ischar(remaining{idx}) && ismember(remaining{idx}, {'long_name', 'texname'})
                     % This is a key
                     if idx + 1 > numel(remaining)
-                        error('Key "%s" provided without a value.', remaining{idx});
+                        error('modBuilder:handle_implicit_loops:missingValue', 'Key "%s" provided without a value.', remaining{idx});
                     end
                     key_val_args = [key_val_args, remaining{idx}, remaining{idx+1}];
                     idx = idx + 2;
@@ -269,7 +269,7 @@ classdef modBuilder < handle
                     % Start of index arrays
                     break;
                 else
-                    error('Unexpected argument type in implicit loop. Expected key/value pair or index array.');
+                    error('modBuilder:handle_implicit_loops:badType', 'Unexpected argument type in implicit loop. Expected key/value pair or index array.');
                 end
             end
 
@@ -278,7 +278,7 @@ classdef modBuilder < handle
 
             % Validate number of index arrays
             if not(isequal(numel(index_args), nindices))
-                error('The number of indices in the "%s" name is %u, but values for %u indices are provided.', ...
+                error('modBuilder:handle_implicit_loops:indexMismatch', 'The number of indices in the "%s" name is %u, but values for %u indices are provided.', ...
                       symbol_type, nindices, numel(index_args))
             end
 
@@ -289,14 +289,14 @@ classdef modBuilder < handle
             if ~isempty(long_name)
                 inames_long = unique(regexp(long_name, '\$\d*', 'match'));
                 if numel(inames_long) ~= nindices
-                    error('long_name has %u indices but %s name has %u indices.', ...
+                    error('modBuilder:handle_implicit_loops:indexMismatch', 'long_name has %u indices but %s name has %u indices.', ...
                           numel(inames_long), symbol_type, nindices);
                 end
             end
             if ~isempty(texname)
                 inames_tex = unique(regexp(texname, '\$\d*', 'match'));
                 if numel(inames_tex) ~= nindices
-                    error('texname has %u indices but %s name has %u indices.', ...
+                    error('modBuilder:handle_implicit_loops:indexMismatch', 'texname has %u indices but %s name has %u indices.', ...
                           numel(inames_tex), symbol_type, nindices);
                 end
             end
@@ -369,7 +369,7 @@ classdef modBuilder < handle
                     case 'endogenous'
                         o.endogenous(call_args{:});
                     otherwise
-                        error('Unsupported symbol type: "%s".', symbol_type)
+                        error('modBuilder:handle_implicit_loops:unsupportedType', 'Unsupported symbol type: "%s".', symbol_type)
                 end
             end
         end % function
@@ -410,9 +410,9 @@ classdef modBuilder < handle
                      ismember(name, o.varexo(:,modBuilder.COL_NAME)) || ...
                      ismember(name, o.params(:,modBuilder.COL_NAME)))
                     if ismember(name, o.var(:,modBuilder.COL_NAME))
-                        error('An endogenous variable cannot be converted into a parameter.')
+                        error('modBuilder:declare_symbol:typeConversion', 'An endogenous variable cannot be converted into a parameter.')
                     else
-                        error('Symbol "%s" does not appear in the model.', name)
+                        error('modBuilder:declare_symbol:unknownSymbol', 'Symbol "%s" does not appear in the model.', name)
                     end
                 end
                 tbl_name     = 'params';
@@ -422,16 +422,16 @@ classdef modBuilder < handle
                      ismember(name, o.varexo(:,modBuilder.COL_NAME)) || ...
                      ismember(name, o.params(:,modBuilder.COL_NAME)))
                     if ismember(name, o.var(:,modBuilder.COL_NAME))
-                        error('An endogenous variable cannot be converted into an exogenous variable. Please remove the equation associated to the endogenous variable.')
+                        error('modBuilder:declare_symbol:typeConversion', 'An endogenous variable cannot be converted into an exogenous variable. Please remove the equation associated to the endogenous variable.')
                     else
-                        error('Symbol "%s" does not appear in the model.', name)
+                        error('modBuilder:declare_symbol:unknownSymbol', 'Symbol "%s" does not appear in the model.', name)
                     end
                 end
                 tbl_name     = 'varexo';
                 src_tbl_name = 'params';
               case 'endogenous'
                 if ~ismember(name, o.equations(:,modBuilder.EQ_COL_NAME))
-                    error('Symbol "%s" is not an endogenous variable.', name)
+                    error('modBuilder:declare_symbol:notEndogenous', 'Symbol "%s" is not an endogenous variable.', name)
                 end
                 tbl_name     = 'var';
                 src_tbl_name = '';
@@ -522,7 +522,7 @@ classdef modBuilder < handle
 
             commonvariables = intersect(o.var(:,modBuilder.COL_NAME), p.var(:,modBuilder.COL_NAME));
             if ~isempty(commonvariables)
-                error('Models to be merged cannot contain common endogenous variables. Check variable(s)%s.', ...
+                error('modBuilder:validate_merge_compatibility:conflict', 'Models to be merged cannot contain common endogenous variables. Check variable(s)%s.', ...
                       sprintf(' %s', commonvariables{:}))
             end
         end % function
@@ -808,7 +808,7 @@ classdef modBuilder < handle
                 elseif isscalar(LHSRHS)
                     expr = LHSRHS{1};
                 else
-                    error('An equation cannot have more than one equal (=) symbol.')
+                    error('modBuilder:compile_equations:multipleEquals', 'An equation cannot have more than one equal (=) symbol.')
                 end
 
                 % Get all symbols in this equation
@@ -921,7 +921,7 @@ classdef modBuilder < handle
         % modBuilder.validate_type('vars')        % Error: Unknown type (vars). Valid types are: ...
 
             if ~ismember(type, modBuilder.VALID_TYPES)
-                error('Unknown type (%s). Valid types are: %s', ...
+                error('modBuilder:validate_type:unknownType', 'Unknown type (%s). Valid types are: %s', ...
                       type, strjoin(modBuilder.VALID_TYPES, ', '))
             end
         end % function
@@ -948,17 +948,17 @@ classdef modBuilder < handle
 
             % Check balanced parentheses
             if sum(equation == '(') ~= sum(equation == ')')
-                error('Equation has unbalanced parentheses: "%s".', equation)
+                error('modBuilder:validate_equation_syntax:unbalancedParens', 'Equation has unbalanced parentheses: "%s".', equation)
             end
 
             % Check for invalid equality operator
             if contains(equation, '==')
-                error('Equation contains "==". Use "=" for assignment. Equation: "%s"', equation)
+                error('modBuilder:validate_equation_syntax:multipleEquals', 'Equation contains "==". Use "=" for assignment. Equation: "%s"', equation)
             end
 
             % Check for element-wise division (likely unintended)
             if contains(equation, './')
-                error('Equation contains "./". Element-wise division is not allowed. Use "/" instead. Equation: "%s"', equation)
+                error('modBuilder:validate_equation_syntax:invalidOp', 'Equation contains "./". Element-wise division is not allowed. Use "/" instead. Equation: "%s"', equation)
             end
 
             % Warn about potentially unintended operators
@@ -997,7 +997,7 @@ classdef modBuilder < handle
 
             % Check for reserved names (built-in functions + properties + methods)
             if ismember(sname, modBuilder.ALL_RESERVED_NAMES)
-                error('%s: Symbol name "%s" is reserved (conflicts with modBuilder property/method or built-in function).', method_name, sname);
+                error('modBuilder:validate_symbol_name:reservedName', '%s: Symbol name "%s" is reserved (conflicts with modBuilder property/method or built-in function).', method_name, sname);
             end
         end % function
 
@@ -1025,14 +1025,14 @@ classdef modBuilder < handle
             while idx <= numel(opts)
                 name = opts{idx};
                 if ~ischar(name)
-                    error('Expected option name (char array) at position %d.', idx);
+                    error('modBuilder:format_dynare_options:badType', 'Expected option name (char array) at position %d.', idx);
                 end
                 if ismember(name, flags)
                     parts{end+1} = name; %#ok<AGROW>
                     idx = idx + 1;
                 else
                     if idx + 1 > numel(opts)
-                        error('Option ''%s'' requires a value.', name);
+                        error('modBuilder:format_dynare_options:missingValue', 'Option ''%s'' requires a value.', name);
                     end
                     value = opts{idx + 1};
                     if isnumeric(value)
@@ -1040,7 +1040,7 @@ classdef modBuilder < handle
                     elseif ischar(value)
                         parts{end+1} = sprintf('%s=%s', name, value); %#ok<AGROW>
                     else
-                        error('Value for option ''%s'' must be numeric or char.', name);
+                        error('modBuilder:format_dynare_options:badType', 'Value for option ''%s'' must be numeric or char.', name);
                     end
                     idx = idx + 2;
                 end
@@ -1132,7 +1132,7 @@ classdef modBuilder < handle
             % Validate type (printlist2 only supports these three types)
             valid_printlist_types = {'endogenous', 'parameters', 'exogenous'};
             if ~ismember(type, valid_printlist_types)
-                error('printlist2: Unknown type (%s). Valid types are: %s', ...
+                error('modBuilder:printlist2:unknownType', 'printlist2: Unknown type (%s). Valid types are: %s', ...
                       type, strjoin(valid_printlist_types, ', '));
             end
 
@@ -1219,7 +1219,7 @@ classdef modBuilder < handle
             elseif all(cellfun(@ischar, cA(:,2))) && all(cellfun(@ischar, cB(:,2)))
                 b = isequal(cA(:,2), cB(:,2));
             else
-                error('Second columns of cell arays must contain only numerics or only characters.')
+                error('modBuilder:isequalcell:badType', 'Second columns of cell arays must contain only numerics or only characters.')
             end
         end % function
 
@@ -1310,7 +1310,9 @@ classdef modBuilder < handle
                     type = sprintf('%s variable', type);
                 end
                 n = length(varargin);
-                assert(mod(n, 2)==0, 'Wrong number of arguments.')
+                if mod(n, 2) ~= 0
+                    error('modBuilder:set_optional_fields:badPair', 'Wrong number of arguments.')
+                end
                 for i=1:2:n
                     switch varargin{i}
                       case 'long_name'
@@ -1318,7 +1320,7 @@ classdef modBuilder < handle
                       case 'texname'
                         texname = varargin{i+1};
                       otherwise
-                        error('Unknown property for %s %s.', type, sname)
+                        error('modBuilder:set_optional_fields:unknownProperty', 'Unknown property for %s %s.', type, sname)
                     end
                 end
             end
@@ -1361,13 +1363,13 @@ classdef modBuilder < handle
                         allstr(i) = all(cellfun(@ischar, IndicesValues{i}));
                         allint(i) = all(cellfun(isint, IndicesValues{i}));
                         if not(allstr(i) || allint(i))
-                            error('Values for index $%u should be all char or all integer.', i)
+                            error('modBuilder:check_indices_values:indexMismatch', 'Values for index $%u should be all char or all integer.', i)
                         end
                     else
-                        error('Values for index $%u should be pass as a one dimensional cell array.', i)
+                        error('modBuilder:check_indices_values:badType', 'Values for index $%u should be pass as a one dimensional cell array.', i)
                     end
                 else
-                    error('Values for index $%u should be pass as a cell array.', i)
+                    error('modBuilder:check_indices_values:badType', 'Values for index $%u should be pass as a cell array.', i)
                 end
             end
         end % function
@@ -1392,7 +1394,7 @@ classdef modBuilder < handle
             nindices = numel(inames);
 
             if numel(index_values) ~= nindices
-                error('The number of indices in the template is %u, but values for %u indices are provided.', nindices, numel(index_values))
+                error('modBuilder:expand_templates:indexMismatch', 'The number of indices in the template is %u, but values for %u indices are provided.', nindices, numel(index_values))
             end
 
             [allint, ~] = modBuilder.check_indices_values(index_values);
@@ -1621,7 +1623,7 @@ classdef modBuilder < handle
                         o.steady_state = s.steady_state;
                     end
                 else
-                    error('Cannot instantiate a modBuilder object (missing fields).')
+                    error('modBuilder:loadobj:invalidObject', 'Cannot instantiate a modBuilder object (missing fields).')
                 end
             else
                 o = s;
@@ -1776,7 +1778,7 @@ classdef modBuilder < handle
                         if ~isempty(umvars)
                             bullets{end+1} = sprintf('  unmatched endogenous variables:%s', modBuilder.printlist(umvars));
                         end
-                        error('Unable to associate every equation with a unique endogenous variable. Provide explicit tags (%s) for these:\n%s', equationtagname, strjoin(bullets, '\n'));
+                        error('modBuilder:modBuilder:ambiguousEquation', 'Unable to associate every equation with a unique endogenous variable. Provide explicit tags (%s) for these:\n%s', equationtagname, strjoin(bullets, '\n'));
                     end
                     nm = cell(nu, 1);
                     ex = cell(nu, 1);
@@ -1929,13 +1931,13 @@ classdef modBuilder < handle
 
                 % Check the number of indices (for loops)
                 if ~isequal(numel(indices), number_of_loops)
-                    error('The expected number of indices in the equation is %u but the equation has %u indices.', number_of_loops, numel(indices))
+                    error('modBuilder:add:indexMismatch', 'The expected number of indices in the equation is %u but the equation has %u indices.', number_of_loops, numel(indices))
                 end
 
                 inames = regexp(varname, '\$[0-9]*', 'match');
 
                 if not(isequal(numel(indices), numel(inames))) || ~isempty(setdiff(indices, inames)) || ~isempty(setdiff(inames, indices))
-                    error('This case of implicit loops is not covered. Indices must be the same in the equation and in varname.')
+                    error('modBuilder:add:implicitLoopUnsupported', 'This case of implicit loops is not covered. Indices must be the same in the equation and in varname.')
                 end
 
                 expanded = modBuilder.expand_templates({varname, equation}, varargin);
@@ -1971,13 +1973,13 @@ classdef modBuilder < handle
             modBuilder.validate_symbol_name(varname, 'add')
 
             if any(ismember(o.equations(:,modBuilder.EQ_COL_NAME), varname))
-                error('Variable "%s" already has an equation. Use the change method if you really want to redefine the equation for "%s".', varname, varname)
+                error('modBuilder:addeq:alreadyExists', 'Variable "%s" already has an equation. Use the change method if you really want to redefine the equation for "%s".', varname, varname)
             end
 
             % Validate that the endogenous variable appears in the equation
             symbols_in_eq = modBuilder.getsymbols(equation);
             if ~ismember(varname, symbols_in_eq)
-                error('Endogenous variable "%s" does not appear in its equation:\n\n\t%s\n', varname, equation)
+                error('modBuilder:addeq:notInEquation', 'Endogenous variable "%s" does not appear in its equation:\n\n\t%s\n', varname, equation)
             end
 
             id = size(o.equations, 1)+1;
@@ -2048,7 +2050,7 @@ classdef modBuilder < handle
         % m3.exogenous('K_$1_$2', 1.0, Countries, Sectors);
         % m3.tag('Y_$1_$2', 'desc', 'Production for $1 in sector $2', Countries, Sectors);
             if strcmp(tagname, 'name')
-                error('Method tag cannot be used to change the name of an equation. Instead, use the rename method to change the name of an endogenous variable.')
+                error('modBuilder:tag:invalidUsage', 'Method tag cannot be used to change the name of an equation. Instead, use the rename method to change the name of an endogenous variable.')
             end
 
             if ~isempty(regexp(eqname, '\$\d*', 'match', 'once'))
@@ -2352,9 +2354,9 @@ classdef modBuilder < handle
             % Base case: validate that varname is a known endogenous variable or parameter
             if ~(ismember(varname, o.var(:,modBuilder.COL_NAME)) || ismember(varname, o.params(:,modBuilder.COL_NAME)))
                 if ismember(varname, o.varexo(:,modBuilder.COL_NAME))
-                    error('Cannot define a steady-state expression for exogenous variable "%s".', varname)
+                    error('modBuilder:steady:notEndogenous', 'Cannot define a steady-state expression for exogenous variable "%s".', varname)
                 else
-                    error('Symbol "%s" is not a known endogenous variable or parameter.', varname)
+                    error('modBuilder:steady:unknownSymbol', 'Symbol "%s" is not a known endogenous variable or parameter.', varname)
                 end
             end
 
@@ -2399,10 +2401,10 @@ classdef modBuilder < handle
 
             if o.issymbol(name)
                 [type, ~] = o.typeof(name);
-                error('Auxiliary name "%s" collides with an existing %s.', name, type);
+                error('modBuilder:steady_aux:alreadyExists', 'Auxiliary name "%s" collides with an existing %s.', name, type);
             end
             if ~isempty(o.steady_state) && any(strcmp(name, o.steady_state(:, modBuilder.SS_COL_NAME)))
-                error('Auxiliary name "%s" is already defined in the steady-state table.', name);
+                error('modBuilder:steady_aux:alreadyExists', 'Auxiliary name "%s" is already defined in the steady-state table.', name);
             end
 
             n = size(o.steady_state, 1);
@@ -2525,7 +2527,7 @@ classdef modBuilder < handle
                         adj{node_idx}(end+1) = i;
                         in_degree(i) = in_degree(i) + 1;
                     elseif ~o.issymbol(sym)
-                        error('Unknown symbol "%s" in steady-state expression for "%s".', sym, node_names{i})
+                        error('modBuilder:checksteady:unknownSymbol', 'Unknown symbol "%s" in steady-state expression for "%s".', sym, node_names{i})
                     end
                 end
             end
@@ -2540,7 +2542,7 @@ classdef modBuilder < handle
                 if isempty(candidates)
                     % Remaining nodes form a cycle
                     remaining = node_names(in_degree > 0);
-                    error('Circular dependency detected among steady-state expressions: %s.', strjoin(remaining, ', '))
+                    error('modBuilder:checksteady:circularDep', 'Circular dependency detected among steady-state expressions: %s.', strjoin(remaining, ', '))
                 end
                 % Tie-breaking: pick the candidate with smallest original row index
                 chosen = candidates(1);
@@ -2622,7 +2624,7 @@ classdef modBuilder < handle
             ide = ismember(o.equations(:,modBuilder.EQ_COL_NAME), eqname);
 
             if not(any(ide))
-                error('Unknown equation "%s".', eqname)
+                error('modBuilder:remove:unknownSymbol', 'Unknown equation "%s".', eqname)
             end
 
             o.equations(ide,:) = [];
@@ -2718,11 +2720,11 @@ classdef modBuilder < handle
         % % Remove multiple indexed equations
         % m.rm('eq$1', 'var$1', 1:2);  % Removes eq1, var1, eq2, var2
             if isempty(varargin)
-                error('rm method requires at least one equation name.')
+                error('modBuilder:rm:missingArg', 'rm method requires at least one equation name.')
             end
             eqnames = varargin(1); % First equation to be removed.
             if not(ischar(eqnames{1}) && isrow(eqnames{1}))
-                error('First input argument must be a row char array (equation name).')
+                error('modBuilder:rm:badType', 'First input argument must be a row char array (equation name).')
             end
             % Is the first equation name indexed?
             inames = unique(regexp(eqnames{1}, '\$\d*', 'match'));
@@ -2733,7 +2735,7 @@ classdef modBuilder < handle
                 try
                     [~, ~] = modBuilder.check_indices_values(idValues);
                 catch
-                    error('Last %u arguments are not valid indices values.', nindices)
+                    error('modBuilder:rm:indexMismatch', 'Last %u arguments are not valid indices values.', nindices)
                 end
                 % Is there more than one indexed equation name?
                 if length(varargin) > nindices + 1
@@ -2746,7 +2748,7 @@ classdef modBuilder < handle
                     for i=2:length(eqnames)
                         tmp = unique(regexp(eqnames{i}, '\$\d*', 'match'));
                         if not(isempty(setxor(inames, tmp)))
-                            error('All indexed equation names must contain the same indices.')
+                            error('modBuilder:rm:indexMismatch', 'All indexed equation names must contain the same indices.')
                         end
                     end
                 end
@@ -2757,7 +2759,7 @@ classdef modBuilder < handle
             else
                 % No implicit loops, simply call remove for each equation name
                 if not(all(cellfun(@(x) ischar(x) && isrow(x), varargin)))
-                    error('All input arguments must be row char arrays (equation names).')
+                    error('modBuilder:rm:badType', 'All input arguments must be row char arrays (equation names).')
                 end
                 % Remove duplicates
                 eqnames = unique(varargin);
@@ -2844,7 +2846,7 @@ classdef modBuilder < handle
                 elseif isscalar(LHSRHS)
                     o.equations{i,modBuilder.EQ_COL_EXPR} = ast(strtrim(LHSRHS{1})).rename(oldsymbol, newsymbol).string();
                 else
-                    error('rename: equation #%d contains more than one "=" symbol.', i)
+                    error('modBuilder:rename:multipleEquals', 'rename: equation #%d contains more than one "=" symbol.', i)
                 end
                 o.T.equations.(o.equations{i,modBuilder.EQ_COL_NAME}) = modBuilder.replaceincell(o.T.equations.(o.equations{i,modBuilder.EQ_COL_NAME}), oldsymbol, newsymbol);
             end
@@ -2915,13 +2917,13 @@ classdef modBuilder < handle
             end
 
             if options.check && ~options.steady
-                error('Option ''check'' requires option ''steady'' to be true.');
+                error('modBuilder:write:incompatibleOptions', 'Option ''check'' requires option ''steady'' to be true.');
             end
             if ~isempty(options.steady_options) && ~options.steady
-                error('Option ''steady_options'' requires option ''steady'' to be true.');
+                error('modBuilder:write:incompatibleOptions', 'Option ''steady_options'' requires option ''steady'' to be true.');
             end
             if options.steady_state_model && isempty(o.steady_state)
-                error('Option ''steady_state_model'' requires at least one steady-state expression (use the steady() method).');
+                error('modBuilder:write:missingValue', 'Option ''steady_state_model'' requires at least one steady-state expression (use the steady() method).');
             end
             if options.steady && ~options.initval && ~options.steady_state_model
                 warning('modBuilder:steadyWithoutInitval', ...
@@ -3256,7 +3258,7 @@ classdef modBuilder < handle
                 return
             end
 
-            error('Unknown type for symbol "%s".', name)
+            error('modBuilder:typeof:unknownType', 'Unknown type for symbol "%s".', name)
         end % function
 
         function b = appear_in_more_than_one_equation(o, name)
@@ -3281,7 +3283,7 @@ classdef modBuilder < handle
             elseif o.isendogenous(name)
                 b = length(o.T.var.(name))>1;
             else
-                error('Unknown symbol type.')
+                error('modBuilder:appear_in_more_than_one_equation:badType', 'Unknown symbol type.')
             end
         end % function
 
@@ -3474,7 +3476,7 @@ classdef modBuilder < handle
                 case 'endogenous'
                     data = o.var;
                 otherwise
-                    error('Unknown type: %s. Valid types are: parameters, exogenous, endogenous', type);
+                    error('modBuilder:table:unknownType', 'Unknown type: %s. Valid types are: parameters, exogenous, endogenous', type);
             end
 
             % Convert to MATLAB table
@@ -3611,7 +3613,7 @@ classdef modBuilder < handle
                 % Validate that both names have the same indices
 
                 if not(isempty(setxor(inames_var, inames_varexo)))
-                    error('Both variable names must contain the same index placeholders. Found %s in varname and %s in varexoname.', ...
+                    error('modBuilder:flip:indexMismatch', 'Both variable names must contain the same index placeholders. Found %s in varname and %s in varexoname.', ...
                           strjoin(inames_var, ', '), strjoin(inames_varexo, ', '))
                 end
 
@@ -3620,7 +3622,7 @@ classdef modBuilder < handle
                 % Validate number of index arrays
 
                 if not(isequal(numel(varargin), nindices))
-                    error('The number of indices in the variable names is %u, but values for %u indices are provided.', ...
+                    error('modBuilder:flip:indexMismatch', 'The number of indices in the variable names is %u, but values for %u indices are provided.', ...
                           nindices, numel(varargin))
                 end
 
@@ -3657,13 +3659,13 @@ classdef modBuilder < handle
                 ie = ismember(o.var(:,modBuilder.COL_NAME), varname);
 
                 if not(any(ie))
-                    error('"%s" is not a known endogenous variable.', varname)
+                    error('modBuilder:flip:notEndogenous', '"%s" is not a known endogenous variable.', varname)
                 end
 
                 ix = ismember(o.varexo(:,modBuilder.COL_NAME), varexoname);
 
                 if not(any(ix))
-                    error('"%s" is not a known exogenous variable.', varexoname)
+                    error('modBuilder:flip:notExogenous', '"%s" is not a known exogenous variable.', varexoname)
                 end
 
                 % Copy variables
@@ -3748,7 +3750,7 @@ classdef modBuilder < handle
 
             % Validate: at least two names required
             if n < 2
-                error('reassign requires at least two endogenous variable names.');
+                error('modBuilder:reassign:missingArg', 'reassign requires at least two endogenous variable names.');
             end
 
             % Validate: all names must be char arrays
@@ -3758,13 +3760,13 @@ classdef modBuilder < handle
 
             % Validate: no duplicates
             if numel(unique(names)) ~= n
-                error('All variable names passed to reassign must be distinct.');
+                error('modBuilder:reassign:notDistinct', 'All variable names passed to reassign must be distinct.');
             end
 
             % Validate: all names must be endogenous
             for i = 1:n
                 if ~o.isendogenous(names{i})
-                    error('Variable ''%s'' is not endogenous.', names{i});
+                    error('modBuilder:reassign:notEndogenous', 'Variable ''%s'' is not endogenous.', names{i});
                 end
             end
 
@@ -3845,7 +3847,7 @@ classdef modBuilder < handle
 
                 % Validate that both names have the same indices
                 if ~isempty(setxor(inames_eq, inames_newexo))
-                    error('Both names must contain the same index placeholders. Found %s in eqname and %s in newexo.', ...
+                    error('modBuilder:rmflip:indexMismatch', 'Both names must contain the same index placeholders. Found %s in eqname and %s in newexo.', ...
                           strjoin(inames_eq, ', '), strjoin(inames_newexo, ', '))
                 end
 
@@ -3853,7 +3855,7 @@ classdef modBuilder < handle
 
                 % Validate number of index arrays
                 if ~isequal(numel(varargin), nindices)
-                    error('The number of indices in the names is %u, but values for %u indices are provided.', ...
+                    error('modBuilder:rmflip:indexMismatch', 'The number of indices in the names is %u, but values for %u indices are provided.', ...
                           nindices, numel(varargin))
                 end
 
@@ -3888,17 +3890,17 @@ classdef modBuilder < handle
 
                 % Validate eqname is a known equation
                 if ~any(strcmp(eqname, o.equations(:, modBuilder.EQ_COL_NAME)))
-                    error('Unknown equation "%s".', eqname)
+                    error('modBuilder:rmflip:unknownSymbol', 'Unknown equation "%s".', eqname)
                 end
 
                 % Validate newexo is a known endogenous variable
                 if ~o.isendogenous(newexo)
-                    error('"%s" is not a known endogenous variable.', newexo)
+                    error('modBuilder:rmflip:notEndogenous', '"%s" is not a known endogenous variable.', newexo)
                 end
 
                 % Critical check: eqname's variable must appear in newexo's equation
                 if ~any(strcmp(eqname, o.T.equations.(newexo)))
-                    error('Variable "%s" does not appear in equation "%s". The reassigned equation would not determine "%s".', ...
+                    error('modBuilder:rmflip:notInEquation', 'Variable "%s" does not appear in equation "%s". The reassigned equation would not determine "%s".', ...
                           eqname, newexo, eqname)
                 end
 
@@ -4000,7 +4002,7 @@ classdef modBuilder < handle
         % - long_name and tex_name attributes are NOT compared (two models differing
         %   only in metadata are considered equal)
             if ~isa(o, 'modBuilder') || ~isa(p, 'modBuilder')
-                error('Cannot compare modBuilder object with an object from another class.')
+                error('modBuilder:eq:badType', 'Cannot compare modBuilder object with an object from another class.')
             end
 
             % Auto-update symbol tables if needed for both objects
@@ -4113,13 +4115,13 @@ classdef modBuilder < handle
             ide = ismember(o.equations(:,modBuilder.EQ_COL_NAME), varname);
 
             if not(any(ide))
-                error('There is no equation for "%s".', varname)
+                error('modBuilder:change:unknownSymbol', 'There is no equation for "%s".', varname)
             end
 
             % Validate that the endogenous variable appears in the new equation
             allsymbols = modBuilder.getsymbols(equation);
             if ~ismember(varname, allsymbols)
-                error('Endogenous variable "%s" does not appear in its equation:\n\n\t%s\n', varname, equation)
+                error('modBuilder:change:notInEquation', 'Endogenous variable "%s" does not appear in its equation:\n\n\t%s\n', varname, equation)
             end
 
             o.equations{ide,modBuilder.EQ_COL_EXPR} = equation;
@@ -4257,7 +4259,7 @@ classdef modBuilder < handle
                     if char_count == 1
                         eqname = varargin{k};
                     else
-                        error('subs: only one equation name (char argument) allowed.')
+                        error('modBuilder:subs:multipleArgs', 'subs: only one equation name (char argument) allowed.')
                     end
                 else
                     break
@@ -4284,15 +4286,15 @@ classdef modBuilder < handle
             if has_placeholders
                 % --- Implicit-loop mode: expand and recurse ---
                 if ~is_expr2_char
-                    error('subs: $ placeholders are only supported when expr2 is a char array.')
+                    error('modBuilder:subs:badType', 'subs: $ placeholders are only supported when expr2 is a char array.')
                 end
                 extra_in_rep = setdiff(inames_rep, inames_var);
                 if ~isempty(extra_in_rep)
-                    error('subs: expr2 contains placeholders not present in expr1: %s. Each placeholder in expr2 must also appear in expr1.', strjoin(extra_in_rep, ', '))
+                    error('modBuilder:subs:placeholderMismatch', 'subs: expr2 contains placeholders not present in expr1: %s. Each placeholder in expr2 must also appear in expr1.', strjoin(extra_in_rep, ', '))
                 end
                 all_indices = unique([inames_var, inames_eq]);
                 if length(index_values) ~= numel(all_indices)
-                    error('subs: expected %d index value array(s) (for indices %s), but got %d.', numel(all_indices), strjoin(all_indices, ', '), length(index_values))
+                    error('modBuilder:subs:indexMismatch', 'subs: expected %d index value array(s) (for indices %s), but got %d.', numel(all_indices), strjoin(all_indices, ', '), length(index_values))
                 end
                 [allint, ~] = modBuilder.check_indices_values(index_values);
                 index_map = containers.Map(all_indices, index_values);
@@ -4365,7 +4367,7 @@ classdef modBuilder < handle
 
             % --- Base case: no placeholders ---
             if ~isempty(index_values)
-                error('subs: no $ placeholders in arguments, but %d index value array(s) provided.', length(index_values))
+                error('modBuilder:subs:placeholderMissing', 'subs: no $ placeholders in arguments, but %d index value array(s) provided.', length(index_values))
             end
 
             % Parse expr2 (accept either a string or an ast).
@@ -4374,7 +4376,7 @@ classdef modBuilder < handle
             elseif isa(expr2, 'ast')
                 expr2_ast = expr2;
             else
-                error('subs: expr2 must be a char array or an ast object.')
+                error('modBuilder:subs:badType', 'subs: expr2 must be a char array or an ast object.')
             end
 
             % Determine the equations to operate on.
@@ -4383,7 +4385,7 @@ classdef modBuilder < handle
             else
                 ide = strcmp(eqname, o.equations(:, modBuilder.EQ_COL_NAME));
                 if not(any(ide))
-                    error('subs: no equation named "%s".', eqname)
+                    error('modBuilder:subs:unknownSymbol', 'subs: no equation named "%s".', eqname)
                 end
                 eqnames = {eqname};
             end
@@ -4427,7 +4429,7 @@ classdef modBuilder < handle
                         new_eq = ast(strtrim(LHSRHS{1})).replace_subtree(target_ast, expr2_ast).string();
                     end
                 else
-                    error('subs: equation "%s" has more than one "=" symbol.', nm)
+                    error('modBuilder:subs:multipleEquals', 'subs: equation "%s" has more than one "=" symbol.', nm)
                 end
                 o.equations{ide, modBuilder.EQ_COL_EXPR} = new_eq;
 
@@ -4504,7 +4506,7 @@ classdef modBuilder < handle
                     if char_count == 1
                         eqname = varargin{i};
                     else
-                        error('Only one equation name (char argument) allowed after expr1 and expr2.')
+                        error('modBuilder:substitute:multipleArgs', 'Only one equation name (char argument) allowed after expr1 and expr2.')
                     end
                 else
                     break;
@@ -4523,7 +4525,7 @@ classdef modBuilder < handle
                 % Any $ in expr2 is treated as regex syntax (backreferences)
 
                 if ~isempty(index_values)
-                    error('No $ placeholders in expr1, but index values provided.')
+                    error('modBuilder:substitute:placeholderMissing', 'No $ placeholders in expr1, but index values provided.')
                 end
 
                 o.substitution(expr1, expr2, eqname);
@@ -4534,7 +4536,7 @@ classdef modBuilder < handle
             inames_expr2 = unique(regexp(expr2, '\$\d*', 'match'));
 
             if not(isempty(setxor(inames_expr1, inames_expr2)))
-                error('Both expressions must contain the same index placeholders. Found %s in expr1 and %s in expr2.', ...
+                error('modBuilder:substitute:indexMismatch', 'Both expressions must contain the same index placeholders. Found %s in expr1 and %s in expr2.', ...
                       strjoin(inames_expr1, ', '), strjoin(inames_expr2, ', '))
             end
 
@@ -4551,7 +4553,7 @@ classdef modBuilder < handle
             % Validate number of index values
 
             if length(index_values) ~= nindices_total
-                error('Expected %d index value arrays (for indices %s), but got %d.', ...
+                error('modBuilder:substitute:indexMismatch', 'Expected %d index value arrays (for indices %s), but got %d.', ...
                       nindices_total, strjoin(all_indices, ', '), length(index_values))
             end
 
@@ -4665,7 +4667,7 @@ classdef modBuilder < handle
             try
                 regexp('', expr1);
             catch
-                error('You did not provide a valid regular expression.')
+                error('modBuilder:substitution:badRegex', 'You did not provide a valid regular expression.')
             end
 
             % Where does the substitution should be done?
@@ -4681,7 +4683,7 @@ classdef modBuilder < handle
                     if iscellstr(eqname)
                         eqnames = eqname(:);
                     else
-                        error('Unexpected input type. Last input must be a row character array (designating an equation) or a univariate cell array of row char arrays.')
+                        error('modBuilder:substitution:badType', 'Unexpected input type. Last input must be a row character array (designating an equation) or a univariate cell array of row char arrays.')
                     end
                 end
             end
@@ -4702,7 +4704,7 @@ classdef modBuilder < handle
                 warning(backtrace_state.state, 'backtrace');
                 return
             elseif length(matches)>1
-                error('The provided regular expression matches more than one expression in the equation(s).')
+                error('modBuilder:substitution:ambiguousMatch', 'The provided regular expression matches more than one expression in the equation(s).')
             else
                 expr0 = matches{1};
             end
@@ -4849,7 +4851,7 @@ classdef modBuilder < handle
             p = copy(o);
 
             if not(all(ismember(varargin, p.equations(:,modBuilder.EQ_COL_NAME))))
-                error('Equation(s) missing for:%s.', modBuilder.printlist(varargin(~ismember(varargin, p.equations(:,modBuilder.EQ_COL_NAME)))))
+                error('modBuilder:extract:missingValue', 'Equation(s) missing for:%s.', modBuilder.printlist(varargin(~ismember(varargin, p.equations(:,modBuilder.EQ_COL_NAME)))))
             end
 
             eqnames = setdiff(p.equations(:,modBuilder.EQ_COL_NAME), varargin);
@@ -4892,7 +4894,7 @@ classdef modBuilder < handle
         % % Returns {'Y_m'}
 
             if mod(numel(varargin), 2) ~= 0
-                error('Arguments must be name-value pairs.')
+                error('modBuilder:listeqbytag:badPair', 'Arguments must be name-value pairs.')
             end
 
             tagnames = varargin(1:2:end);
@@ -4930,7 +4932,7 @@ classdef modBuilder < handle
             eqs = unique(eqs, 'stable');
 
             if isempty(eqs)
-                error('No equation matches the given tag criteria.')
+                error('modBuilder:listeqbytag:noMatch', 'No equation matches the given tag criteria.')
             end
         end % function
 
@@ -5066,7 +5068,7 @@ classdef modBuilder < handle
                 LHS_tree = ast(strtrim(LHSRHS{1}));
                 RHS_tree = ast(strtrim(LHSRHS{2}));
             else
-                error('An equation cannot have more than one equal (=) symbol.')
+                error('modBuilder:evaluate:multipleEquals', 'An equation cannot have more than one equal (=) symbol.')
             end
 
             %
@@ -5596,10 +5598,10 @@ classdef modBuilder < handle
                 if o.isendogenous(sname)
 
                     if not(ismember(eqname, o.T.var.(sname)))
-                        error('Symbol "%s" does not appear in equation "%s".', sname, eqname)
+                        error('modBuilder:solve:unknownSymbol', 'Symbol "%s" does not appear in equation "%s".', sname, eqname)
                     end
                 else
-                    error('Symbol "%s" does not appear in equation "%s".', sname, eqname)
+                    error('modBuilder:solve:unknownSymbol', 'Symbol "%s" does not appear in equation "%s".', sname, eqname)
                 end
             end
 
@@ -5634,7 +5636,7 @@ classdef modBuilder < handle
             elseif length(LHSRHS)==2
                 equation = sprintf('@(x) %s-(%s)', LHSRHS{1}, LHSRHS{2});
             else
-                error('An equation cannot have more than one equal (=) symbol.')
+                error('modBuilder:solve:multipleEquals', 'An equation cannot have more than one equal (=) symbol.')
             end
 
             f = str2func(equation);
@@ -5699,15 +5701,15 @@ classdef modBuilder < handle
             n = length(snames);
 
             if m ~= n
-                error('System must be square: number of equations (%d) must equal number of variables (%d).', m, n)
+                error('modBuilder:solve_system:nonSquare', 'System must be square: number of equations (%d) must equal number of variables (%d).', m, n)
             end
 
             for j = 1:n
                 if ~o.issymbol(snames{j})
-                    error('Unknown symbol "%s".', snames{j})
+                    error('modBuilder:solve_system:unknownSymbol', 'Unknown symbol "%s".', snames{j})
                 end
                 if isnan(o.get_value(snames{j}))
-                    error('Symbol "%s" has no initial value. Set a value before calling solve_system.', snames{j})
+                    error('modBuilder:solve_system:missingValue', 'Symbol "%s" has no initial value. Set a value before calling solve_system.', snames{j})
                 end
             end
 
@@ -5791,7 +5793,7 @@ classdef modBuilder < handle
                             S = modBuilder.shiftS(S, 2);
                         else
                             % Unknown symbol and not a method call - error
-                            error('Reference to non-existent field or method ''%s''.', S(1).subs);
+                            error('modBuilder:subsref:unknownSymbol', 'Reference to non-existent field or method ''%s''.', S(1).subs);
                         end
                     end
                 end
@@ -5890,48 +5892,48 @@ classdef modBuilder < handle
         % - o('endovar') = 'new_equation' changes equation (only for endogenous variables)
 
             if length(S)>1
-                error('Wrong assignment.')
+                error('modBuilder:subsasgn:badAssignment', 'Wrong assignment.')
             end
 
             if isequal(S(1).type, '.')
                 % Dot notation: o.symbol = value
                 % Only numeric assignments allowed with dot notation
                 if ~(isnumeric(B) && isscalar(B) && isreal(B))
-                    error('Can only assign a real scalar number using dot notation. Use o(''var'') = ''equation'' to change equations.')
+                    error('modBuilder:subsasgn:badType', 'Can only assign a real scalar number using dot notation. Use o(''var'') = ''equation'' to change equations.')
                 end
 
                 try
                     o.set_value(S(1).subs, B);
                 catch
-                    error('Unknown symbol ''%s''. Cannot assign to non-existent symbol.', S(1).subs);
+                    error('modBuilder:subsasgn:unknownSymbol', 'Unknown symbol ''%s''. Cannot assign to non-existent symbol.', S(1).subs);
                 end
 
             elseif isequal(S(1).type, '()')
                 % Parentheses notation: o('endovar') = 'equation'
                 % Only for changing equations (endogenous variables only)
                 if ~ischar(S(1).subs{1})
-                    error('Wrong assignment (index must be a character array, a variable name).')
+                    error('modBuilder:subsasgn:badIndex', 'Wrong assignment (index must be a character array, a variable name).')
                 end
 
                 try
                     [type, ~] = typeof(o, S(1).subs{1});
                 catch
-                    error('Wrong index (unknown symbol).')
+                    error('modBuilder:subsasgn:unknownSymbol', 'Wrong index (unknown symbol).')
                 end
 
                 if ~strcmp(type, 'endogenous')
-                    error('Can only change equations for endogenous variables. Use o.%s = value to set parameter/exogenous values.', S(1).subs{1});
+                    error('modBuilder:subsasgn:notEndogenous', 'Can only change equations for endogenous variables. Use o.%s = value to set parameter/exogenous values.', S(1).subs{1});
                 end
 
                 if ~ischar(B)
-                    error('Can only assign equation strings with parentheses. Use o.%s = value to set steady state values.', S(1).subs{1});
+                    error('modBuilder:subsasgn:badType', 'Can only assign equation strings with parentheses. Use o.%s = value to set steady state values.', S(1).subs{1});
                 end
 
                 % Change equation
                 o.change(S(1).subs{1}, B);
 
             else
-                error('Wrong assignment (cannot index with {}).')
+                error('modBuilder:subsasgn:badIndex', 'Wrong assignment (cannot index with {}).')
             end
         end % function
 
