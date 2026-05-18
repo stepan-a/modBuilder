@@ -5586,7 +5586,7 @@ classdef modBuilder < handle
             end
         end % function
 
-        function o = solve(o, eqname, sname, sinit)
+        function o = solve(o, eqname, sname, sinit, tol, maxit)
         % Numerically solve an equation for a symbol (parameter, endogenous, or exogenous)
         %
         % INPUTS:
@@ -5594,6 +5594,8 @@ classdef modBuilder < handle
         % - eqname       [char]         equation name to solve
         % - sname        [char]         symbol to solve for
         % - sinit        [double]       initial guess for the solution
+        % - tol          [double]       convergence tolerance (default 1e-10)
+        % - maxit        [integer]      maximum Newton iterations (default 100)
         %
         % OUTPUTS:
         % - o            [modBuilder]   updated object with calibrated symbol value
@@ -5603,6 +5605,8 @@ classdef modBuilder < handle
         % - Uses Newton's method via solvers.newton
         % - All other symbols must have known values
         % - Updates the calibration value of sname in o.params, o.varexo, or o.var
+        % - The default tol is 1e-10, tighter than the test threshold typical
+        %   downstream uses (1e-8). It can be loosened explicitly if needed.
 
             % Auto-update symbol tables if needed
             if o.tables_dirty
@@ -5660,7 +5664,10 @@ classdef modBuilder < handle
             %
             % Set initial guess for the unknown symbol
             %
-            [x, ~, ~] = solvers.newton(f, sinit, 1e-6, 100);
+            if nargin < 5 || isempty(tol),   tol   = 1e-10; end
+            if nargin < 6 || isempty(maxit), maxit = 100;   end
+
+            [x, ~, ~] = solvers.newton(f, sinit, tol, maxit);
             o.set_value(sname, x);
         end % function
 
