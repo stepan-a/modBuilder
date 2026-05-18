@@ -374,6 +374,138 @@ classdef modBuilder < handle
             end
         end % function
 
+        function o = declare_symbol(o, type, name, value, varargin)
+        % Common implementation for parameter / exogenous / endogenous.
+        %
+        % INPUTS:
+        % - type     [char]    'parameter' | 'exogenous' | 'endogenous'
+        % - name     [char]    1×n, symbol name (no implicit-loop placeholders;
+        %                      the public wrappers have already dispatched).
+        % - value    [double]  scalar; semantics depend on the call path:
+        %                        * existing-row update: set unconditionally
+        %                          (NaN clobbers the existing value);
+        %                        * type-conversion path (varexo↔params): if
+        %                          NaN, preserve the source row's value;
+        %                          otherwise override;
+        %                        * untyped → typed promotion: set unconditionally.
+        %                      Endogenous's "preserve existing on missing arg"
+        %                      semantics is resolved by the public wrapper
+        %                      before getting here.
+        % - varargin           Optional key/value pairs forwarded to
+        %                      set_optional_fields (long_name, texname).
+        %
+        % OUTPUTS:
+        % - o        [modBuilder]
+        %
+        % REMARKS:
+        % - tables_dirty is set on every type conversion and on every
+        %   parameter/exogenous untyped-promotion, but NOT on plain
+        %   existing-row updates and (preserving pre-refactor behaviour)
+        %   NOT on the unreachable endogenous-promotion path.
+            modBuilder.validate_symbol_name(name, type);
+
+            switch type
+              case 'parameter'
+                if ~(ismember(name, o.symbols) || ...
+                     ismember(name, o.varexo(:,modBuilder.COL_NAME)) || ...
+                     ismember(name, o.params(:,modBuilder.COL_NAME)))
+                    if ismember(name, o.var(:,modBuilder.COL_NAME))
+                        error('An endogenous variable cannot be converted into a parameter.')
+                    else
+                        error('Symbol "%s" does not appear in the model.', name)
+                    end
+                end
+                tbl_name     = 'params';
+                src_tbl_name = 'varexo';
+              case 'exogenous'
+                if ~(ismember(name, o.symbols) || ...
+                     ismember(name, o.varexo(:,modBuilder.COL_NAME)) || ...
+                     ismember(name, o.params(:,modBuilder.COL_NAME)))
+                    if ismember(name, o.var(:,modBuilder.COL_NAME))
+                        error('An endogenous variable cannot be converted into an exogenous variable. Please remove the equation associated to the endogenous variable.')
+                    else
+                        error('Symbol "%s" does not appear in the model.', name)
+                    end
+                end
+                tbl_name     = 'varexo';
+                src_tbl_name = 'params';
+              case 'endogenous'
+                if ~ismember(name, o.equations(:,modBuilder.EQ_COL_NAME))
+                    error('Symbol "%s" is not an endogenous variable.', name)
+                end
+                tbl_name     = 'var';
+                src_tbl_name = '';
+              otherwise
+                error('modBuilder:declare_symbol:badType', ...
+                      'Unknown symbol type "%s".', type);
+            end
+
+            [long_name, texname] = modBuilder.set_optional_fields(type, name, varargin{:});
+
+            tbl    = o.(tbl_name);
+            in_tbl = ismember(tbl(:,modBuilder.COL_NAME), name);
+
+            if any(in_tbl)
+                % Existing-row update: set value unconditionally, update
+                % metadata only if non-empty.
+                tbl{in_tbl, modBuilder.COL_VALUE} = value;
+                if ~isempty(long_name)
+                    tbl{in_tbl, modBuilder.COL_LONG_NAME} = long_name;
+                end
+                if ~isempty(texname)
+                    tbl{in_tbl, modBuilder.COL_TEX_NAME} = texname;
+                end
+                o.(tbl_name) = tbl;
+                o.symbols    = setdiff(o.symbols, name);
+                return
+            end
+
+            new_idx   = size(tbl, 1) + 1;
+            converted = false;
+
+            if ~isempty(src_tbl_name)
+                src_tbl = o.(src_tbl_name);
+                in_src  = ismember(src_tbl(:,modBuilder.COL_NAME), name);
+                if any(in_src)
+                    % Type-conversion path: migrate the row, then optionally
+                    % override its value/metadata.
+                    tbl(new_idx,:) = src_tbl(in_src,:);
+                    src_tbl(in_src,:) = [];
+                    o.(src_tbl_name) = src_tbl;
+                    if ~isnan(value)
+                        tbl{new_idx, modBuilder.COL_VALUE} = value;
+                    end
+                    if ~isempty(long_name)
+                        tbl{new_idx, modBuilder.COL_LONG_NAME} = long_name;
+                    end
+                    if ~isempty(texname)
+                        tbl{new_idx, modBuilder.COL_TEX_NAME} = texname;
+                    end
+                    converted = true;
+                end
+            end
+
+            if ~converted
+                % Untyped → typed promotion: a fresh row, value set as given.
+                tbl{new_idx, modBuilder.COL_NAME}      = name;
+                tbl{new_idx, modBuilder.COL_VALUE}     = value;
+                tbl{new_idx, modBuilder.COL_LONG_NAME} = long_name;
+                tbl{new_idx, modBuilder.COL_TEX_NAME}  = texname;
+            end
+
+            o.(tbl_name) = tbl;
+            if ~strcmp(type, 'endogenous')
+                % Preserve pre-refactor behaviour: parameter/exogenous flag
+                % the symbol tables as dirty on both type-conversion and
+                % promotion; endogenous (in its unreachable promotion path)
+                % did not. Equation-driven endogenous declarations go via
+                % add(), which manages the dirty flag itself.
+                o.tables_dirty = true;
+            end
+
+            o.symbols = setdiff(o.symbols, name);
+        end % function
+
         function validate_merge_compatibility(o, p)
         % Validate that two models can be merged
         %
@@ -1988,85 +2120,24 @@ classdef modBuilder < handle
         %             Countries, Sectors);
         % % Creates: rho_FR_1, rho_FR_2, rho_DE_1, ... with appropriate TeX names
 
-            % Validate that pname is a non-empty row char array
             validateattributes(pname, {'char'}, {'nonempty', 'row'}, 'parameter', 'pname');
 
-            % Check if parameter name contains implicit loop indices (e.g., 'beta_$1_$2')
-            inames = unique(regexp(pname, '\$\d*', 'match'));
-
-            if not(isempty(inames))
-                % Delegate to common implicit loop handler
+            % Implicit-loop dispatch.
+            if ~isempty(regexp(pname, '\$\d*', 'once'))
                 o.handle_implicit_loops(pname, 'parameter', varargin{:});
-            else
-                % Validate symbol name for reserved names (only for non-template names)
-                modBuilder.validate_symbol_name(pname, 'parameter')
-
-                if ~(ismember(pname, o.symbols) || ismember(pname, o.varexo(:,modBuilder.COL_NAME)) || ismember(pname, o.params(:,modBuilder.COL_NAME)))
-                    if ismember(pname, o.var(:,modBuilder.COL_NAME))
-                        error('An endogenous variable cannot be converted into a parameter.')
-                    else
-                        error('Symbol "%s" does not appear in the model.', pname)
-                    end
-                end
-
-                if nargin<3 || isempty(varargin{1})
-                    % Set default value
-                    pvalue = NaN;
-                else
-                    pvalue = varargin{1};
-                end
-
-                [long_name, texname] = modBuilder.set_optional_fields('parameter', pname, varargin{2:end});
-
-                idp = ismember(o.params(:,modBuilder.COL_NAME), pname);
-
-                if any(idp) % The parameter is already defined
-                    o.params{idp, modBuilder.COL_VALUE} = pvalue;
-
-                    if not(isempty(long_name))
-                        o.params{idp,modBuilder.COL_LONG_NAME} = long_name;
-                    end
-
-                    if not(isempty(texname))
-                        o.params{idp,modBuilder.COL_TEX_NAME} = texname;
-                    end
-                else
-                    idx = ismember(o.varexo(:,modBuilder.COL_NAME), pname);
-
-                    if any(idx)
-                        % pname is an exogenous variable, we change its type to parameter.
-                        o.params(length(idp)+1,:) = o.varexo(idx,:);
-                        o.varexo(idx,:) = [];
-
-                        if not(isnan(pvalue))
-                            o.params{length(idp)+1,modBuilder.COL_VALUE} = pvalue;
-                        end
-
-                        if not(isempty(long_name))
-                            o.params{length(idp)+1,modBuilder.COL_LONG_NAME} = long_name;
-                        end
-
-                        if not(isempty(texname))
-                            o.params{length(idp)+1,modBuilder.COL_TEX_NAME} = texname;
-                        end
-
-                        % Mark symbol tables as dirty (type conversion)
-                        o.tables_dirty = true;
-                    else
-                        % Symbol pname has no predefined type.
-                        o.params{length(idp)+1,modBuilder.COL_NAME} = pname;
-                        o.params{length(idp)+1,modBuilder.COL_VALUE} = pvalue;
-                        o.params{length(idp)+1,modBuilder.COL_LONG_NAME} = long_name;
-                        o.params{length(idp)+1,modBuilder.COL_TEX_NAME} = texname;
-
-                        % Mark symbol tables as dirty (untyped → parameter promotion)
-                        o.tables_dirty = true;
-                    end
-                end
-
-                % Remove pname from the list of untyped symbols
-                o.symbols = setdiff(o.symbols, pname);
+                return
             end
+
+            % Parse positional value (varargin{1}) and remaining optional pairs.
+            if isempty(varargin)
+                pvalue = NaN;  opts = {};
+            elseif isempty(varargin{1})
+                pvalue = NaN;  opts = varargin(2:end);
+            else
+                pvalue = varargin{1};  opts = varargin(2:end);
+            end
+
+            o = o.declare_symbol('parameter', pname, pvalue, opts{:});
         end % function
 
         function o = exogenous(o, xname, varargin)
@@ -2111,84 +2182,24 @@ classdef modBuilder < handle
         %             Countries, Sectors);
         % % Creates: K_FR_1, K_FR_2, K_FR_3, K_DE_1, ... with appropriate TeX names
 
-            % Validate that xname is a non-empty row char array
             validateattributes(xname, {'char'}, {'nonempty', 'row'}, 'exogenous', 'xname');
 
-            % Check if exogenous name contains implicit loop indices (e.g., 'epsilon_$1_$2')
-            inames = unique(regexp(xname, '\$\d*', 'match'));
-
-            if not(isempty(inames))
-                % Delegate to common implicit loop handler
+            % Implicit-loop dispatch.
+            if ~isempty(regexp(xname, '\$\d*', 'once'))
                 o.handle_implicit_loops(xname, 'exogenous', varargin{:});
-            else
-                % Validate symbol name for reserved names (only for non-template names)
-                modBuilder.validate_symbol_name(xname, 'exogenous')
-
-                if ~(ismember(xname, o.symbols) || ismember(xname, o.varexo(:,modBuilder.COL_NAME)) || ismember(xname, o.params(:,modBuilder.COL_NAME)))
-                    if ismember(xname, o.var(:,modBuilder.COL_NAME))
-                        error('An endogenous variable cannot be converted into an exogenous variable. Please remove the equation associated to the endogenous variable.')
-                    else
-                        error('Symbol "%s" does not appear in the model.', xname)
-                    end
-                end
-
-                if nargin<3 || isempty(varargin{1})
-                    % Set default value
-                    xvalue = NaN;
-                else
-                    xvalue = varargin{1};
-                end
-
-                [long_name, texname] = modBuilder.set_optional_fields('exogenous', xname, varargin{2:end});
-
-                idx = ismember(o.varexo(:,modBuilder.COL_NAME), xname);
-
-                if any(idx) % The exogenous variable is already defined
-                    o.varexo{idx,modBuilder.COL_VALUE} = xvalue;
-
-                    if not(isempty(long_name))
-                        o.varexo{idx,modBuilder.COL_LONG_NAME} = long_name;
-                    end
-
-                    if not(isempty(texname))
-                        o.varexo{idx,modBuilder.COL_TEX_NAME} = texname;
-                    end
-                else
-                    idp = ismember(o.params(:,modBuilder.COL_NAME), xname);
-
-                    if any(idp)
-                        % pname is a parameter, we change its type to exogenous variable.
-                        o.varexo(length(idx)+1,:) = o.params(idp,:);
-                        o.params(idp,:) = [];
-
-                        if not(isnan(xvalue))
-                            o.varexo{length(idx)+1,modBuilder.COL_VALUE} = xvalue;
-                        end
-
-                        if not(isempty(long_name))
-                            o.varexo{length(idx)+1,modBuilder.COL_LONG_NAME} = long_name;
-                        end
-
-                        if not(isempty(texname))
-                            o.varexo{length(idx)+1,modBuilder.COL_TEX_NAME} = texname;
-                        end
-
-                        % Mark symbol tables as dirty (type conversion)
-                        o.tables_dirty = true;
-                    else
-                        o.varexo{length(idx)+1,modBuilder.COL_NAME} = xname;
-                        o.varexo{length(idx)+1,modBuilder.COL_VALUE} = xvalue;
-                        o.varexo{length(idx)+1,modBuilder.COL_LONG_NAME} = long_name;
-                        o.varexo{length(idx)+1,modBuilder.COL_TEX_NAME} = texname;
-
-                        % Mark symbol tables as dirty (untyped → exogenous promotion)
-                        o.tables_dirty = true;
-                    end
-                end
-
-                % Remove xname from the list of untyped symbols
-                o.symbols = setdiff(o.symbols, xname);
+                return
             end
+
+            % Parse positional value (varargin{1}) and remaining optional pairs.
+            if isempty(varargin)
+                xvalue = NaN;  opts = {};
+            elseif isempty(varargin{1})
+                xvalue = NaN;  opts = varargin(2:end);
+            else
+                xvalue = varargin{1};  opts = varargin(2:end);
+            end
+
+            o = o.declare_symbol('exogenous', xname, xvalue, opts{:});
         end % function
 
         function o = endogenous(o, ename, evalue, varargin)
@@ -2253,64 +2264,31 @@ classdef modBuilder < handle
         %              Countries, Sectors);
         % % Sets values and attributes for: Y_FR_1, Y_FR_2, Y_DE_1, Y_DE_2
 
-            % Validate that ename is a non-empty row char array
             validateattributes(ename, {'char'}, {'nonempty', 'row'}, 'endogenous', 'ename');
 
-            % Check if endogenous name contains implicit loop indices (e.g., 'y_$1_$2')
-            inames = unique(regexp(ename, '\$\d*', 'match'));
-
-            if not(isempty(inames))
-                % Delegate to common implicit loop handler
+            % Implicit-loop dispatch (evalue is a positional arg, not in varargin).
+            if ~isempty(regexp(ename, '\$\d*', 'once'))
                 if nargin < 3 || isempty(evalue)
-                    % No value provided
                     o.handle_implicit_loops(ename, 'endogenous', varargin{:});
                 else
-                    % Value provided
                     o.handle_implicit_loops(ename, 'endogenous', evalue, varargin{:});
                 end
-            else
-                % Validate symbol name for reserved names (only for non-template names)
-                modBuilder.validate_symbol_name(ename, 'endogenous')
-
-                % Check that ename is defined as an endogenous variable (has an equation)
-                if ~ismember(ename, o.equations(:,modBuilder.EQ_COL_NAME))
-                    error('Symbol "%s" is not an endogenous variable.', ename)
-                end
-
-                if nargin<3 || isempty(evalue)
-                    if isempty(o.var(ismember(o.var(:,modBuilder.COL_NAME), ename), modBuilder.COL_VALUE))
-                        % Set default value
-                        evalue = NaN;
-                    else
-                        % Endogenous variable already has a value (long run level), keep it.
-                        evalue = o.var{ismember(o.var(:,modBuilder.COL_NAME), ename), modBuilder.COL_VALUE};
-                    end
-                end
-
-                [long_name, texname] = modBuilder.set_optional_fields('endogenous', ename, varargin{:});
-
-                ide = ismember(o.var(:,modBuilder.COL_NAME), ename);
-
-                if any(ide) % The endogenous variable is already defined
-                    o.var{ide,modBuilder.COL_VALUE} = evalue;
-
-                    if not(isempty(long_name))
-                        o.var{ide,modBuilder.COL_LONG_NAME} = long_name;
-                    end
-
-                    if not(isempty(texname))
-                        o.var{ide,modBuilder.COL_TEX_NAME} = texname;
-                    end
-                else
-                    o.var{length(ide)+1,modBuilder.COL_NAME} = ename;
-                    o.var{length(ide)+1,modBuilder.COL_VALUE} = evalue;
-                    o.var{length(ide)+1,modBuilder.COL_LONG_NAME} = long_name;
-                    o.var{length(ide)+1,modBuilder.COL_TEX_NAME} = texname;
-                end
-
-                % Remove ename from the list of untyped symbols
-                o.symbols = setdiff(o.symbols, ename);
+                return
             end
+
+            % "Missing value" preserves the existing one (long-run level set
+            % by add/load); falls back to NaN only if no row exists yet.
+            % This is the distinguishing default from parameter/exogenous.
+            if nargin < 3 || isempty(evalue)
+                existing = ismember(o.var(:,modBuilder.COL_NAME), ename);
+                if any(existing) && ~isempty(o.var{existing, modBuilder.COL_VALUE})
+                    evalue = o.var{existing, modBuilder.COL_VALUE};
+                else
+                    evalue = NaN;
+                end
+            end
+
+            o = o.declare_symbol('endogenous', ename, evalue, varargin{:});
         end % function
 
         function o = steady(o, varname, expression, varargin)
