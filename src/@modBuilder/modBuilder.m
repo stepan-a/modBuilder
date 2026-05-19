@@ -830,9 +830,7 @@ classdef modBuilder < handle
             end
 
             % Auto-update symbol tables if needed
-            if o.tables_dirty
-                o.updatesymboltables();
-            end
+            o.refresh_tables();
 
             m = length(eqnames);
             n = length(snames);
@@ -952,6 +950,21 @@ classdef modBuilder < handle
                 end
             end
             J = sparse(II, JJ, VV, m, n);
+        end % function
+
+        function refresh_tables(o)
+        % Refresh the symbol tables if they are stale; no-op otherwise.
+        %
+        % INPUTS:
+        % - o   [modBuilder]
+        %
+        % REMARKS:
+        % - Called from read-side methods that depend on a fresh o.T before
+        %   touching the symbol tables. updatesymboltables() resets the
+        %   tables_dirty flag, so subsequent calls are cheap no-ops.
+            if o.tables_dirty
+                o.updatesymboltables();
+            end
         end % function
 
     end % methods
@@ -1928,9 +1941,7 @@ classdef modBuilder < handle
         %
         % OUTPUTS:
         % - listofsymbols   [cell]          n×1, each element is a row character array (name of a symbol).
-            if o.tables_dirty
-                o.updatesymboltables();
-            end
+            o.refresh_tables();
             eqnames = fieldnames(o.T.equations);
             listofsymbols = {};
             for i = 1:numel(eqnames)
@@ -2582,9 +2593,7 @@ classdef modBuilder < handle
                     error('modBuilder:calibrate', 'Parameter "%s" is already in a calibration swap.', param_name);
                 end
             end
-            if o.tables_dirty
-                o.updatesymboltables();
-            end
+            o.refresh_tables();
             if ~isfield(o.T.equations, endo_name) || ~ismember(param_name, o.T.equations.(endo_name))
                 error('modBuilder:calibrate', ...
                       ['Parameter "%s" does not appear in the equation paired with "%s"; ' ...
@@ -2730,9 +2739,7 @@ classdef modBuilder < handle
             end
 
             % Auto-update symbol tables if needed
-            if o.tables_dirty
-                o.updatesymboltables();
-            end
+            o.refresh_tables();
 
             % Check if equation name contains implicit loop indices (e.g., 'Y_$1_$2')
             if ~isempty(regexp(eqname, '\$\d*', 'match', 'once'))
@@ -2929,9 +2936,7 @@ classdef modBuilder < handle
             end
 
             % Auto-update symbol tables if needed
-            if o.tables_dirty
-                o.updatesymboltables();
-            end
+            o.refresh_tables();
 
             [type, id] = o.typeof(oldsymbol);
 
@@ -3429,9 +3434,7 @@ classdef modBuilder < handle
         % - b         [logical]      scalar
 
             % Auto-update symbol tables if needed
-            if o.tables_dirty
-                o.updatesymboltables();
-            end
+            o.refresh_tables();
 
             if o.isparameter(name)
                 b = length(o.T.params.(name))>1;
@@ -3484,9 +3487,7 @@ classdef modBuilder < handle
             end
 
             % Auto-update symbol tables if needed
-            if o.tables_dirty
-                o.updatesymboltables();
-            end
+            o.refresh_tables();
 
             % Auto-detect regex usage
             if modBuilder.isregexp(name)
@@ -3767,9 +3768,7 @@ classdef modBuilder < handle
             end
 
             % Auto-update symbol tables if needed
-            if o.tables_dirty
-                o.updatesymboltables();
-            end
+            o.refresh_tables();
 
             % Check if variable names contain implicit loop indices
             inames_var = unique(regexp(varname, '\$\d*', 'match'));
@@ -4007,9 +4006,7 @@ classdef modBuilder < handle
             end
 
             % Auto-update symbol tables if needed
-            if o.tables_dirty
-                o.updatesymboltables();
-            end
+            o.refresh_tables();
 
             % Check if names contain implicit loop indices
             inames_eq = unique(regexp(eqname, '\$\d*', 'match'));
@@ -4187,13 +4184,8 @@ classdef modBuilder < handle
             end
 
             % Auto-update symbol tables if needed for both objects
-            if o.tables_dirty
-                o.updatesymboltables();
-            end
-
-            if p.tables_dirty
-                p.updatesymboltables();
-            end
+            o.refresh_tables();
+            p.refresh_tables();
 
             b = true;
 
@@ -5259,9 +5251,7 @@ classdef modBuilder < handle
             end
 
             % Auto-update symbol tables if needed
-            if o.tables_dirty
-                o.updatesymboltables();
-            end
+            o.refresh_tables();
 
             %
             % Initialise outputs
@@ -5359,9 +5349,7 @@ classdef modBuilder < handle
         %   to extract a coefficient matrix; if the system is jointly linear and the matrix is non-singular,
         %   ast.solve_linear_system returns the closed forms via Cramer's rule.
 
-            if o.tables_dirty
-                o.updatesymboltables();
-            end
+            o.refresh_tables();
 
             n = size(o.equations, 1);
             blocks = struct('vars', {}, 'eqs', {}, 'kind', {}, 'deps', {}, 'extdeps', {}, 'closed_form', {});
@@ -5825,9 +5813,7 @@ classdef modBuilder < handle
             end
 
             % Auto-update symbol tables if needed
-            if o.tables_dirty
-                o.updatesymboltables();
-            end
+            o.refresh_tables();
 
             if not(ismember(sname, o.T.equations.(eqname)))
 
