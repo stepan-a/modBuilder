@@ -223,6 +223,58 @@ classdef modBuilder < handle
             end
         end % function
 
+        function [found, type, id] = lookup_symbol(o, name)
+        % Resolve a name to its (type, id) without throwing.
+        %
+        % INPUTS:
+        % - o      [modBuilder]
+        % - name   [char]        symbol name
+        %
+        % OUTPUTS:
+        % - found  [logical]     true iff name is a declared symbol
+        % - type   [char]        'parameter' / 'exogenous' / 'endogenous',
+        %                        or '' when found is false
+        % - id     [integer]     row position in the corresponding table,
+        %                        or [] when found is false
+        %
+        % REMARKS:
+        % - Tries the O(1) symbol_map shortcut first; falls back to a linear
+        %   scan of o.params / o.varexo / o.var (the source of truth) when
+        %   symbol_map is empty or the name is not (yet) keyed.
+        % - Shared backend for typeof, isparameter, isexogenous, isendogenous
+        %   and issymbol so the lookup logic lives in one place.
+        % - When tables are stale, the symbol_map shortcut is bypassed: a
+        %   prior flip/rename may have changed a symbol's type without
+        %   refreshing the map, and o.params / o.varexo / o.var are the
+        %   source of truth.
+            if ~o.tables_dirty && ~isempty(o.symbol_map) && isa(o.symbol_map, 'containers.Map') && o.symbol_map.isKey(name)
+                sym_info = o.symbol_map(name);
+                found = true;
+                type  = sym_info.type;
+                id    = sym_info.idx;
+                return
+            end
+
+            id = find(strcmp(o.params(:,modBuilder.COL_NAME), name), 1);
+            if ~isempty(id)
+                found = true; type = 'parameter'; return
+            end
+
+            id = find(strcmp(o.varexo(:,modBuilder.COL_NAME), name), 1);
+            if ~isempty(id)
+                found = true; type = 'exogenous'; return
+            end
+
+            id = find(strcmp(o.var(:,modBuilder.COL_NAME), name), 1);
+            if ~isempty(id)
+                found = true; type = 'endogenous'; return
+            end
+
+            found = false;
+            type  = '';
+            id    = [];
+        end % function
+
         function o = handle_implicit_loops(o, symbol_name, symbol_type, varargin)
         % Generic handler for symbols with implicit loops (indices like $1, $2)
         %
@@ -3324,7 +3376,8 @@ classdef modBuilder < handle
                 o
                 name (1,:) char {mustBeNonempty}
             end
-            b = any(ismember(o.params(:,modBuilder.COL_NAME), name));
+            [found, type, ~] = o.lookup_symbol(name);
+            b = found && strcmp(type, 'parameter');
         end % function
 
         function b = isexogenous(o, name)
@@ -3340,7 +3393,8 @@ classdef modBuilder < handle
                 o
                 name (1,:) char {mustBeNonempty}
             end
-            b = any(ismember(o.varexo(:,modBuilder.COL_NAME), name));
+            [found, type, ~] = o.lookup_symbol(name);
+            b = found && strcmp(type, 'exogenous');
         end % function
 
         function b = isendogenous(o, name)
@@ -3356,7 +3410,8 @@ classdef modBuilder < handle
                 o
                 name (1,:) char {mustBeNonempty}
             end
-            b = any(ismember(o.var(:,modBuilder.COL_NAME), name));
+            [found, type, ~] = o.lookup_symbol(name);
+            b = found && strcmp(type, 'endogenous');
         end % function
 
         function b = issymbol(o, name)
@@ -3372,7 +3427,7 @@ classdef modBuilder < handle
                 o
                 name (1,:) char {mustBeNonempty}
             end
-            b = o.isexogenous(name) || o.isendogenous(name) || o.isparameter(name);
+            b = o.lookup_symbol(name);
         end % function
 
         function [type, id] = typeof(o, name)
@@ -3406,38 +3461,10 @@ classdef modBuilder < handle
                 o
                 name (1,:) char {mustBeNonempty}
             end
-
-            % Try O(1) lookup first if symbol_map is available
-            if ~isempty(o.symbol_map) && isa(o.symbol_map, 'containers.Map') && o.symbol_map.isKey(name)
-                sym_info = o.symbol_map(name);
-                type = sym_info.type;
-                id = sym_info.idx;
-                return
+            [found, type, id] = o.lookup_symbol(name);
+            if ~found
+                error('modBuilder:typeof:unknownType', 'Unknown type for symbol "%s".', name)
             end
-
-            % Fallback to O(n) linear search
-            id = find(strcmp(o.params(:,modBuilder.COL_NAME), name), 1);
-
-            if ~isempty(id)
-                type = 'parameter';
-                return
-            end
-
-            id = find(strcmp(o.varexo(:,modBuilder.COL_NAME), name), 1);
-
-            if ~isempty(id)
-                type = 'exogenous';
-                return
-            end
-
-            id = find(strcmp(o.var(:,modBuilder.COL_NAME), name), 1);
-
-            if ~isempty(id)
-                type = 'endogenous';
-                return
-            end
-
-            error('modBuilder:typeof:unknownType', 'Unknown type for symbol "%s".', name)
         end % function
 
         function b = appear_in_more_than_one_equation(o, name)
@@ -4664,6 +4691,11 @@ classdef modBuilder < handle
                     end
                 end
             end
+
+            % The pruning above shrank o.params / o.varexo after symbol_map
+            % was rebuilt by updatesymboltables(), so the map now references
+            % dropped symbols. Mark dirty so the next reader rebuilds it.
+            o.tables_dirty = true;
         end % function
 
         function o = substitute(o, expr1, expr2, varargin)
