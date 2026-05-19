@@ -191,18 +191,14 @@ classdef modBuilder < handle
         % - o   [modBuilder]   updated object with populated symbol_map
         %
         % REMARKS:
-        % - Creates a containers.Map for O(1) symbol type lookup
+        % - Creates a dictionary for O(1) symbol type lookup
         % - Called automatically after structural changes
         % - Maps symbol_name -> struct('type', <type>, 'idx', <index>)
         % - Significantly faster than linear search through params/varexo/var arrays
 
-            % Initialize empty map if it doesn't exist or is empty
-            if isempty(o.symbol_map) || ~isa(o.symbol_map, 'containers.Map')
-                o.symbol_map = containers.Map('KeyType', 'char', 'ValueType', 'any');
-            else
-                % Clear existing map
-                remove(o.symbol_map, keys(o.symbol_map));
-            end
+            % Build a fresh dictionary; key/value types are inferred from the
+            % first insertion (string -> struct).
+            o.symbol_map = dictionary();
 
             % Add all parameters
             for i=1:size(o.params, 1)
@@ -247,7 +243,7 @@ classdef modBuilder < handle
         %   prior flip/rename may have changed a symbol's type without
         %   refreshing the map, and o.params / o.varexo / o.var are the
         %   source of truth.
-            if ~o.tables_dirty && ~isempty(o.symbol_map) && isa(o.symbol_map, 'containers.Map') && o.symbol_map.isKey(name)
+            if ~o.tables_dirty && ~isempty(o.symbol_map) && isa(o.symbol_map, 'dictionary') && o.symbol_map.isKey(name)
                 sym_info = o.symbol_map(name);
                 found = true;
                 type  = sym_info.type;
@@ -738,10 +734,10 @@ classdef modBuilder < handle
 
             % Create index maps for O(1) lookups (only if non-empty)
             if ~isempty(o_varexo_list)
-                o_varexo_map = containers.Map(o_varexo_list, 1:length(o_varexo_list));
+                o_varexo_map = dictionary(string(o_varexo_list(:)), (1:length(o_varexo_list))');
             end
             if ~isempty(p_varexo_list)
-                p_varexo_map = containers.Map(p_varexo_list, 1:length(p_varexo_list));
+                p_varexo_map = dictionary(string(p_varexo_list(:)), (1:length(p_varexo_list))');
             end
 
             % Fill in values and metadata
@@ -888,13 +884,10 @@ classdef modBuilder < handle
             n = length(snames);
 
             % Build var-name-to-index map
-            varmap = containers.Map();
-            for j = 1:n
-                varmap(snames{j}) = j;
-            end
+            varmap = dictionary(string(snames(:)), (1:n)');
 
             % Build equation-name-to-row map for O(1) lookups
-            eqmap = containers.Map(o.equations(:, modBuilder.EQ_COL_NAME), num2cell(1:size(o.equations, 1)));
+            eqmap = dictionary(string(o.equations(:, modBuilder.EQ_COL_NAME)), (1:size(o.equations, 1))');
 
             fhandles = cell(1, m);
             incidence = false(m, n);
@@ -3299,7 +3292,7 @@ classdef modBuilder < handle
         % REMARKS:
         % - OPTIMIZED VERSION: O(n×m) complexity instead of O(n²)
         % - Single pass through equations populates all symbol types
-        % - Uses containers.Map for O(1) symbol type lookups
+        % - Uses dictionary for O(1) symbol type lookups
         % - Significantly faster for large models (100+ equations)
 
             % Initialize all symbol tables
@@ -4519,7 +4512,7 @@ classdef modBuilder < handle
                     error('modBuilder:subs:indexMismatch', 'subs: expected %d index value array(s) (for indices %s), but got %d.', numel(all_indices), strjoin(all_indices, ', '), length(index_values))
                 end
                 [allint, ~] = modBuilder.check_indices_values(index_values);
-                index_map = containers.Map(all_indices, index_values);
+                index_map = dictionary(string(all_indices(:)), index_values(:));
 
                 % Build sprintf templates for expr1 and expr2 (replace each
                 % placeholder by %u or %s depending on the index value type).
@@ -4538,7 +4531,7 @@ classdef modBuilder < handle
                 if isempty(inames_var)
                     mIndex_expr = {{}};
                 else
-                    expr_values = cellfun(@(x) index_map(x), inames_var, 'UniformOutput', false);
+                    expr_values = cellfun(@(x) index_map{x}, inames_var, 'UniformOutput', false);
                     mIndex_expr = table2cell(combinations(expr_values{:}));
                 end
 
@@ -4560,7 +4553,7 @@ classdef modBuilder < handle
                     end
                 else
                     % eqname has its own (possibly disjoint) set of placeholders.
-                    eq_values = cellfun(@(x) index_map(x), inames_eq, 'UniformOutput', false);
+                    eq_values = cellfun(@(x) index_map{x}, inames_eq, 'UniformOutput', false);
                     eq_allint = false(1, numel(inames_eq));
                     tmp_eqname = eqname;
                     for k = numel(inames_eq):-1:1
@@ -4792,10 +4785,10 @@ classdef modBuilder < handle
             [allint, ~] = modBuilder.check_indices_values(index_values);
 
             % Build mapping from index placeholder to its values
-            index_map = containers.Map(all_indices, index_values);
+            index_map = dictionary(string(all_indices(:)), index_values(:));
 
             % Extract values for expression indices
-            expr_values = cellfun(@(x) index_map(x), inames_expr1, 'UniformOutput', false);
+            expr_values = cellfun(@(x) index_map{x}, inames_expr1, 'UniformOutput', false);
             expr_allint = cellfun(@(x) allint(strcmp(all_indices, x)), inames_expr1);
 
             % Compute Cartesian product of expression indices
@@ -4836,7 +4829,7 @@ classdef modBuilder < handle
                 end
             else
                 % eqname has placeholders
-                eq_values = cellfun(@(x) index_map(x), inames_eq, 'UniformOutput', false);
+                eq_values = cellfun(@(x) index_map{x}, inames_eq, 'UniformOutput', false);
                 eq_allint = cellfun(@(x) allint(strcmp(all_indices, x)), inames_eq);
                 mIndex_eq = table2cell(combinations(eq_values{:}));
 
@@ -5422,7 +5415,7 @@ classdef modBuilder < handle
                     var_names{eq_idx} = param;
                 end
             end
-            var_idx = containers.Map(var_names, num2cell(1:n));
+            var_idx = dictionary(string(var_names(:)), (1:n)');
 
             % Collect the symbol names referenced by each equation (via AST) and partition into
             % endogenous deps vs external constants (parameters / exogenous / calibrated endos).
@@ -5660,7 +5653,7 @@ classdef modBuilder < handle
                 return
             end
 
-            seen = containers.Map('KeyType', 'char', 'ValueType', 'logical');
+            seen = dictionary(string.empty, logical.empty);
             for k = 1:numel(blocks)
                 b = blocks(k);
                 if ~strcmp(b.kind, 'simultaneous'), continue, end

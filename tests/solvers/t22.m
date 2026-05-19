@@ -8,6 +8,8 @@
 % For a well-conditioned problem where alpha=1 is always accepted, this
 % gives exactly `iter` total residual evaluations.
 
+% containers.Map (not dictionary) — this test needs a handle-typed
+% state so that mutations inside tcount propagate back to the caller.
 state = containers.Map('KeyType', 'char', 'ValueType', 'double');
 state('calls') = 0;
 

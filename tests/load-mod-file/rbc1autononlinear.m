@@ -35,7 +35,7 @@ cleanupw = onCleanup(@() warning(ws));
 
 m = modBuilder(M_, oo_, tmpjson);
 
-mapping = containers.Map();
+mapping = dictionary();
 for i = 1:size(m.equations, 1)
     mapping(m.equations{i, 2}) = m.equations{i, 1};
 end
