@@ -997,6 +997,30 @@ classdef modBuilder < handle
             J = sparse(II, JJ, VV, m, n);
         end % function
 
+        function matches = collect_matches(o, eqnames, pattern)
+        % Return the unique regex matches found across the specified equations.
+        %
+        % INPUTS:
+        % - o          [modBuilder]
+        % - eqnames    [cell]        cell array of equation names to scan
+        % - pattern    [char]        regex pattern (same form as regexp 'match')
+        %
+        % OUTPUTS:
+        % - matches    [cell]        unique matches across all scanned equations,
+        %                            empty cell if none found or no eqnames given
+            matches = {};
+            if isempty(eqnames)
+                return
+            end
+            [~, rows] = ismember(eqnames, o.equations(:, modBuilder.EQ_COL_NAME));
+            rows = rows(rows > 0);
+            if isempty(rows)
+                return
+            end
+            hits = regexp(o.equations(rows, modBuilder.EQ_COL_EXPR), pattern, 'match');
+            matches = unique([hits{:}]);
+        end % function
+
         function refresh_tables(o)
         % Refresh the symbol tables if they are stale; no-op otherwise.
         %
@@ -4919,12 +4943,7 @@ classdef modBuilder < handle
             end
 
             % Test that the regular expression matches only one expression in all the selected equations.
-            matches = {};
-
-            for i=1:numel(eqnames)
-                id = strcmp(eqnames{i}, o.equations(:,modBuilder.EQ_COL_NAME));
-                matches = union(matches, unique(regexp(o.equations{id,modBuilder.EQ_COL_EXPR}, expr1, 'match')));
-            end
+            matches = o.collect_matches(eqnames, expr1);
 
             if isempty(matches)
                 % No match found - issue warning and return without modification
@@ -4946,12 +4965,7 @@ classdef modBuilder < handle
                 else
                     % Does the matched symbol appear in other equations?
                     eqnames_ = setdiff(o.equations(:,modBuilder.EQ_COL_NAME), eqnames);
-                    matches = {};
-
-                    for i=1:numel(eqnames_)
-                        id = strcmp(eqnames_{i}, o.equations(:,modBuilder.EQ_COL_NAME));
-                        matches = union(matches, unique(regexp(o.equations{id,modBuilder.EQ_COL_EXPR}, expr1, 'match')));
-                    end
+                    matches = o.collect_matches(eqnames_, expr1);
 
                     if isempty(matches)
                         % expr1 does not appear in any other equation, we can safely use the rename method
@@ -4970,24 +4984,28 @@ classdef modBuilder < handle
             list_of_unknown_symbols = cell(1, numel(eqnames) * 5); % Assume max 5 new symbols per equation
             unknown_count = 0;
 
+            % Resolve eqnames to row indices once, instead of strcmp'ing the
+            % whole COL_NAME column on every iteration.
+            [~, eqrows] = ismember(eqnames, o.equations(:, modBuilder.EQ_COL_NAME));
+
             for i=1:numel(eqnames)
                 eqname = eqnames{i};
-                select = strcmp(eqname, o.equations(:,modBuilder.EQ_COL_NAME));
-                original_eq = o.equations{select,modBuilder.EQ_COL_EXPR};
-
-                o.equations(select,modBuilder.EQ_COL_EXPR) = regexprep(o.equations(select,modBuilder.EQ_COL_EXPR), expr1, expr2);
+                row = eqrows(i);
+                original_eq = o.equations{row, modBuilder.EQ_COL_EXPR};
+                new_eq = regexprep(original_eq, expr1, expr2);
+                o.equations{row, modBuilder.EQ_COL_EXPR} = new_eq;
 
                 % Check if any change was made
-                if strcmp(original_eq, o.equations{select,modBuilder.EQ_COL_EXPR})
+                if strcmp(original_eq, new_eq)
                     % No substitution occurred - pattern not found
                     modBuilder.warn_silent('Pattern "%s" not found in equation "%s"', expr1, eqname);
                     continue; % Skip to next equation
                 end
 
                 % Validate the modified equation syntax
-                modBuilder.validate_equation_syntax(o.equations{select,modBuilder.EQ_COL_EXPR})
+                modBuilder.validate_equation_syntax(new_eq)
 
-                Symbols = modBuilder.getsymbols(o.equations{select,modBuilder.EQ_COL_EXPR});
+                Symbols = modBuilder.getsymbols(new_eq);
                 newsyms = setdiff(Symbols, o.T.equations.(eqname)); % New symbols in updated equation
 
                 if ~isempty(newsyms)
