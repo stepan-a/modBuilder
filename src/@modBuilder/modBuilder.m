@@ -1184,6 +1184,23 @@ classdef modBuilder < handle
             end
         end % function
 
+        function warn_silent(varargin)
+        % Issue a warning with the 'backtrace' state temporarily turned off,
+        % then restore the prior state.
+        %
+        % INPUTS:
+        % - varargin   forwarded verbatim to warning(): (msg), (msg, args, ...),
+        %              or (msgid, msg, args, ...).
+        %
+        % REMARKS:
+        % - onCleanup guarantees the prior backtrace state is restored even
+        %   if warning() errors out.
+            bt = warning('query', 'backtrace');
+            warning('off', 'backtrace');
+            restore = onCleanup(@() warning(bt.state, 'backtrace')); %#ok<NASGU>
+            warning(varargin{:});
+        end % function
+
         function str = printlist(names)
         % Convert a cell array of names to a space-separated string ending with semicolon
         %
@@ -1923,7 +1940,7 @@ classdef modBuilder < handle
                 o.symbols = setdiff(o.symbols, fields(o.T.var));
 
                 if not(isempty(o.symbols))
-                    warning('unknown symbols:%s.', modBuilder.printlist(o.symbols))
+                    modBuilder.warn_silent('unknown symbols:%s.', modBuilder.printlist(o.symbols))
                 end
 
                 %
@@ -4284,8 +4301,6 @@ classdef modBuilder < handle
             % Validate equation syntax
             modBuilder.validate_equation_syntax(equation)
 
-            warning('off','backtrace')
-
             ide = ismember(o.equations(:,modBuilder.EQ_COL_NAME), varname);
 
             if not(any(ide))
@@ -4309,7 +4324,7 @@ classdef modBuilder < handle
 
             if not(isempty(o.symbols))
                 % TODO: should remaining symbols be declared as exogenous variables by default?
-                warning('Untyped symbol(s):%s.', sprintf(' %s', o.symbols{:}))
+                modBuilder.warn_silent('Untyped symbol(s):%s.', sprintf(' %s', o.symbols{:}))
             end
 
             % Do we need to remove some symbols (parameters or exogenous variables)?
@@ -4623,7 +4638,7 @@ classdef modBuilder < handle
             % Remove already-typed names from the untyped pool (and warn on the rest).
             o.symbols = setdiff(o.symbols, [o.params(:, modBuilder.COL_NAME); o.varexo(:, modBuilder.COL_NAME); o.var(:, modBuilder.COL_NAME)]);
             if not(isempty(o.symbols))
-                warning('Untyped symbol(s):%s.', sprintf(' %s', o.symbols{:}))
+                modBuilder.warn_silent('Untyped symbol(s):%s.', sprintf(' %s', o.symbols{:}))
             end
 
             % Rebuild T.params / T.varexo / T.var from the updated equations and drop
@@ -4888,10 +4903,7 @@ classdef modBuilder < handle
 
             if isempty(matches)
                 % No match found - issue warning and return without modification
-                backtrace_state = warning('query', 'backtrace');
-                warning('off', 'backtrace');
-                warning('Pattern "%s" not found in equation(s): %s', expr1, strjoin(eqnames, ', '));
-                warning(backtrace_state.state, 'backtrace');
+                modBuilder.warn_silent('Pattern "%s" not found in equation(s): %s', expr1, strjoin(eqnames, ', '));
                 return
             elseif length(matches)>1
                 error('modBuilder:substitution:ambiguousMatch', 'The provided regular expression matches more than one expression in the equation(s).')
@@ -4943,10 +4955,7 @@ classdef modBuilder < handle
                 % Check if any change was made
                 if strcmp(original_eq, o.equations{select,modBuilder.EQ_COL_EXPR})
                     % No substitution occurred - pattern not found
-                    backtrace_state = warning('query', 'backtrace');
-                    warning('off', 'backtrace');
-                    warning('Pattern "%s" not found in equation "%s"', expr1, eqname);
-                    warning(backtrace_state.state, 'backtrace');
+                    modBuilder.warn_silent('Pattern "%s" not found in equation "%s"', expr1, eqname);
                     continue; % Skip to next equation
                 end
 
