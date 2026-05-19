@@ -143,6 +143,10 @@ classdef modBuilder < handle
         %
         % OUTPUTS:
         % - val    [double]       scalar value
+            arguments
+                o
+                name (1,:) char {mustBeNonempty}
+            end
             [type, id] = o.typeof(name);
             switch type
               case 'parameter'
@@ -161,6 +165,11 @@ classdef modBuilder < handle
         % - o      [modBuilder]
         % - name   [char]         symbol name
         % - val    [double]       scalar value
+            arguments
+                o
+                name (1,:) char   {mustBeNonempty}
+                val  (1,1) double
+            end
             [type, id] = o.typeof(name);
             switch type
               case 'parameter'
@@ -232,6 +241,14 @@ classdef modBuilder < handle
         % - Recursively calls the appropriate method (parameter, exogenous, or endogenous) for each combination
         % - Supports optional 'long_name' and 'texname' attributes with index placeholders
         % - Argument order: [value], ['long_name', val, 'texname', val], index_array_1, ..., index_array_n
+            arguments
+                o
+                symbol_name (1,:) char {mustBeNonempty}
+                symbol_type (1,:) char {mustBeMember(symbol_type, {'parameter', 'exogenous', 'endogenous'})}
+            end
+            arguments (Repeating)
+                varargin
+            end
 
             % Find all indices in the symbol name (e.g., $1, $2)
             inames = unique(regexp(symbol_name, '\$\d*', 'match'));
@@ -402,6 +419,16 @@ classdef modBuilder < handle
         %   parameter/exogenous untyped-promotion, but NOT on plain
         %   existing-row updates and (preserving pre-refactor behaviour)
         %   NOT on the unreachable endogenous-promotion path.
+            arguments
+                o
+                type  (1,:) char {mustBeMember(type, {'parameter', 'exogenous', 'endogenous'})}
+                name  (1,:) char {mustBeNonempty}
+                value (1,1) double = NaN
+            end
+            arguments (Repeating)
+                varargin
+            end
+
             modBuilder.validate_symbol_name(name, type);
 
             switch type
@@ -519,6 +546,10 @@ classdef modBuilder < handle
         % REMARKS:
         % - Models cannot share endogenous variables
         % - Throws descriptive error listing conflicting variables
+            arguments
+                o
+                p (1,1) modBuilder
+            end
 
             commonvariables = intersect(o.var(:,modBuilder.COL_NAME), p.var(:,modBuilder.COL_NAME));
             if ~isempty(commonvariables)
@@ -540,6 +571,10 @@ classdef modBuilder < handle
         % REMARKS:
         % - Common parameters: p's calibration takes precedence if both are calibrated
         % - Uses optimized O(1) index lookups instead of repeated ismember calls
+            arguments
+                o
+                p (1,1) modBuilder
+            end
 
             o_params_list = o.params(:,modBuilder.COL_NAME);
             p_params_list = p.params(:,modBuilder.COL_NAME);
@@ -606,6 +641,10 @@ classdef modBuilder < handle
         % REMARKS:
         % - Exogenous variables in one model can be endogenous in the other
         % - Type conversion handled automatically
+            arguments
+                o
+                p (1,1) modBuilder
+            end
 
             % Merge endogenous variables (simple concatenation)
             q_var = [o.var; p.var];
@@ -691,6 +730,11 @@ classdef modBuilder < handle
         % REMARKS:
         % - Merges T.params, T.varexo, T.var, T.equations
         % - Removes exogenous variables that became endogenous
+            arguments
+                o
+                p (1,1) modBuilder
+                q (1,1) modBuilder
+            end
 
             q.T.params = modBuilder.mergeStructs(o.T.params, p.T.params);
             q.T.varexo = modBuilder.mergeStructs(o.T.varexo, p.T.varexo);
@@ -723,6 +767,10 @@ classdef modBuilder < handle
         % REMARKS:
         % - Searches through all parameters, exogenous, and endogenous variables
         % - Returns empty struct array if no matches found
+            arguments
+                o
+                pattern (1,:) char {mustBeNonempty}
+            end
 
             n_total = size(o.params, 1) + size(o.varexo, 1) + size(o.var, 1);
             matches = repmat(struct('name', '', 'type', '', 'equations', {{}}), 1, n_total);
@@ -775,6 +823,11 @@ classdef modBuilder < handle
         % OUTPUTS:
         % - fhandles   [cell]        1×m cell array of function handles @(v) LHS-(RHS)
         % - incidence  [logical]     m×n matrix, incidence(i,j)=true if snames{j} appears in eqnames{i}
+            arguments
+                o
+                eqnames cell
+                snames  cell
+            end
 
             % Auto-update symbol tables if needed
             if o.tables_dirty
@@ -850,6 +903,11 @@ classdef modBuilder < handle
         % OUTPUTS:
         % - J          [sparse]      m×n sparse Jacobian matrix evaluated at current calibration
         % - residuals  [double]      m×1 residual vector (LHS−RHS for each equation)
+            arguments
+                o
+                eqnames cell
+                snames  cell
+            end
 
             [fhandles, incidence] = o.compile_equations(eqnames, snames);
             m = length(eqnames);
@@ -981,8 +1039,7 @@ classdef modBuilder < handle
         % None (throws error if validation fails)
         %
         % REMARKS:
-        % - Checks that sname is a char array using validateattributes
-        % - Checks that sname is non-empty row vector
+        % - Checks (via the arguments block) that sname is a non-empty row char array
         % - Checks that sname is not a reserved MATLAB/Dynare function name
         % - Called by add(), parameter(), exogenous(), endogenous(), change() methods
         % - Compatible with both MATLAB and GNU Octave
@@ -991,9 +1048,10 @@ classdef modBuilder < handle
         % modBuilder.validate_symbol_name('alpha', 'parameter')   % OK
         % modBuilder.validate_symbol_name('log', 'parameter')     % Error: reserved name
         % modBuilder.validate_symbol_name('', 'add')              % Error: empty string
-
-            % Validate that sname is a non-empty row char array
-            validateattributes(sname, {'char'}, {'nonempty', 'row'}, method_name, 'symbol name');
+            arguments
+                sname       (1,:) char {mustBeNonempty}
+                method_name (1,:) char {mustBeNonempty}
+            end
 
             % Check for reserved names (built-in functions + properties + methods)
             if ismember(sname, modBuilder.ALL_RESERVED_NAMES)
@@ -1016,6 +1074,10 @@ classdef modBuilder < handle
         % OUTPUTS:
         % - str    [char]   option string, e.g. '(maxit=100, nocheck, solve_algo=4)'
         %                   Returns '' if opts is empty.
+            arguments
+                opts  cell
+                flags cell = {}
+            end
             if isempty(opts)
                 str = '';
                 return
@@ -1303,6 +1365,13 @@ classdef modBuilder < handle
         % OUTPUTS:
         % - long_name   [char]     long name or empty string
         % - texname     [char]     TeX name or empty string
+            arguments
+                type  (1,:) char {mustBeNonempty}
+                sname (1,:) char {mustBeNonempty}
+            end
+            arguments (Repeating)
+                varargin
+            end
             long_name = '';
             texname='';
             if ~isempty(varargin)
@@ -1389,6 +1458,10 @@ classdef modBuilder < handle
         % - Validates that the number of index arrays matches the number of placeholders
         % - Computes Cartesian product of index values
         % - Uses strrep for expansion, so $N placeholders can appear multiple times
+            arguments
+                templates    cell
+                index_values cell
+            end
 
             inames = unique(regexp(templates{1}, '\$\d*', 'match'));
             nindices = numel(inames);
@@ -1875,6 +1948,10 @@ classdef modBuilder < handle
         %
         % OUTPUTS:
         % - n      [integer]        scalar, number of elements of the specified type
+            arguments
+                o
+                type (1,:) char {mustBeNonempty}
+            end
 
             % Validate type before processing
             modBuilder.validate_type(type);
@@ -1917,10 +1994,14 @@ classdef modBuilder < handle
         % % Creates: x_1 = alpha_1 * y
         % %          x_2 = alpha_2 * y
         % %          x_3 = alpha_3 * y
-
-            % Validate inputs
-            validateattributes(varname, {'char'}, {'nonempty', 'row'}, 'add', 'varname');
-            validateattributes(equation, {'char'}, {'nonempty', 'row'}, 'add', 'equation');
+            arguments
+                o
+                varname  (1,:) char {mustBeNonempty}
+                equation (1,:) char {mustBeNonempty}
+            end
+            arguments (Repeating)
+                varargin
+            end
 
             number_of_loops = length(varargin);
 
@@ -1952,8 +2033,8 @@ classdef modBuilder < handle
         %
         % INPUTS:
         % - o           [modBuilder]
-        % - varname     [char]         name of an endogenous variable
-        % - equation    [char]         equation expression
+        % - varname     [char]         1×n, name of an endogenous variable
+        % - equation    [char]         1×m, equation expression
         %
         % OUTPUTS:
         % - o           [modBuilder]   updated object (with new equation)
@@ -1965,11 +2046,16 @@ classdef modBuilder < handle
         % - Creates equation tag with 'name' field
         % - If varname was previously exogenous, it becomes endogenous
         % - Validates equation syntax (parentheses balance, no ==, no ./, etc.)
+            arguments
+                o
+                varname  (1,:) char {mustBeNonempty}
+                equation (1,:) char {mustBeNonempty}
+            end
 
             % Validate equation syntax
             modBuilder.validate_equation_syntax(equation)
 
-            % Validate symbol name (checks for non-empty char and reserved names)
+            % Validate symbol name (checks the reserved-name list)
             modBuilder.validate_symbol_name(varname, 'add')
 
             if any(ismember(o.equations(:,modBuilder.EQ_COL_NAME), varname))
@@ -2049,6 +2135,16 @@ classdef modBuilder < handle
         % m3.parameter('A_$1_$2', 1.0, Countries, Sectors);
         % m3.exogenous('K_$1_$2', 1.0, Countries, Sectors);
         % m3.tag('Y_$1_$2', 'desc', 'Production for $1 in sector $2', Countries, Sectors);
+            arguments
+                o
+                eqname  (1,:) char {mustBeNonempty}
+                tagname (1,:) char {mustBeNonempty}
+                value   (1,:) char
+            end
+            arguments (Repeating)
+                varargin
+            end
+
             if strcmp(tagname, 'name')
                 error('modBuilder:tag:invalidUsage', 'Method tag cannot be used to change the name of an equation. Instead, use the rename method to change the name of an endogenous variable.')
             end
@@ -2121,8 +2217,13 @@ classdef modBuilder < handle
         %             'texname', '\rho_{$1,$2}', ...
         %             Countries, Sectors);
         % % Creates: rho_FR_1, rho_FR_2, rho_DE_1, ... with appropriate TeX names
-
-            validateattributes(pname, {'char'}, {'nonempty', 'row'}, 'parameter', 'pname');
+            arguments
+                o
+                pname (1,:) char {mustBeNonempty}
+            end
+            arguments (Repeating)
+                varargin
+            end
 
             % Implicit-loop dispatch.
             if ~isempty(regexp(pname, '\$\d*', 'once'))
@@ -2183,8 +2284,13 @@ classdef modBuilder < handle
         %             'texname', 'K^{$1}_{$2}', ...
         %             Countries, Sectors);
         % % Creates: K_FR_1, K_FR_2, K_FR_3, K_DE_1, ... with appropriate TeX names
-
-            validateattributes(xname, {'char'}, {'nonempty', 'row'}, 'exogenous', 'xname');
+            arguments
+                o
+                xname (1,:) char {mustBeNonempty}
+            end
+            arguments (Repeating)
+                varargin
+            end
 
             % Implicit-loop dispatch.
             if ~isempty(regexp(xname, '\$\d*', 'once'))
@@ -2265,8 +2371,14 @@ classdef modBuilder < handle
         %              'texname', 'Y_{$1,$2}', ...
         %              Countries, Sectors);
         % % Sets values and attributes for: Y_FR_1, Y_FR_2, Y_DE_1, Y_DE_2
-
-            validateattributes(ename, {'char'}, {'nonempty', 'row'}, 'endogenous', 'ename');
+            arguments
+                o
+                ename (1,:) char {mustBeNonempty}
+                evalue = []                         % numeric scalar, [], or cell for implicit loops
+            end
+            arguments (Repeating)
+                varargin
+            end
 
             % Implicit-loop dispatch (evalue is a positional arg, not in varargin).
             if ~isempty(regexp(ename, '\$\d*', 'once'))
@@ -2338,10 +2450,14 @@ classdef modBuilder < handle
         % m2.parameter('A_$1', 1.0, {1, 2, 3});
         % m2.exogenous('K_$1', 1.0, {1, 2, 3});
         % m2.steady('Y_$1', 'A_$1*K_$1', {1, 2, 3});
-
-            % Validate inputs
-            validateattributes(varname, {'char'}, {'nonempty', 'row'}, 'steady', 'varname');
-            validateattributes(expression, {'char'}, {'nonempty', 'row'}, 'steady', 'expression');
+            arguments
+                o
+                varname    (1,:) char {mustBeNonempty}
+                expression (1,:) char {mustBeNonempty}
+            end
+            arguments (Repeating)
+                varargin
+            end
 
             if ~isempty(regexp(varname, '\$\d*', 'match', 'once'))
                 expanded = modBuilder.expand_templates({varname, expression}, varargin);
@@ -2396,8 +2512,11 @@ classdef modBuilder < handle
         %   raise an error.
         % - Aux entries live in o.steady_state alongside variable closed forms; the
         %   topological sort in checksteady orders them correctly via Kahn's algorithm.
-            validateattributes(name, {'char'}, {'nonempty', 'row'}, 'steady_aux', 'name');
-            validateattributes(expression, {'char'}, {'nonempty', 'row'}, 'steady_aux', 'expression');
+            arguments
+                o
+                name       (1,:) char {mustBeNonempty}
+                expression (1,:) char {mustBeNonempty}
+            end
 
             if o.issymbol(name)
                 [type, ~] = o.typeof(name);
@@ -2442,9 +2561,12 @@ classdef modBuilder < handle
         %   depreciation rate. With h fixed, the labour FOC becomes linear in theta —
         %   and the rest of the RBC steady state reduces step-by-step under the
         %   iterated-elimination pipeline.
-            validateattributes(endo_name, {'char'}, {'nonempty', 'row'}, 'calibrate', 'endo_name');
-            validateattributes(target_value, {'double'}, {'scalar', 'real'}, 'calibrate', 'target_value');
-            validateattributes(param_name, {'char'}, {'nonempty', 'row'}, 'calibrate', 'param_name');
+            arguments
+                o
+                endo_name    (1,:) char   {mustBeNonempty}
+                target_value (1,1) double {mustBeReal}
+                param_name   (1,:) char   {mustBeNonempty}
+            end
 
             if ~o.isendogenous(endo_name)
                 error('modBuilder:calibrate', '"%s" must be an endogenous variable.', endo_name);
@@ -2599,12 +2721,15 @@ classdef modBuilder < handle
         % m3.parameter('A_$1_$2', 1.0, Countries, Sectors);
         % m3.exogenous('K_$1_$2', 1.0, Countries, Sectors);
         % m3.remove('Y_$1_$2', {'FR'}, {1, 2});  % Removes Y_FR_1 and Y_FR_2
-
-            % Validate that eqname is a non-empty row char array
-            validateattributes(eqname, {'char'}, {'nonempty', 'row'}, 'remove', 'eqname');
+            arguments
+                o
+                eqname (1,:) char {mustBeNonempty}
+            end
+            arguments (Repeating)
+                varargin
+            end
 
             % Auto-update symbol tables if needed
-
             if o.tables_dirty
                 o.updatesymboltables();
             end
@@ -2719,6 +2844,13 @@ classdef modBuilder < handle
         %
         % % Remove multiple indexed equations
         % m.rm('eq$1', 'var$1', 1:2);  % Removes eq1, var1, eq2, var2
+            arguments
+                o
+            end
+            arguments (Repeating)
+                varargin
+            end
+
             if isempty(varargin)
                 error('modBuilder:rm:missingArg', 'rm method requires at least one equation name.')
             end
@@ -2790,6 +2922,11 @@ classdef modBuilder < handle
         %
         % % Rename endogenous variable
         % m.rename('c', 'consumption');
+            arguments
+                o
+                oldsymbol (1,:) char {mustBeNonempty}
+                newsymbol (1,:) char {mustBeNonempty}
+            end
 
             % Auto-update symbol tables if needed
             if o.tables_dirty
@@ -3161,6 +3298,10 @@ classdef modBuilder < handle
         %
         % OUTPUTS:
         % - b         [logical]      scalar
+            arguments
+                o
+                name (1,:) char {mustBeNonempty}
+            end
             b = any(ismember(o.params(:,modBuilder.COL_NAME), name));
         end % function
 
@@ -3173,6 +3314,10 @@ classdef modBuilder < handle
         %
         % OUTPUTS:
         % - b         [logical]      scalar
+            arguments
+                o
+                name (1,:) char {mustBeNonempty}
+            end
             b = any(ismember(o.varexo(:,modBuilder.COL_NAME), name));
         end % function
 
@@ -3185,6 +3330,10 @@ classdef modBuilder < handle
         %
         % OUTPUTS:
         % - b         [logical]      scalar
+            arguments
+                o
+                name (1,:) char {mustBeNonempty}
+            end
             b = any(ismember(o.var(:,modBuilder.COL_NAME), name));
         end % function
 
@@ -3197,6 +3346,10 @@ classdef modBuilder < handle
         %
         % OUTPUTS:
         % - b         [logical]      scalar
+            arguments
+                o
+                name (1,:) char {mustBeNonempty}
+            end
             b = o.isexogenous(name) || o.isendogenous(name) || o.isparameter(name);
         end % function
 
@@ -3227,6 +3380,10 @@ classdef modBuilder < handle
         % [type, id] = m.typeof('alpha');    % Returns 'parameter'
         % [type, id] = m.typeof('c');        % Returns 'endogenous'
         % [type, id] = m.typeof('epsilon');  % Returns 'exogenous'
+            arguments
+                o
+                name (1,:) char {mustBeNonempty}
+            end
 
             % Try O(1) lookup first if symbol_map is available
             if ~isempty(o.symbol_map) && isa(o.symbol_map, 'containers.Map') && o.symbol_map.isKey(name)
@@ -3321,6 +3478,10 @@ classdef modBuilder < handle
         % % Output: Found 2 symbols matching pattern 'beta_.*':
         % %         Parameter beta_1 appears in ...
         % %         Parameter beta_2 appears in ...
+            arguments
+                o
+                name (1,:) char {mustBeNonempty}
+            end
 
             % Auto-update symbol tables if needed
             if o.tables_dirty
@@ -3466,6 +3627,10 @@ classdef modBuilder < handle
         % m.parameter('beta', 0.99);
         % t = m.table('parameters');
         % disp(t);
+            arguments
+                o
+                type (1,:) char {mustBeNonempty}
+            end
 
             % Validate type
             switch type
@@ -3592,13 +3757,16 @@ classdef modBuilder < handle
         % m3.parameter('A_$1_$2', 1.0, Countries, Sectors);
         % m3.exogenous('K_$1_$2', 1.0, Countries, Sectors);
         % m3.flip('Y_$1_$2', 'K_$1_$2', {'FR'}, {1, 2});  % Flips Y_FR_1↔K_FR_1 and Y_FR_2↔K_FR_2
-
-            % Validate inputs
-            validateattributes(varname, {'char'}, {'nonempty', 'row'}, 'flip', 'varname');
-            validateattributes(varexoname, {'char'}, {'nonempty', 'row'}, 'flip', 'varexoname');
+            arguments
+                o
+                varname    (1,:) char {mustBeNonempty}
+                varexoname (1,:) char {mustBeNonempty}
+            end
+            arguments (Repeating)
+                varargin
+            end
 
             % Auto-update symbol tables if needed
-
             if o.tables_dirty
                 o.updatesymboltables();
             end
@@ -3744,6 +3912,12 @@ classdef modBuilder < handle
         % m2.exogenous('y', 0);
         % m2.exogenous('z', 0);
         % m2.reassign('a', 'b', 'c');
+            arguments
+                o
+            end
+            arguments (Repeating)
+                varargin (1,:) char {mustBeNonempty}
+            end
 
             names = varargin;
             n = numel(names);
@@ -3751,11 +3925,6 @@ classdef modBuilder < handle
             % Validate: at least two names required
             if n < 2
                 error('modBuilder:reassign:missingArg', 'reassign requires at least two endogenous variable names.');
-            end
-
-            % Validate: all names must be char arrays
-            for i = 1:n
-                validateattributes(names{i}, {'char'}, {'nonempty', 'row'}, 'reassign', sprintf('argument %d', i+1));
             end
 
             % Validate: no duplicates
@@ -3828,10 +3997,14 @@ classdef modBuilder < handle
         % % Remove y's equation, make k exogenous instead
         % m.rmflip('y', 'k');
         % % y stays endogenous (determined by k's former equation), k becomes exogenous
-
-            % Validate inputs
-            validateattributes(eqname, {'char'}, {'nonempty', 'row'}, 'rmflip', 'eqname');
-            validateattributes(newexo, {'char'}, {'nonempty', 'row'}, 'rmflip', 'newexo');
+            arguments
+                o
+                eqname (1,:) char {mustBeNonempty}
+                newexo (1,:) char {mustBeNonempty}
+            end
+            arguments (Repeating)
+                varargin
+            end
 
             % Auto-update symbol tables if needed
             if o.tables_dirty
@@ -3946,6 +4119,14 @@ classdef modBuilder < handle
         % % Make k exogenous by dropping y's equation
         % m.exogenise('k', 'y');
         % % Equivalent to m.rmflip('y', 'k')
+            arguments
+                o
+                varname (1,:) char {mustBeNonempty}
+                eqname  (1,:) char {mustBeNonempty}
+            end
+            arguments (Repeating)
+                varargin
+            end
 
             o.rmflip(eqname, varname, varargin{:});
         end % function
@@ -4080,8 +4261,8 @@ classdef modBuilder < handle
         %
         % INPUTS:
         % - o           [modBuilder]
-        % - varname     [char]         name of the endogenous variable (equation name)
-        % - equation    [char]         new equation expression
+        % - varname     [char]         1×n, name of the endogenous variable (equation name)
+        % - equation    [char]         1×m, new equation expression
         %
         % OUTPUTS:
         % - o           [modBuilder]   updated object
@@ -4102,10 +4283,11 @@ classdef modBuilder < handle
         % % Replace the equation for c
         % m.change('c', 'c = alpha*k + w*h');
         % m.parameter('alpha', 0.3);
-
-            % Validate inputs
-            validateattributes(varname, {'char'}, {'nonempty', 'row'}, 'change', 'varname');
-            validateattributes(equation, {'char'}, {'nonempty', 'row'}, 'change', 'equation');
+            arguments
+                o
+                varname  (1,:) char {mustBeNonempty}
+                equation (1,:) char {mustBeNonempty}
+            end
 
             % Validate equation syntax
             modBuilder.validate_equation_syntax(equation)
@@ -4247,8 +4429,14 @@ classdef modBuilder < handle
         %
         % % Implicit loop with eqname placeholder reuse
         % m.subs('alpha_$1', 'beta_$1', 'Y_$1', {1, 2, 3});
-
-            validateattributes(expr1, {'char'}, {'nonempty', 'row'}, 'subs', 'expr1');
+            arguments
+                o
+                expr1 (1,:) char {mustBeNonempty}
+                expr2                                     % char or ast — runtime-checked below
+            end
+            arguments (Repeating)
+                varargin
+            end
 
             % Parse varargin: at most one char (eqname) followed by index value arrays.
             eqname = '';
@@ -4489,10 +4677,14 @@ classdef modBuilder < handle
         % REMARKS:
         % - Same as subs() but uses regex pattern matching (regexprep) instead of literal (strrep)
         % - All char arguments come first, then all index value arrays
-
-            % Validate inputs
-            validateattributes(expr1, {'char'}, {'nonempty', 'row'}, 'substitute', 'expr1');
-            validateattributes(expr2, {'char'}, {'nonempty', 'row'}, 'substitute', 'expr2');
+            arguments
+                o
+                expr1 (1,:) char {mustBeNonempty}
+                expr2 (1,:) char {mustBeNonempty}
+            end
+            arguments (Repeating)
+                varargin
+            end
 
             % Parse arguments: extract char args first, then index values
             eqname = [];
@@ -4653,6 +4845,12 @@ classdef modBuilder < handle
         % - Automatically uses rename() if substitution affects a symbol across all equations.
         % - Updates symbol tables after substitution.
         % - Warns about new unknown symbols introduced by substitution.
+            arguments
+                o
+                expr1  (1,:) char {mustBeNonempty}
+                expr2  (1,:) char
+                eqname                          % char, cell of char, or [] (means all equations)
+            end
 
             % Recommend the AST-based subs when the target is syntactically a user symbol
             % identifier: subs performs a tree-based, precedence-safe, lag-aware substitution
@@ -4847,6 +5045,12 @@ classdef modBuilder < handle
         % % Extract only consumption and output equations
         % submodel = m.extract('c', 'y');
         % % submodel has 2 equations, w parameter, but not delta
+            arguments
+                o
+            end
+            arguments (Repeating)
+                varargin
+            end
 
             p = copy(o);
 
@@ -4892,18 +5096,19 @@ classdef modBuilder < handle
         %
         % eqs = m.listeqbytag('sector', 'manuf.*');
         % % Returns {'Y_m'}
+            arguments
+                o
+            end
+            arguments (Repeating)
+                varargin (1,:) char {mustBeNonempty}
+            end
 
             if mod(numel(varargin), 2) ~= 0
                 error('modBuilder:listeqbytag:badPair', 'Arguments must be name-value pairs.')
             end
 
-            tagnames = varargin(1:2:end);
+            tagnames  = varargin(1:2:end);
             tagvalues = varargin(2:2:end);
-
-            for i = 1:numel(tagnames)
-                validateattributes(tagnames{i}, {'char'}, {'nonempty', 'row'}, 'listeqbytag', sprintf('tagname (argument %d)', 2*i-1));
-                validateattributes(tagvalues{i}, {'char'}, {'nonempty', 'row'}, 'listeqbytag', sprintf('tagvalue (argument %d)', 2*i));
-            end
 
             eqs = {};
 
@@ -4958,6 +5163,12 @@ classdef modBuilder < handle
         % EXAMPLES:
         % submodel = m.select('sector', 'manufacturing');
         % submodel = m.select('sector', 'manuf.*', 'type', 'production');
+            arguments
+                o
+            end
+            arguments (Repeating)
+                varargin
+            end
 
             eqs = o.listeqbytag(varargin{:});
             p = o.extract(eqs{:});
@@ -4994,6 +5205,10 @@ classdef modBuilder < handle
         % % Merge the two models
         % full_model = m1.merge(m2);
         % % full_model contains both equations and all parameters
+            arguments
+                o
+                p (1,1) modBuilder
+            end
 
             % Validate that models can be merged
             o.validate_merge_compatibility(p);
@@ -5037,14 +5252,15 @@ classdef modBuilder < handle
         % REMARKS:
         % If the equation does not contain an '=' symbol — and thus no LHS or RHS — the expression is evaluated as the left-hand
         % side (evaleq.lhs) and its residual (evaleq.resid), while the right-hand side (evaleq.rhs) is set to 0.
+            arguments
+                o
+                eqname    (1,:) char    {mustBeNonempty}
+                printflag (1,1) logical = false
+            end
 
             % Auto-update symbol tables if needed
             if o.tables_dirty
                 o.updatesymboltables();
-            end
-
-            if nargin<3
-                printflag = false;
             end
 
             %
@@ -5397,7 +5613,11 @@ classdef modBuilder < handle
         % - Without economic intuition, some suggestions may be algebraically sound but
         %   meaningless (calibrating output to identify the discount factor). The user
         %   reads the menu critically; the framework only exposes the algebraic options.
-            if nargin < 2
+            arguments
+                o
+                blocks = []
+            end
+            if isempty(blocks)
                 blocks = o.steady_plan();
             end
             suggestions = struct('endo', {}, 'param', {}, 'residual', {});
@@ -5467,7 +5687,11 @@ classdef modBuilder < handle
         %   variables it depends on, and its external constants (parameters / exogenous).
         % - When ast.isolate produced a closed form for a singleton block, it is rendered as
         %   "x = expr". Otherwise, simultaneous blocks are flagged "needs solver".
-            if nargin < 2
+            arguments
+                o
+                blocks = []
+            end
+            if isempty(blocks)
                 blocks = o.steady_plan();
             end
 
@@ -5546,7 +5770,11 @@ classdef modBuilder < handle
         %   manually (m.steady) or call m.solve_system.
         % - m.steady replaces an existing entry in place, so calling apply_steady_plan twice
         %   is idempotent for the closed-form blocks.
-            if nargin < 2
+            arguments
+                o
+                blocks = []
+            end
+            if isempty(blocks)
                 blocks = o.steady_plan();
             end
             % Calibration role swaps: pin each calibrated endogenous to its target value
@@ -5587,6 +5815,14 @@ classdef modBuilder < handle
         % - Updates the calibration value of sname in o.params, o.varexo, or o.var
         % - The default tol is 1e-10, tighter than the test threshold typical
         %   downstream uses (1e-8). It can be loosened explicitly if needed.
+            arguments
+                o
+                eqname (1,:) char {mustBeNonempty}
+                sname  (1,:) char {mustBeNonempty}
+                sinit  (1,1) double {mustBeFinite, mustBeReal}
+                tol    (1,1) double {mustBePositive}                = 1e-10
+                maxit  (1,1) double {mustBePositive, mustBeInteger} = 100
+            end
 
             % Auto-update symbol tables if needed
             if o.tables_dirty
@@ -5642,11 +5878,9 @@ classdef modBuilder < handle
             f = str2func(equation);
 
             %
-            % Set initial guess for the unknown symbol
+            % Set initial guess for the unknown symbol (tol and maxit have
+            % their defaults handled by the arguments block above).
             %
-            if nargin < 5 || isempty(tol),   tol   = 1e-10; end
-            if nargin < 6 || isempty(maxit), maxit = 100;   end
-
             [x, ~, ~] = solvers.newton(f, sinit, tol, maxit);
             o.set_value(sname, x);
         end % function

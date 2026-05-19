@@ -127,8 +127,11 @@ classdef ast
         %   by the parser (verified in tests/ast/t06).
         % - The parenthesisation rules guarantee that re-parsing the output yields the same
         %   tree, even for non-associative cases like (a^b)^c or a/(b/c).
-            if nargin < 2, parent_op = ''; end
-            if nargin < 3, is_right = false; end
+            arguments
+                o
+                parent_op = ''
+                is_right  = false
+            end
             switch o.type
                 case 'num'
                     % %.16g preserves enough precision to round-trip through str2double.
@@ -267,11 +270,14 @@ classdef ast
         %   skipped (kept time-invariant), and 'num' / 'ss' leaves are never shifted.
         % - 'ss' nodes (STEADY_STATE) in the host tree are leaves and are left
         %   untouched: the dynamic variable name they carry is not a substitution target.
+            arguments
+                o
+                target_name
+                replacement
+                parameter_names = {}
+            end
             if ischar(replacement) || isstring(replacement)
                 replacement = ast(char(replacement));
-            end
-            if nargin < 4
-                parameter_names = {};
             end
             switch o.type
                 case 'sym'
@@ -315,8 +321,10 @@ classdef ast
         % - Names listed in parameter_names are kept untouched, regardless of whether
         %   they appear as 'sym' or (degenerately) as 'tsym'.
         % - k = 0 is a no-op.
-            if nargin < 3
-                parameter_names = {};
+            arguments
+                o
+                k
+                parameter_names = {}
             end
             if k == 0
                 return
@@ -2196,13 +2204,15 @@ classdef ast
         % - When some variables remain unresolved (no recogniser fires after any
         %   substitution), they are simply absent from cf_list. The caller can compare
         %   cf_list against the input vars to find the residual sub-block.
+            arguments
+                residuals
+                vars
+                parameter_names = {}
+            end
             n = numel(residuals);
             cf_list = struct('var', {}, 'expr', {});
             if n == 0
                 return
-            end
-            if nargin < 3
-                parameter_names = {};
             end
 
             active = true(1, n);

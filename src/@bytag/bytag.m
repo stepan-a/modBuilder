@@ -27,12 +27,11 @@ classdef bytag
         % EXAMPLES:
         % bytag('sector', 'manufacturing')
         % bytag('sector', 'manuf.*', 'type', 'production')
+            arguments (Repeating)
+                varargin (1,:) char {mustBeNonempty}
+            end
             if mod(nargin, 2) ~= 0
                 error('bytag:badPair', 'Arguments must be name-value pairs.')
-            end
-            for i = 1:2:nargin
-                validateattributes(varargin{i}, {'char'}, {'nonempty', 'row'}, 'bytag', sprintf('tagname (argument %d)', i));
-                validateattributes(varargin{i+1}, {'char'}, {'nonempty', 'row'}, 'bytag', sprintf('tagvalue (argument %d)', i+1));
             end
             if nargin > 0
                 o.criteria = struct(varargin{:});

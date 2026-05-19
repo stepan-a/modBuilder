@@ -18,8 +18,8 @@ try
     m1.add('', 'y = a*b');  % Empty varname
     error('Should have thrown error for empty varname')
 catch ME
-    if ~contains(ME.message, 'nonempty')
-        error('Error message should mention nonempty, got: %s', ME.message)
+    if ~contains(ME.message, 'empty')
+        error('Error message should mention empty, got: %s', ME.message)
     end
 end
 
@@ -29,8 +29,8 @@ try
     m2.add('y', '');  % Empty equation
     error('Should have thrown error for empty equation')
 catch ME
-    if ~contains(ME.message, 'nonempty')
-        error('Error message should mention nonempty, got: %s', ME.message)
+    if ~contains(ME.message, 'empty')
+        error('Error message should mention empty, got: %s', ME.message)
     end
 end
 
@@ -70,8 +70,8 @@ try
     m6.parameter('', 0.5);  % Empty pname
     error('Should have thrown error for empty pname')
 catch ME
-    if ~contains(ME.message, 'nonempty')
-        error('Error message should mention nonempty, got: %s', ME.message)
+    if ~contains(ME.message, 'empty')
+        error('Error message should mention empty, got: %s', ME.message)
     end
 end
 
@@ -94,8 +94,8 @@ try
     m8.exogenous('', 0.0);  % Empty xname
     error('Should have thrown error for empty xname')
 catch ME
-    if ~contains(ME.message, 'nonempty')
-        error('Error message should mention nonempty, got: %s', ME.message)
+    if ~contains(ME.message, 'empty')
+        error('Error message should mention empty, got: %s', ME.message)
     end
 end
 
@@ -117,8 +117,8 @@ try
     m10.endogenous('', 1.0);  % Empty ename
     error('Should have thrown error for empty ename')
 catch ME
-    if ~contains(ME.message, 'nonempty')
-        error('Error message should mention nonempty, got: %s', ME.message)
+    if ~contains(ME.message, 'empty')
+        error('Error message should mention empty, got: %s', ME.message)
     end
 end
 
@@ -140,8 +140,8 @@ try
     m12.change('', 'y = c*d');  % Empty varname
     error('Should have thrown error for empty varname')
 catch ME
-    if ~contains(ME.message, 'nonempty')
-        error('Error message should mention nonempty, got: %s', ME.message)
+    if ~contains(ME.message, 'empty')
+        error('Error message should mention empty, got: %s', ME.message)
     end
 end
 
@@ -152,8 +152,8 @@ try
     m13.change('y', '');  % Empty equation
     error('Should have thrown error for empty equation')
 catch ME
-    if ~contains(ME.message, 'nonempty')
-        error('Error message should mention nonempty, got: %s', ME.message)
+    if ~contains(ME.message, 'empty')
+        error('Error message should mention empty, got: %s', ME.message)
     end
 end
 
