@@ -1794,6 +1794,9 @@ classdef modBuilder < handle
                     if isfield(s, 'steady_state')
                         o.steady_state = s.steady_state;
                     end
+                    if isfield(s, 'calibration_swaps')
+                        o.calibration_swaps = s.calibration_swaps;
+                    end
                 else
                     error('modBuilder:loadobj:invalidObject', 'Cannot instantiate a modBuilder object (missing fields).')
                 end
@@ -3302,6 +3305,7 @@ classdef modBuilder < handle
             s.steady_state = o.steady_state;
             s.T = o.T;
             s.date = o.date;
+            s.calibration_swaps = o.calibration_swaps;
         end % function
 
         function o = updatesymboltables(o)
