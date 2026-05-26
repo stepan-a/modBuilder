@@ -6003,31 +6003,32 @@ classdef modBuilder < handle
                 p = o.extract(S(1).subs{:});
                 S = modBuilder.shiftS(S, 1);
             elseif isequal(S(1).type, '.')
-                % o.x - access property, get parameter/variable value, or call method
-                if ismember(S(1).subs, {metaclass(o).PropertyList.Name})
-                    % It's a property - return property value
-                    p = o.(S(1).subs);
+                % o.x - access property, get parameter/variable value, or call method.
+                % Route via explicit metaclass / symbol checks rather than try/catch on
+                % get_value: a try/catch swallows the get_value error and ALSO any
+                % unrelated error inside the catch's feval probe, conflating "no such
+                % name" with "method exists and threw".
+                name = S(1).subs;
+                mc = metaclass(o);
+                if ismember(name, {mc.PropertyList.Name})
+                    p = o.(name);
                     S = modBuilder.shiftS(S, 1);
-                else
-                    % Not a property - check if it's a parameter or variable
-                    try
-                        p = o.get_value(S(1).subs);
+                elseif o.issymbol(name)
+                    p = o.get_value(name);
+                    S = modBuilder.shiftS(S, 1);
+                elseif ismember(name, {mc.MethodList.Name})
+                    method_call = true;
+                    if isscalar(S)
+                        [varargout{1:nout}] = feval(name, o);
                         S = modBuilder.shiftS(S, 1);
-                    catch
-                        % Not a known symbol - try method call
-                        method_call = true;
-                        if isscalar(S)
-                            [varargout{1:nout}] = feval(S(1).subs, o);
-                            S = modBuilder.shiftS(S, 1);
-                        elseif isequal(S(2).type, '()')
-                            % Method call with arguments: o.method(args)
-                            [varargout{1:nout}] = feval(S(1).subs, o, S(2).subs{:});
-                            S = modBuilder.shiftS(S, 2);
-                        else
-                            % Unknown symbol and not a method call - error
-                            error('modBuilder:subsref:unknownSymbol', 'Reference to non-existent field or method ''%s''.', S(1).subs);
-                        end
+                    elseif isequal(S(2).type, '()')
+                        [varargout{1:nout}] = feval(name, o, S(2).subs{:});
+                        S = modBuilder.shiftS(S, 2);
+                    else
+                        error('modBuilder:subsref:unknownSymbol', 'Reference to non-existent field or method ''%s''.', name);
                     end
+                else
+                    error('modBuilder:subsref:unknownSymbol', 'Reference to non-existent field or method ''%s''.', name);
                 end
             end
 
