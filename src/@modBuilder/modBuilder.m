@@ -1682,7 +1682,7 @@ classdef modBuilder < handle
         % - C          [cell]    updated cell array
             s = strcmp(oldword, C);
             if any(s)
-                C{strcmp(oldword, C)} = newword;
+                C{s} = newword;
             end
         end % function
 
