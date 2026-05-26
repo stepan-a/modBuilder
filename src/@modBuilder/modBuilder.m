@@ -4742,34 +4742,20 @@ classdef modBuilder < handle
                 modBuilder.warn_silent('Untyped symbol(s):%s.', sprintf(' %s', o.symbols{:}))
             end
 
-            % Rebuild T.params / T.varexo / T.var from the updated equations and drop
-            % parameters / exogenous that no longer appear anywhere.
-            o.symbol_map = [];
+            % Drop parameters / exogenous no longer referenced by any equation, then
+            % rebuild T and the symbol map in one consistent pass. The "referenced"
+            % set comes from o.T.equations.(eqname), which the loop above refreshed
+            % for every rewritten equation. Pruning BEFORE updatesymboltables() means
+            % the rebuilt T.params / T.varexo / symbol_map are consistent on the
+            % first pass — no orphan T fields to rmfield, no stale rows in the map,
+            % no second tables_dirty=true to "fix it up" after the fact.
+            eqnames = o.equations(:, modBuilder.EQ_COL_NAME);
+            referenced_lists = cellfun(@(nm) o.T.equations.(nm), eqnames, 'UniformOutput', false);
+            referenced = unique([referenced_lists{:}]);
+            o.params(~ismember(o.params(:, modBuilder.COL_NAME), referenced), :) = [];
+            o.varexo(~ismember(o.varexo(:, modBuilder.COL_NAME), referenced), :) = [];
             o.tables_dirty = true;
             o.updatesymboltables();
-            for j = size(o.params, 1):-1:1
-                pn = o.params{j, modBuilder.COL_NAME};
-                if ~isfield(o.T.params, pn) || isempty(o.T.params.(pn))
-                    o.params(j, :) = [];
-                    if isfield(o.T.params, pn)
-                        o.T.params = rmfield(o.T.params, pn);
-                    end
-                end
-            end
-            for j = size(o.varexo, 1):-1:1
-                xn = o.varexo{j, modBuilder.COL_NAME};
-                if ~isfield(o.T.varexo, xn) || isempty(o.T.varexo.(xn))
-                    o.varexo(j, :) = [];
-                    if isfield(o.T.varexo, xn)
-                        o.T.varexo = rmfield(o.T.varexo, xn);
-                    end
-                end
-            end
-
-            % The pruning above shrank o.params / o.varexo after symbol_map
-            % was rebuilt by updatesymboltables(), so the map now references
-            % dropped symbols. Mark dirty so the next reader rebuilds it.
-            o.tables_dirty = true;
         end % function
 
         function o = substitute(o, expr1, expr2, varargin)
