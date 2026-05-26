@@ -101,6 +101,15 @@ classdef modBuilder < handle
         % Used by size(), validate_type(), and other methods
         VALID_TYPES = {'parameters', 'exogenous', 'endogenous', 'equations'}
 
+        % Cost constants for the matchequations bipartite matcher.
+        % Invariant: MATCH_FORBID > MATCH_UNMATCHED > any real edge cost (~1.x).
+        % MATCH_FORBID  fills non-edges; matchpairs will never select one.
+        % MATCH_UNMATCHED is the cost of leaving a row unmatched; sitting between
+        % the real edge costs and MATCH_FORBID, it forces matchpairs to maximise
+        % the matching size while still preferring real edges.
+        MATCH_FORBID    = 1e6
+        MATCH_UNMATCHED = 1e3
+
         % Reserved function names that cannot be used as symbol names
         % These are MATLAB/Octave built-in functions and Dynare-specific functions
         % Used by getsymbols() to filter out functions
@@ -1879,8 +1888,7 @@ classdef modBuilder < handle
             % Dense cost matrix: large value forbids non-edges, edge weights
             % encode the LHS bonus, the scarcity penalty, and the lex tiebreak.
             % matchpairs treats unstored sparse entries as cost 0, so dense is mandatory here.
-            forbid = 1e6;
-            C = forbid * ones(n, m);
+            C = modBuilder.MATCH_FORBID * ones(n, m);
             for i = 1:n
                 for j = 1:m
                     if contains_eq(i, j)
@@ -1896,7 +1904,7 @@ classdef modBuilder < handle
             end
             % costUnmatched between edge cost and forbid forces matchpairs to
             % maximize matching size and never select a forbidden non-edge.
-            M = matchpairs(C, 1e3);
+            M = matchpairs(C, modBuilder.MATCH_UNMATCHED);
             matched_rows = false(n, 1);
             matched_cols = false(m, 1);
             for k = 1:size(M, 1)
