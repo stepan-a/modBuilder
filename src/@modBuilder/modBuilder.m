@@ -895,7 +895,7 @@ classdef modBuilder < handle
             for i = 1:m
                 % Get static version of the equation
                 eqID = eqmap(eqnames{i});
-                equation = regexprep(o.equations{eqID, modBuilder.EQ_COL_EXPR}, '(\w+)\([+-]?\d+\)', '$1');
+                equation = modBuilder.staticise_equation_string(o.equations{eqID, modBuilder.EQ_COL_EXPR});
 
                 % Split on = and form LHS-(RHS)
                 LHSRHS = strsplit(equation, '=');
@@ -907,29 +907,23 @@ classdef modBuilder < handle
                     error('modBuilder:compile_equations:multipleEquals', 'An equation cannot have more than one equal (=) symbol.')
                 end
 
-                % Get all symbols in this equation
-                symbols = o.T.equations.(eqnames{i});
-                symbols = [symbols, eqnames{i}]; %#ok<AGROW>
-                symbols = unique(symbols);
+                % Get all symbols in this equation (including the equation's own endogenous).
+                symbols = unique([o.T.equations.(eqnames{i}), eqnames{i}]);
 
-                % First pass: replace solve variables with v{k}
+                % Build the replacement table: solve-vars → v{k} (and record incidence),
+                % everything else → numeric value. One regex pass instead of one per symbol.
+                replacements = struct();
                 for s = 1:length(symbols)
                     symbol = symbols{s};
                     if varmap.isKey(symbol)
                         k = varmap(symbol);
-                        expr = regexprep(expr, ['\<', symbol, '\>'], sprintf('v{%d}', k));
+                        replacements.(symbol) = sprintf('v{%d}', k);
                         incidence(i, k) = true;
+                    else
+                        replacements.(symbol) = num2str(o.get_value(symbol), 15);
                     end
                 end
-
-                % Second pass: replace known symbols with numeric values
-                for s = 1:length(symbols)
-                    symbol = symbols{s};
-                    if ~varmap.isKey(symbol)
-                        val = o.get_value(symbol);
-                        expr = regexprep(expr, ['\<', symbol, '\>'], num2str(val, 15));
-                    end
-                end
+                expr = modBuilder.substitute_symbols(expr, replacements);
 
                 fhandles{i} = str2func(sprintf('@(v) %s', expr));
             end
@@ -1154,6 +1148,58 @@ classdef modBuilder < handle
         % OUTPUTS:
         % - names  [cell]   1×k cell of placeholder tokens, sorted ascending.
             names = unique(regexp(s, '\$\d+', 'match'));
+        end % function
+
+        function static = staticise_equation_string(eq_str)
+        % Strip time subscripts from an equation string: x(-1), y(+2), z(0) → x, y, z.
+        %
+        % INPUTS:
+        % - eq_str  [char]   equation expression as stored in o.equations.
+        %
+        % OUTPUTS:
+        % - static  [char]   the same expression with every "(\w+)([+-]?\d+)" call collapsed
+        %                    to its first capture group (the symbol name).
+            static = regexprep(eq_str, '(\w+)\([+-]?\d+\)', '$1');
+        end % function
+
+        function expr_out = substitute_symbols(expr_in, replacements)
+        % Replace identifier tokens in expr_in according to `replacements` (a struct
+        % with one field per symbol to substitute).
+        %
+        % INPUTS:
+        % - expr_in       [char]   expression text.
+        % - replacements  [struct] field name = symbol, field value = char replacement.
+        %
+        % OUTPUTS:
+        % - expr_out      [char]   expr_in with every identifier token that has a
+        %                          matching field replaced. Tokens absent from the
+        %                          struct (function names, untracked symbols) are kept
+        %                          verbatim.
+        %
+        % REMARKS:
+        % - Single regex scan over expr_in (O(L)), not one pass per declared symbol
+        %   (the previous shape was O(N·L) where N is the symbol count).
+        % - The identifier pattern matches the one used by getsymbols: the negative
+        %   lookbehind (?<![.\d]) rejects matches preceded by a digit or dot, so
+        %   scientific notation (1e5) and decimals (0.33) are left intact.
+            [starts, ends, tokens] = regexp(expr_in, '(?<![.\d])[a-zA-Z_]\w*', 'start', 'end', 'match');
+            if isempty(tokens)
+                expr_out = expr_in;
+                return
+            end
+            parts = cell(1, 2 * numel(tokens) + 1);
+            cursor = 1;
+            for k = 1:numel(tokens)
+                parts{2*k - 1} = expr_in(cursor : starts(k) - 1);
+                if isfield(replacements, tokens{k})
+                    parts{2*k} = replacements.(tokens{k});
+                else
+                    parts{2*k} = tokens{k};
+                end
+                cursor = ends(k) + 1;
+            end
+            parts{end} = expr_in(cursor : end);
+            expr_out = [parts{:}];
         end % function
 
         function expand_implicit_loops(leaf_fn, expr1, expr2, eqname, index_values, method_id, strict_expr2)
@@ -5829,26 +5875,23 @@ classdef modBuilder < handle
             % Get static version of the equation
             %
             eqID = strcmp(eqname, o.equations(:,modBuilder.EQ_COL_NAME));
-            equation = regexprep(o.equations{eqID,modBuilder.EQ_COL_EXPR}, '(\w+)\([+-]?\d+\)', '$1');
+            equation = modBuilder.staticise_equation_string(o.equations{eqID, modBuilder.EQ_COL_EXPR});
 
             %
-            % List of known symbols
+            % Build a single replacement table: every known symbol → its numeric value,
+            % the unknown sname → 'x'. One regex pass over the equation, not one per symbol.
             %
-            knownsymbols = o.T.equations.(eqname);
-            knownsymbols = setdiff([knownsymbols, eqname], sname);
-
-            %
-            % Replace the known symbols with their respective values.
-            %
-            for i=1:length(knownsymbols)
-                symbol = knownsymbols{i};
-                equation = regexprep(equation, ['\<', symbol, '\>'], num2str(o.get_value(symbol), 15));
+            knownsymbols = setdiff([o.T.equations.(eqname), eqname], sname);
+            replacements = struct();
+            for i = 1:length(knownsymbols)
+                replacements.(knownsymbols{i}) = num2str(o.get_value(knownsymbols{i}), 15);
             end
+            replacements.(sname) = 'x';
+            equation = modBuilder.substitute_symbols(equation, replacements);
 
             %
             % Set anonymous function
             %
-            equation = regexprep(equation, ['\<', sname, '\>'], 'x');
             LHSRHS = strsplit(equation, '=');
 
             if isscalar(LHSRHS)
