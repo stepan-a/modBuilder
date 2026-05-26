@@ -1153,7 +1153,7 @@ classdef modBuilder < handle
         %
         % OUTPUTS:
         % - names  [cell]   1×k cell of placeholder tokens, sorted ascending.
-            names = unique(regexp(s, '\$\d*', 'match'));
+            names = unique(regexp(s, '\$\d+', 'match'));
         end % function
 
         function expand_implicit_loops(leaf_fn, expr1, expr2, eqname, index_values, method_id, strict_expr2)
