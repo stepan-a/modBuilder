@@ -1156,6 +1156,121 @@ classdef modBuilder < handle
             names = unique(regexp(s, '\$\d*', 'match'));
         end % function
 
+        function expand_implicit_loops(leaf_fn, expr1, expr2, eqname, index_values, method_id, strict_expr2)
+        % Expand $-placeholders in (expr1, expr2, eqname) and call leaf_fn for each tuple.
+        %
+        % INPUTS:
+        % - leaf_fn       [function_handle]  fcn(ce1, ce2, ceq) invoked per expansion.
+        % - expr1, expr2  [char]             1×n templates with $0/$1/... placeholders.
+        % - eqname        [char]             '' for "all equations", otherwise an equation
+        %                                    name that may itself carry $-placeholders.
+        % - index_values  [cell]             one per unique placeholder across expr1 and
+        %                                    eqname (and expr2 when strict_expr2 is true).
+        % - method_id     [char]             'subs' or 'substitute'; embedded in error IDs
+        %                                    so the caller's previous error IDs survive.
+        % - strict_expr2  [logical]          true  → setxor(expr1, expr2) placeholders must
+        %                                            be empty (substitute);
+        %                                    false → expr2 may use a subset of expr1's
+        %                                            placeholders, but no extras (subs).
+        %
+        % REMARKS:
+        % - Caller must have already routed the no-placeholders base case; this helper
+        %   assumes implicit-loop expansion is required.
+        % - leaf_fn receives '' as eqname when the caller's eqname is empty; the caller's
+        %   substitute/subs arg parser treats '' identically to "no eqname".
+            inames_expr1 = modBuilder.placeholders(expr1);
+            inames_expr2 = modBuilder.placeholders(expr2);
+
+            if strict_expr2
+                if ~isempty(setxor(inames_expr1, inames_expr2))
+                    error(sprintf('modBuilder:%s:indexMismatch', method_id), 'Both expressions must contain the same index placeholders. Found %s in expr1 and %s in expr2.', strjoin(inames_expr1, ', '), strjoin(inames_expr2, ', '))
+                end
+            else
+                extras = setdiff(inames_expr2, inames_expr1);
+                if ~isempty(extras)
+                    error(sprintf('modBuilder:%s:placeholderMismatch', method_id), 'subs: expr2 contains placeholders not present in expr1: %s. Each placeholder in expr2 must also appear in expr1.', strjoin(extras, ', '))
+                end
+            end
+
+            inames_eq = {};
+            if ~isempty(eqname)
+                inames_eq = modBuilder.placeholders(eqname);
+            end
+            all_indices = unique([inames_expr1, inames_eq]);
+
+            if length(index_values) ~= numel(all_indices)
+                if strict_expr2
+                    error(sprintf('modBuilder:%s:indexMismatch', method_id), 'Expected %d index value arrays (for indices %s), but got %d.', numel(all_indices), strjoin(all_indices, ', '), length(index_values))
+                else
+                    error(sprintf('modBuilder:%s:indexMismatch', method_id), 'subs: expected %d index value array(s) (for indices %s), but got %d.', numel(all_indices), strjoin(all_indices, ', '), length(index_values))
+                end
+            end
+
+            [allint, ~] = modBuilder.check_indices_values(index_values);
+            index_map = dictionary(string(all_indices(:)), index_values(:));
+
+            % Build sprintf templates from expr1/expr2 (replace each placeholder with %u or %s).
+            tmp_expr1 = expr1;
+            tmp_expr2 = expr2;
+            for k = numel(inames_expr1):-1:1
+                is_int = allint(strcmp(all_indices, inames_expr1{k}));
+                fmt = '%s';
+                if is_int, fmt = '%u'; end
+                tmp_expr1 = strrep(tmp_expr1, inames_expr1{k}, fmt);
+                tmp_expr2 = strrep(tmp_expr2, inames_expr1{k}, fmt);
+            end
+
+            % Expression-side Cartesian product (degenerate single iteration if expr1 has no placeholders).
+            if isempty(inames_expr1)
+                mIndex_expr = {{}};
+            else
+                expr_values = cellfun(@(x) index_map{x}, inames_expr1, 'UniformOutput', false);
+                mIndex_expr = table2cell(combinations(expr_values{:}));
+            end
+
+            if isempty(inames_eq)
+                % eqname has no placeholders. leaf_fn is called variadically: empty
+                % eqname → 2 args (so the leaf's own arg parser stays on the natural
+                % "no-eqname" path), non-empty → 3 args.
+                for i = 1:size(mIndex_expr, 1)
+                    if isempty(inames_expr1)
+                        ce1 = expr1; ce2 = expr2;
+                    else
+                        ce1 = sprintf(tmp_expr1, mIndex_expr{i,:});
+                        ce2 = sprintf(tmp_expr2, mIndex_expr{i,:});
+                    end
+                    if isempty(eqname)
+                        leaf_fn(ce1, ce2);
+                    else
+                        leaf_fn(ce1, ce2, eqname);
+                    end
+                end
+            else
+                % eqname has its own (possibly disjoint) placeholders.
+                eq_values = cellfun(@(x) index_map{x}, inames_eq, 'UniformOutput', false);
+                tmp_eqname = eqname;
+                for k = numel(inames_eq):-1:1
+                    is_int = allint(strcmp(all_indices, inames_eq{k}));
+                    fmt = '%s';
+                    if is_int, fmt = '%u'; end
+                    tmp_eqname = strrep(tmp_eqname, inames_eq{k}, fmt);
+                end
+                mIndex_eq = table2cell(combinations(eq_values{:}));
+                for j = 1:size(mIndex_eq, 1)
+                    current_eqname = sprintf(tmp_eqname, mIndex_eq{j,:});
+                    for i = 1:size(mIndex_expr, 1)
+                        if isempty(inames_expr1)
+                            ce1 = expr1; ce2 = expr2;
+                        else
+                            ce1 = sprintf(tmp_expr1, mIndex_expr{i,:});
+                            ce2 = sprintf(tmp_expr2, mIndex_expr{i,:});
+                        end
+                        leaf_fn(ce1, ce2, current_eqname);
+                    end
+                end
+            end
+        end % function
+
         function str = format_dynare_options(opts, flags)
         % Convert a cell array of options to a Dynare option string.
         %
@@ -4538,84 +4653,11 @@ classdef modBuilder < handle
             has_placeholders = ~isempty(inames_var) || ~isempty(inames_rep) || ~isempty(inames_eq);
 
             if has_placeholders
-                % --- Implicit-loop mode: expand and recurse ---
+                % --- Implicit-loop mode: expand and recurse via the shared helper ---
                 if ~is_expr2_char
                     error('modBuilder:subs:badType', 'subs: $ placeholders are only supported when expr2 is a char array.')
                 end
-                extra_in_rep = setdiff(inames_rep, inames_var);
-                if ~isempty(extra_in_rep)
-                    error('modBuilder:subs:placeholderMismatch', 'subs: expr2 contains placeholders not present in expr1: %s. Each placeholder in expr2 must also appear in expr1.', strjoin(extra_in_rep, ', '))
-                end
-                all_indices = unique([inames_var, inames_eq]);
-                if length(index_values) ~= numel(all_indices)
-                    error('modBuilder:subs:indexMismatch', 'subs: expected %d index value array(s) (for indices %s), but got %d.', numel(all_indices), strjoin(all_indices, ', '), length(index_values))
-                end
-                [allint, ~] = modBuilder.check_indices_values(index_values);
-                index_map = dictionary(string(all_indices(:)), index_values(:));
-
-                % Build sprintf templates for expr1 and expr2 (replace each
-                % placeholder by %u or %s depending on the index value type).
-                tmp_var = expr1;
-                tmp_rep = expr2_str;
-                expr_allint = false(1, numel(inames_var));
-                for k = numel(inames_var):-1:1
-                    expr_allint(k) = allint(strcmp(all_indices, inames_var{k}));
-                    fmt = '%s';
-                    if expr_allint(k), fmt = '%u'; end
-                    tmp_var = strrep(tmp_var, inames_var{k}, fmt);
-                    tmp_rep = strrep(tmp_rep, inames_var{k}, fmt);
-                end
-
-                % Expression-side combinations (over inames_var).
-                if isempty(inames_var)
-                    mIndex_expr = {{}};
-                else
-                    expr_values = cellfun(@(x) index_map{x}, inames_var, 'UniformOutput', false);
-                    mIndex_expr = table2cell(combinations(expr_values{:}));
-                end
-
-                if isempty(inames_eq)
-                    % eqname has no placeholders (or no eqname at all).
-                    for i = 1:size(mIndex_expr, 1)
-                        if isempty(inames_var)
-                            current_var = expr1;
-                            current_rep = expr2_str;
-                        else
-                            current_var = sprintf(tmp_var, mIndex_expr{i,:});
-                            current_rep = sprintf(tmp_rep, mIndex_expr{i,:});
-                        end
-                        if isempty(eqname)
-                            o.subs(current_var, current_rep);
-                        else
-                            o.subs(current_var, current_rep, eqname);
-                        end
-                    end
-                else
-                    % eqname has its own (possibly disjoint) set of placeholders.
-                    eq_values = cellfun(@(x) index_map{x}, inames_eq, 'UniformOutput', false);
-                    eq_allint = false(1, numel(inames_eq));
-                    tmp_eqname = eqname;
-                    for k = numel(inames_eq):-1:1
-                        eq_allint(k) = allint(strcmp(all_indices, inames_eq{k}));
-                        fmt = '%s';
-                        if eq_allint(k), fmt = '%u'; end
-                        tmp_eqname = strrep(tmp_eqname, inames_eq{k}, fmt);
-                    end
-                    mIndex_eq = table2cell(combinations(eq_values{:}));
-                    for j = 1:size(mIndex_eq, 1)
-                        current_eqname = sprintf(tmp_eqname, mIndex_eq{j,:});
-                        for i = 1:size(mIndex_expr, 1)
-                            if isempty(inames_var)
-                                current_var = expr1;
-                                current_rep = expr2_str;
-                            else
-                                current_var = sprintf(tmp_var, mIndex_expr{i,:});
-                                current_rep = sprintf(tmp_rep, mIndex_expr{i,:});
-                            end
-                            o.subs(current_var, current_rep, current_eqname);
-                        end
-                    end
-                end
+                modBuilder.expand_implicit_loops(@(varargin) o.subs(varargin{:}), expr1, expr2_str, eqname, index_values, 'subs', false);
                 return
             end
 
@@ -4795,107 +4837,10 @@ classdef modBuilder < handle
                 return
             end
 
-            % Implicit loop mode: validate that expr2 has the same indices as expr1
-            inames_expr2 = modBuilder.placeholders(expr2);
-
-            if not(isempty(setxor(inames_expr1, inames_expr2)))
-                error('modBuilder:substitute:indexMismatch', 'Both expressions must contain the same index placeholders. Found %s in expr1 and %s in expr2.', ...
-                      strjoin(inames_expr1, ', '), strjoin(inames_expr2, ', '))
-            end
-
-            % Implicit loop mode: collect all unique indices
-            inames_eq = [];
-
-            if ~isempty(eqname)
-                inames_eq = modBuilder.placeholders(eqname);
-            end
-
-            all_indices = unique([inames_expr1, inames_eq]);
-            nindices_total = numel(all_indices);
-
-            % Validate number of index values
-
-            if length(index_values) ~= nindices_total
-                error('modBuilder:substitute:indexMismatch', 'Expected %d index value arrays (for indices %s), but got %d.', ...
-                      nindices_total, strjoin(all_indices, ', '), length(index_values))
-            end
-
-            % Validate all index values
-            [allint, ~] = modBuilder.check_indices_values(index_values);
-
-            % Build mapping from index placeholder to its values
-            index_map = dictionary(string(all_indices(:)), index_values(:));
-
-            % Extract values for expression indices
-            expr_values = cellfun(@(x) index_map{x}, inames_expr1, 'UniformOutput', false);
-            expr_allint = cellfun(@(x) allint(strcmp(all_indices, x)), inames_expr1);
-
-            % Compute Cartesian product of expression indices
-            mIndex_expr = table2cell(combinations(expr_values{:}));
-
-            % Prepare templates for sprintf
-            tmp_expr1 = expr1;
-            tmp_expr2 = expr2;
-
-            for i=numel(inames_expr1):-1:1
-
-                if expr_allint(i)
-                    tmp_expr1 = strrep(tmp_expr1, inames_expr1{i}, '%u');
-                    tmp_expr2 = strrep(tmp_expr2, inames_expr1{i}, '%u');
-                else
-                    tmp_expr1 = strrep(tmp_expr1, inames_expr1{i}, '%s');
-                    tmp_expr2 = strrep(tmp_expr2, inames_expr1{i}, '%s');
-                end
-            end
-
-            % Handle eqname expansion
-
-            if isempty(eqname)
-                % Apply to all equations
-
-                for i=1:size(mIndex_expr,1)
-                    current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
-                    current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
-                    o.substitute(current_expr1, current_expr2);
-                end
-            elseif isempty(inames_eq)
-                % eqname has no placeholders
-
-                for i=1:size(mIndex_expr,1)
-                    current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
-                    current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
-                    o.substitute(current_expr1, current_expr2, eqname);
-                end
-            else
-                % eqname has placeholders
-                eq_values = cellfun(@(x) index_map{x}, inames_eq, 'UniformOutput', false);
-                eq_allint = cellfun(@(x) allint(strcmp(all_indices, x)), inames_eq);
-                mIndex_eq = table2cell(combinations(eq_values{:}));
-
-                % Prepare template for eqname
-                tmp_eqname = eqname;
-
-                for i=numel(inames_eq):-1:1
-
-                    if eq_allint(i)
-                        tmp_eqname = strrep(tmp_eqname, inames_eq{i}, '%u');
-                    else
-                        tmp_eqname = strrep(tmp_eqname, inames_eq{i}, '%s');
-                    end
-                end
-
-                % For each equation, substitute all expression combinations
-
-                for j=1:size(mIndex_eq,1)
-                    current_eqname = sprintf(tmp_eqname, mIndex_eq{j,:});
-
-                    for i=1:size(mIndex_expr,1)
-                        current_expr1 = sprintf(tmp_expr1, mIndex_expr{i,:});
-                        current_expr2 = sprintf(tmp_expr2, mIndex_expr{i,:});
-                        o.substitute(current_expr1, current_expr2, current_eqname);
-                    end
-                end
-            end
+            % Implicit-loop mode: expand placeholders and recurse via the shared helper.
+            % Variadic closure so the helper can call with 2 or 3 args depending on
+            % whether a constant eqname target was supplied.
+            modBuilder.expand_implicit_loops(@(varargin) o.substitute(varargin{:}), expr1, expr2, eqname, index_values, 'substitute', true);
         end % function
 
         function o = substitution(o, expr1, expr2, eqname)
