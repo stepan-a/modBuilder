@@ -124,6 +124,12 @@ classdef modBuilder < handle
         % Provides significant performance improvement over linear search
         symbol_map = []
 
+        % Dirty flag for symbol_map (name -> type/idx). Independent of tables_dirty
+        % so that a structural change (which makes both stale) can trigger a quick
+        % map-only rebuild on the next read without paying the expensive
+        % updatesymboltables() rebuild until something actually needs T.
+        symbol_map_dirty = false
+
         % Flag indicating if symbol tables (T) need updating
         % true = tables are stale and need updating
         % false = tables are up-to-date
@@ -196,9 +202,11 @@ classdef modBuilder < handle
         % - Maps symbol_name -> struct('type', <type>, 'idx', <index>)
         % - Significantly faster than linear search through params/varexo/var arrays
 
-            % Build a fresh dictionary; key/value types are inferred from the
-            % first insertion (string -> struct).
-            o.symbol_map = dictionary();
+            % Build a fresh, type-configured dictionary. configureDictionary fixes the
+            % key/value types up-front so isKey(...) is callable even when the model has
+            % no declared symbols yet — an unconfigured dictionary() errors on isKey
+            % until the first insertion sets the types.
+            o.symbol_map = configureDictionary("string", "struct");
 
             % Add all parameters
             for i=1:size(o.params, 1)
@@ -217,6 +225,8 @@ classdef modBuilder < handle
                 o.symbol_map(o.var{i, modBuilder.COL_NAME}) = ...
                     struct('type', 'endogenous', 'idx', i);
             end
+
+            o.symbol_map_dirty = false;
         end % function
 
         function [found, type, id] = lookup_symbol(o, name)
@@ -234,41 +244,25 @@ classdef modBuilder < handle
         %                        or [] when found is false
         %
         % REMARKS:
-        % - Tries the O(1) symbol_map shortcut first; falls back to a linear
-        %   scan of o.params / o.varexo / o.var (the source of truth) when
-        %   symbol_map is empty or the name is not (yet) keyed.
         % - Shared backend for typeof, isparameter, isexogenous, isendogenous
         %   and issymbol so the lookup logic lives in one place.
-        % - When tables are stale, the symbol_map shortcut is bypassed: a
-        %   prior flip/rename may have changed a symbol's type without
-        %   refreshing the map, and o.params / o.varexo / o.var are the
-        %   source of truth.
-            if ~o.tables_dirty && ~isempty(o.symbol_map) && isa(o.symbol_map, 'dictionary') && o.symbol_map.isKey(name)
+        % - The map is rebuilt on demand when symbol_map_dirty is set or the
+        %   map is missing. The rebuild is O(n) in the small dimension
+        %   (declared symbols), so the cost is amortised across the lookups
+        %   that follow — N reads after a mutator pay one rebuild, not N.
+            if o.symbol_map_dirty || isempty(o.symbol_map) || ~isa(o.symbol_map, 'dictionary')
+                o.update_symbol_map();
+            end
+            if o.symbol_map.isKey(name)
                 sym_info = o.symbol_map(name);
                 found = true;
                 type  = sym_info.type;
                 id    = sym_info.idx;
-                return
+            else
+                found = false;
+                type  = '';
+                id    = [];
             end
-
-            id = find(strcmp(o.params(:,modBuilder.COL_NAME), name), 1);
-            if ~isempty(id)
-                found = true; type = 'parameter'; return
-            end
-
-            id = find(strcmp(o.varexo(:,modBuilder.COL_NAME), name), 1);
-            if ~isempty(id)
-                found = true; type = 'exogenous'; return
-            end
-
-            id = find(strcmp(o.var(:,modBuilder.COL_NAME), name), 1);
-            if ~isempty(id)
-                found = true; type = 'endogenous'; return
-            end
-
-            found = false;
-            type  = '';
-            id    = [];
         end % function
 
         function o = handle_implicit_loops(o, symbol_name, symbol_type, varargin)
@@ -576,6 +570,7 @@ classdef modBuilder < handle
                 % did not. Equation-driven endogenous declarations go via
                 % add(), which manages the dirty flag itself.
                 o.tables_dirty = true;
+                o.symbol_map_dirty = true;
             end
 
             o.symbols = setdiff(o.symbols, name);
@@ -2353,6 +2348,10 @@ classdef modBuilder < handle
                 o.varexo(id,:) = [];
             end
 
+            % o.var / o.varexo were just mutated; invalidate the symbol map so the
+            % issymbol cellfun below sees current state instead of a stale cached copy.
+            o.symbol_map_dirty = true;
+
             o.T.equations.(varname) = symbols_in_eq;
             o.symbols = horzcat(o.symbols, o.T.equations.(varname));
             o.T.equations.(varname) = setdiff(o.T.equations.(varname), varname);
@@ -2361,6 +2360,7 @@ classdef modBuilder < handle
 
             % Mark symbol tables as dirty (need updating)
             o.tables_dirty = true;
+            o.symbol_map_dirty = true;
         end % function
 
         function o = tag(o, eqname, tagname, value, varargin)
@@ -3012,7 +3012,7 @@ classdef modBuilder < handle
             end
 
             % Clear symbol_map so typeof() uses linear search (safe during deletions)
-            o.symbol_map = [];
+            o.symbol_map_dirty = true;
 
             ide = ismember(o.equations(:,modBuilder.EQ_COL_NAME), eqname);
 
@@ -3031,6 +3031,10 @@ classdef modBuilder < handle
 
             for i=1:length(o.T.equations.(eqname))
                 symname = o.T.equations.(eqname){i};
+
+                % Each deletion shifts row indices; force the map to rebuild
+                % from the current arrays at the top of every iteration.
+                o.symbol_map_dirty = true;
 
                 % Skip unknown symbols (they're in symbols list and will be cleaned up elsewhere)
 
@@ -3075,6 +3079,7 @@ classdef modBuilder < handle
 
             % Mark symbol tables as dirty (need updating)
             o.tables_dirty = true;
+            o.symbol_map_dirty = true;
         end % function
 
         function o = rm(o, varargin)
@@ -3265,6 +3270,7 @@ classdef modBuilder < handle
 
             % Mark symbol tables as dirty (need updating)
             o.tables_dirty = true;
+            o.symbol_map_dirty = true;
         end % function
 
         function o = write(o, filename, options)
@@ -4106,6 +4112,7 @@ classdef modBuilder < handle
 
             % Mark symbol tables as dirty (need updating)
             o.tables_dirty = true;
+            o.symbol_map_dirty = true;
         end % function
 
         function o = reassign(o, varargin)
@@ -4197,6 +4204,7 @@ classdef modBuilder < handle
 
             % Mark symbol tables as dirty
             o.tables_dirty = true;
+            o.symbol_map_dirty = true;
         end % function
 
         function o = rmflip(o, eqname, newexo, varargin)
@@ -4551,9 +4559,12 @@ classdef modBuilder < handle
             list_of_symbols_potentially_to_be_removed = setdiff(otokens, ntokens);
 
             % Clear symbol_map so typeof() uses linear search (safe during deletions)
-            o.symbol_map = [];
+            o.symbol_map_dirty = true;
 
             for i=1:length(list_of_symbols_potentially_to_be_removed)
+                % Each deletion shifts row indices; force the map to rebuild
+                % from the current arrays at the top of every iteration.
+                o.symbol_map_dirty = true;
 
                 if not(o.appear_in_more_than_one_equation(list_of_symbols_potentially_to_be_removed{i}))
                     % Remove parameter/variable if it does not appear in another equation.
@@ -4576,6 +4587,7 @@ classdef modBuilder < handle
 
             % Mark symbol tables as dirty (need updating)
             o.tables_dirty = true;
+            o.symbol_map_dirty = true;
         end % function
 
         function o = subs(o, expr1, expr2, varargin)
@@ -4801,6 +4813,7 @@ classdef modBuilder < handle
             o.params(~ismember(o.params(:, modBuilder.COL_NAME), referenced), :) = [];
             o.varexo(~ismember(o.varexo(:, modBuilder.COL_NAME), referenced), :) = [];
             o.tables_dirty = true;
+            o.symbol_map_dirty = true;
             o.updatesymboltables();
         end % function
 
@@ -5019,9 +5032,12 @@ classdef modBuilder < handle
 
                 if ~isempty(delsyms)
                     % Clear symbol_map so typeof() uses linear search (safe during deletions)
-                    o.symbol_map = [];
+                    o.symbol_map_dirty = true;
 
                     for j=1:length(delsyms)
+                        % Each deletion shifts row indices; force the map to rebuild
+                        % from the current arrays at the top of every iteration.
+                        o.symbol_map_dirty = true;
                         [type, id] = o.typeof(delsyms{j});
 
                         if ~o.appear_in_more_than_one_equation(delsyms{j})
@@ -5053,6 +5069,7 @@ classdef modBuilder < handle
 
             % Mark symbol tables as dirty (need updating)
             o.tables_dirty = true;
+            o.symbol_map_dirty = true;
         end % function
 
         function p = extract(o, varargin)
