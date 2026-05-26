@@ -299,7 +299,7 @@ classdef modBuilder < handle
             end
 
             % Find all indices in the symbol name (e.g., $1, $2)
-            inames = unique(regexp(symbol_name, '\$\d*', 'match'));
+            inames = modBuilder.placeholders(symbol_name);
             nindices = numel(inames);
 
             % Parse varargin to extract: value (optional), key/value pairs (optional), then index arrays
@@ -352,14 +352,14 @@ classdef modBuilder < handle
 
             % Validate that long_name and texname have the same number of indices as symbol_name
             if ~isempty(long_name)
-                inames_long = unique(regexp(long_name, '\$\d*', 'match'));
+                inames_long = modBuilder.placeholders(long_name);
                 if numel(inames_long) ~= nindices
                     error('modBuilder:handle_implicit_loops:indexMismatch', 'long_name has %u indices but %s name has %u indices.', ...
                           numel(inames_long), symbol_type, nindices);
                 end
             end
             if ~isempty(texname)
-                inames_tex = unique(regexp(texname, '\$\d*', 'match'));
+                inames_tex = modBuilder.placeholders(texname);
                 if numel(inames_tex) ~= nindices
                     error('modBuilder:handle_implicit_loops:indexMismatch', 'texname has %u indices but %s name has %u indices.', ...
                           numel(inames_tex), symbol_type, nindices);
@@ -1145,6 +1145,17 @@ classdef modBuilder < handle
 
     methods(Static, Access = private)
 
+        function names = placeholders(s)
+        % Return the sorted unique set of implicit-loop placeholders ($0, $1, ...) in s.
+        %
+        % INPUTS:
+        % - s      [char]   1×n expression / equation name / template
+        %
+        % OUTPUTS:
+        % - names  [cell]   1×k cell of placeholder tokens, sorted ascending.
+            names = unique(regexp(s, '\$\d*', 'match'));
+        end % function
+
         function str = format_dynare_options(opts, flags)
         % Convert a cell array of options to a Dynare option string.
         %
@@ -1562,7 +1573,7 @@ classdef modBuilder < handle
                 index_values cell
             end
 
-            inames = unique(regexp(templates{1}, '\$\d*', 'match'));
+            inames = modBuilder.placeholders(templates{1});
             nindices = numel(inames);
 
             if numel(index_values) ~= nindices
@@ -2249,7 +2260,7 @@ classdef modBuilder < handle
                 error('modBuilder:tag:invalidUsage', 'Method tag cannot be used to change the name of an equation. Instead, use the rename method to change the name of an endogenous variable.')
             end
 
-            if ~isempty(regexp(eqname, '\$\d*', 'match', 'once'))
+            if ~isempty(modBuilder.placeholders(eqname))
                 expanded = modBuilder.expand_templates({eqname, value}, varargin);
                 for i = 1:size(expanded, 1)
                     o.tag(expanded{i, 1}, tagname, expanded{i, 2});
@@ -2326,7 +2337,7 @@ classdef modBuilder < handle
             end
 
             % Implicit-loop dispatch.
-            if ~isempty(regexp(pname, '\$\d*', 'once'))
+            if ~isempty(modBuilder.placeholders(pname))
                 o.handle_implicit_loops(pname, 'parameter', varargin{:});
                 return
             end
@@ -2393,7 +2404,7 @@ classdef modBuilder < handle
             end
 
             % Implicit-loop dispatch.
-            if ~isempty(regexp(xname, '\$\d*', 'once'))
+            if ~isempty(modBuilder.placeholders(xname))
                 o.handle_implicit_loops(xname, 'exogenous', varargin{:});
                 return
             end
@@ -2481,7 +2492,7 @@ classdef modBuilder < handle
             end
 
             % Implicit-loop dispatch (evalue is a positional arg, not in varargin).
-            if ~isempty(regexp(ename, '\$\d*', 'once'))
+            if ~isempty(modBuilder.placeholders(ename))
                 if nargin < 3 || isempty(evalue)
                     o.handle_implicit_loops(ename, 'endogenous', varargin{:});
                 else
@@ -2559,7 +2570,7 @@ classdef modBuilder < handle
                 varargin
             end
 
-            if ~isempty(regexp(varname, '\$\d*', 'match', 'once'))
+            if ~isempty(modBuilder.placeholders(varname))
                 expanded = modBuilder.expand_templates({varname, expression}, varargin);
                 for i = 1:size(expanded, 1)
                     o.steady(expanded{i, 1}, expanded{i, 2});
@@ -2831,7 +2842,7 @@ classdef modBuilder < handle
             o.refresh_tables();
 
             % Check if equation name contains implicit loop indices (e.g., 'Y_$1_$2')
-            if ~isempty(regexp(eqname, '\$\d*', 'match', 'once'))
+            if ~isempty(modBuilder.placeholders(eqname))
                 expanded = modBuilder.expand_templates({eqname}, varargin);
                 for i = 1:size(expanded, 1)
                     o.remove(expanded{i, 1});
@@ -2955,7 +2966,7 @@ classdef modBuilder < handle
                 error('modBuilder:rm:badType', 'First input argument must be a row char array (equation name).')
             end
             % Is the first equation name indexed?
-            inames = unique(regexp(eqnames{1}, '\$\d*', 'match'));
+            inames = modBuilder.placeholders(eqnames{1});
             if not(isempty(inames))
                 nindices = numel(inames);
                 % Check that the last nindices arguments are index values
@@ -2974,7 +2985,7 @@ classdef modBuilder < handle
                     eqnames = unique(eqnames);
                     % Check that all equation names contain the same indices
                     for i=2:length(eqnames)
-                        tmp = unique(regexp(eqnames{i}, '\$\d*', 'match'));
+                        tmp = modBuilder.placeholders(eqnames{i});
                         if not(isempty(setxor(inames, tmp)))
                             error('modBuilder:rm:indexMismatch', 'All indexed equation names must contain the same indices.')
                         end
@@ -3836,8 +3847,8 @@ classdef modBuilder < handle
             o.refresh_tables();
 
             % Check if variable names contain implicit loop indices
-            inames_var = unique(regexp(varname, '\$\d*', 'match'));
-            inames_varexo = unique(regexp(varexoname, '\$\d*', 'match'));
+            inames_var = modBuilder.placeholders(varname);
+            inames_varexo = modBuilder.placeholders(varexoname);
 
             if not(isempty(inames_var)) || not(isempty(inames_varexo))
                 % Implicit loop mode
@@ -4074,8 +4085,8 @@ classdef modBuilder < handle
             o.refresh_tables();
 
             % Check if names contain implicit loop indices
-            inames_eq = unique(regexp(eqname, '\$\d*', 'match'));
-            inames_newexo = unique(regexp(newexo, '\$\d*', 'match'));
+            inames_eq = modBuilder.placeholders(eqname);
+            inames_newexo = modBuilder.placeholders(newexo);
 
             if ~isempty(inames_eq) || ~isempty(inames_newexo)
                 % Implicit loop mode
@@ -4511,18 +4522,18 @@ classdef modBuilder < handle
             index_values = varargin(char_count+1:end);
 
             % Detect $ placeholders in each char argument.
-            inames_var = unique(regexp(expr1, '\$\d*', 'match'));
+            inames_var = modBuilder.placeholders(expr1);
             is_expr2_char = ischar(expr2) || isstring(expr2);
             if is_expr2_char
                 expr2_str = char(expr2);
-                inames_rep = unique(regexp(expr2_str, '\$\d*', 'match'));
+                inames_rep = modBuilder.placeholders(expr2_str);
             else
                 expr2_str = '';
                 inames_rep = {};
             end
             inames_eq = {};
             if ~isempty(eqname)
-                inames_eq = unique(regexp(eqname, '\$\d*', 'match'));
+                inames_eq = modBuilder.placeholders(eqname);
             end
             has_placeholders = ~isempty(inames_var) || ~isempty(inames_rep) || ~isempty(inames_eq);
 
@@ -4770,7 +4781,7 @@ classdef modBuilder < handle
             % Check for implicit loop indices in expr1 only
             % Note: expr2 may contain $ for regex backreferences (e.g., $1), which is allowed
             % We only check expr1 to determine if this is an implicit loop
-            inames_expr1 = unique(regexp(expr1, '\$\d*', 'match'));
+            inames_expr1 = modBuilder.placeholders(expr1);
 
             if isempty(inames_expr1)
                 % Base case: no implicit loops in expr1
@@ -4785,7 +4796,7 @@ classdef modBuilder < handle
             end
 
             % Implicit loop mode: validate that expr2 has the same indices as expr1
-            inames_expr2 = unique(regexp(expr2, '\$\d*', 'match'));
+            inames_expr2 = modBuilder.placeholders(expr2);
 
             if not(isempty(setxor(inames_expr1, inames_expr2)))
                 error('modBuilder:substitute:indexMismatch', 'Both expressions must contain the same index placeholders. Found %s in expr1 and %s in expr2.', ...
@@ -4796,7 +4807,7 @@ classdef modBuilder < handle
             inames_eq = [];
 
             if ~isempty(eqname)
-                inames_eq = unique(regexp(eqname, '\$\d*', 'match'));
+                inames_eq = modBuilder.placeholders(eqname);
             end
 
             all_indices = unique([inames_expr1, inames_eq]);
