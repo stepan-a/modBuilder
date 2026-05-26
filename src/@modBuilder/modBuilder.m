@@ -585,6 +585,51 @@ classdef modBuilder < handle
             o.symbols = setdiff(o.symbols, name);
         end % function
 
+        function o = declare_typed(o, kind, name, varargin)
+        % Shared body for parameter() and exogenous(): implicit-loop dispatch,
+        % positional-value parsing, then forward to declare_symbol.
+        %
+        % INPUTS:
+        % - o         [modBuilder]
+        % - kind      [char]    'parameter' or 'exogenous'
+        % - name      [char]    symbol name (may contain $N placeholders)
+        % - varargin  [cell]    optional value, then optional key/value pairs;
+        %                       when name carries placeholders, varargin also
+        %                       ends with the index-value arrays consumed by
+        %                       handle_implicit_loops.
+        %
+        % OUTPUTS:
+        % - o         [modBuilder]
+        %
+        % REMARKS:
+        % - endogenous() stays separate: its "preserve existing value on missing
+        %   arg" semantics differs from the parameter/exogenous "NaN default"
+        %   path implemented here.
+            arguments
+                o
+                kind (1,:) char {mustBeMember(kind, {'parameter', 'exogenous'})}
+                name (1,:) char {mustBeNonempty}
+            end
+            arguments (Repeating)
+                varargin
+            end
+
+            if ~isempty(modBuilder.placeholders(name))
+                o.handle_implicit_loops(name, kind, varargin{:});
+                return
+            end
+
+            if isempty(varargin)
+                value = NaN;  opts = {};
+            elseif isempty(varargin{1})
+                value = NaN;  opts = varargin(2:end);
+            else
+                value = varargin{1};  opts = varargin(2:end);
+            end
+
+            o = o.declare_symbol(kind, name, value, opts{:});
+        end % function
+
         function validate_merge_compatibility(o, p)
         % Validate that two models can be merged
         %
@@ -2497,30 +2542,7 @@ classdef modBuilder < handle
         %             'texname', '\rho_{$1,$2}', ...
         %             Countries, Sectors);
         % % Creates: rho_FR_1, rho_FR_2, rho_DE_1, ... with appropriate TeX names
-            arguments
-                o
-                pname (1,:) char {mustBeNonempty}
-            end
-            arguments (Repeating)
-                varargin
-            end
-
-            % Implicit-loop dispatch.
-            if ~isempty(modBuilder.placeholders(pname))
-                o.handle_implicit_loops(pname, 'parameter', varargin{:});
-                return
-            end
-
-            % Parse positional value (varargin{1}) and remaining optional pairs.
-            if isempty(varargin)
-                pvalue = NaN;  opts = {};
-            elseif isempty(varargin{1})
-                pvalue = NaN;  opts = varargin(2:end);
-            else
-                pvalue = varargin{1};  opts = varargin(2:end);
-            end
-
-            o = o.declare_symbol('parameter', pname, pvalue, opts{:});
+            o = o.declare_typed('parameter', pname, varargin{:});
         end % function
 
         function o = exogenous(o, xname, varargin)
@@ -2564,30 +2586,7 @@ classdef modBuilder < handle
         %             'texname', 'K^{$1}_{$2}', ...
         %             Countries, Sectors);
         % % Creates: K_FR_1, K_FR_2, K_FR_3, K_DE_1, ... with appropriate TeX names
-            arguments
-                o
-                xname (1,:) char {mustBeNonempty}
-            end
-            arguments (Repeating)
-                varargin
-            end
-
-            % Implicit-loop dispatch.
-            if ~isempty(modBuilder.placeholders(xname))
-                o.handle_implicit_loops(xname, 'exogenous', varargin{:});
-                return
-            end
-
-            % Parse positional value (varargin{1}) and remaining optional pairs.
-            if isempty(varargin)
-                xvalue = NaN;  opts = {};
-            elseif isempty(varargin{1})
-                xvalue = NaN;  opts = varargin(2:end);
-            else
-                xvalue = varargin{1};  opts = varargin(2:end);
-            end
-
-            o = o.declare_symbol('exogenous', xname, xvalue, opts{:});
+            o = o.declare_typed('exogenous', xname, varargin{:});
         end % function
 
         function o = endogenous(o, ename, evalue, varargin)
