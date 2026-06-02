@@ -68,4 +68,21 @@ assert(strcmp(ast('1/x').simplify().to_latex(),       'x^{-1}'),       'lone rec
 % ---------------------------------------------------------------------------
 assert(strcmp(ast('log(C)').diff_ast('C').to_latex(), 'C^{-1}'), 'd(log C)/dC rendered');
 
+% ---------------------------------------------------------------------------
+% Dated variables: a bare sym in the `dated` set gets a current-period _t subscript;
+% leads/lags keep their period; symbols absent from the set (parameters) stay bare.
+% ---------------------------------------------------------------------------
+assert(strcmp(ast('k').to_latex(struct(), {'k'}),       'k_t'),    'dated bare sym gets _t');
+assert(strcmp(ast('alpha').to_latex(struct(), {'k'}),   'alpha'),  'undated sym (parameter) stays bare');
+assert(strcmp(ast('h^2').to_latex(struct(), {'h'}),     'h_t^{2}'),'dated base keeps _t then exponent');
+assert(strcmp(ast('y + alpha*k(-1)').to_latex(struct('alpha', '\alpha'), {'y', 'k'}), ...
+              'y_t + \alpha\,k_{t-1}'), 'dated current y_t and lagged k_{t-1}, parameter bare');
+
+% Underscores in an unmapped name are escaped so the literal is valid math (not an
+% unintended or doubled subscript); a mapped texname is LaTeX and used verbatim.
+assert(strcmp(ast('a_b_c').to_latex(),                      'a\_b\_c'),    'multi-underscore name escaped');
+assert(strcmp(ast('c_h').to_latex(struct(), {'c_h'}),       'c\_h_t'),     'dated underscore name: escaped base + _t');
+assert(strcmp(ast('c_h(-1)').to_latex(),                    'c\_h_{t-1}'), 'lagged underscore name escaped');
+assert(strcmp(ast('a_b_c').to_latex(struct('a_b_c', '\xi')),'\xi'),        'mapped texname used verbatim, not escaped');
+
 fprintf('t26.m: ast.to_latex OK\n');

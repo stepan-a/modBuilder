@@ -617,7 +617,7 @@ classdef ast
             o = ast.diff_node(o, target_name, target_lag).simplify();
         end % function
 
-        function str = to_latex(o, texname_map, parent_op, is_right)
+        function str = to_latex(o, texname_map, dated, parent_op, is_right)
         % Render the tree as a LaTeX math expression.
         %
         % INPUTS:
@@ -625,6 +625,11 @@ classdef ast
         % - texname_map  [struct]   (optional) map from symbol name to its LaTeX form, e.g.
         %                           struct('alpha', '\alpha', 'K', 'K'). Names absent from the
         %                           map render literally. Defaults to an empty struct.
+        % - dated        [cell]     (optional) names of dated (time-varying) variables. A bare
+        %                           'sym' whose name is in this set is rendered with a current-
+        %                           period subscript (y → y_t), so that current and lagged uses
+        %                           read consistently (y_t, k_{t-1}). Parameters — names not in
+        %                           the set — stay bare. Defaults to {} (no subscripts added).
         % - parent_op    [char]     (optional) parent operator, used internally by the recursion
         %                           to decide on parenthesisation; outside callers omit it.
         % - is_right     [logical]  (optional) true iff this node is the right child of its parent;
@@ -634,13 +639,14 @@ classdef ast
         % - str          [char]     1×n array, the rendered LaTeX (math-mode contents, no $ … $)
         %
         % REMARKS:
-        % - Outside callers use t.to_latex() or t.to_latex(map); parent_op / is_right are passed
-        %   by recursive invocations on children.
+        % - Outside callers use t.to_latex(), t.to_latex(map) or t.to_latex(map, dated);
+        %   parent_op / is_right are passed by recursive invocations on children.
         % - Renders whatever tree it is given. Canonical-form patterns are pretty-printed the way
         %   string() does: a + (-b) → "a - b", and a · b^(-1) → \frac{a}{b}. A lone negative power
         %   (e.g. x^(-1)) is kept as x^{-1} rather than rewritten to a fraction, preserving the
         %   readability the steady-state forms rely on.
-        % - tsym lags render as time subscripts (K(-1) → K_{t-1}); ss nodes as ·^{\star}
+        % - tsym lags render as time subscripts (K(-1) → K_{t-1}); a bare sym listed in `dated`
+        %   gets the current-period subscript (K → K_t); ss nodes as ·^{\star}
         %   (STEADY_STATE(K) → K^{\star}); exp as e^{·}; sqrt as \sqrt{·}; division as
         %   \frac{·}{·}; abs as \left|·\right|. Grouping uses \left( … \right) so tall content
         %   (fractions, powers) brackets correctly; a base that merely ends in a superscript
@@ -649,6 +655,7 @@ classdef ast
             arguments
                 o
                 texname_map = struct()
+                dated = {}
                 parent_op = ''
                 is_right  = false
             end
@@ -657,6 +664,9 @@ classdef ast
                     str = ast.latex_num(o.value);
                 case 'sym'
                     str = ast.latex_name(o.value, texname_map);
+                    if ismember(o.value, dated)
+                        str = [str '_t'];   % current-period subscript for a dated variable
+                    end
                 case 'tsym'
                     base = ast.latex_name(o.value{1}, texname_map);
                     if o.value{2} == 0
@@ -668,10 +678,10 @@ classdef ast
                     % Steady-state variable: postfix superscript star, e.g. K^{\star}.
                     str = [ast.latex_name(o.value, texname_map) '^{\star}'];
                 case 'call'
-                    str = ast.latex_call(o, texname_map);
+                    str = ast.latex_call(o, texname_map, dated);
                 case 'uminus'
                     child = o.children{1};
-                    cs = child.to_latex(texname_map, '', false);
+                    cs = child.to_latex(texname_map, dated, '', false);
                     % Only an additive child needs parentheses under unary minus: -(a+b).
                     % A product or power does not (-a\,b and -x^{2} are unambiguous), so we
                     % drop string()'s round-trip parentheses here for cleaner paper output.
@@ -684,7 +694,7 @@ classdef ast
                         str = ['\left(' str '\right)'];
                     end
                 case 'binop'
-                    str = ast.latex_binop(o, texname_map, parent_op, is_right);
+                    str = ast.latex_binop(o, texname_map, dated, parent_op, is_right);
                 otherwise
                     error('ast:to_latex', 'Unknown node type "%s".', o.type);
             end
@@ -2870,10 +2880,14 @@ classdef ast
 
         function s = latex_name(name, m)
         % Look up a symbol's LaTeX form in the texname map, or fall back to the literal name.
+        % A user-supplied texname is LaTeX and used verbatim; the literal fallback escapes
+        % underscores (_ → \_) so a name like c_h or a_b_c is valid math rather than an
+        % unintended (or invalid, doubled) subscript. Underscore is the only LaTeX-special
+        % character a valid symbol name can contain.
             if isfield(m, name)
                 s = m.(name);
             else
-                s = name;
+                s = strrep(name, '_', '\_');
             end
         end % function
 
@@ -2906,30 +2920,30 @@ classdef ast
             end
         end % function
 
-        function str = latex_call(node, m)
+        function str = latex_call(node, m, dated)
         % Render a function-call node. exp, sqrt, cbrt and abs use dedicated LaTeX
         % constructs; everything else renders as <command>\left( arg, … \right).
             fname = node.value;
             a = node.children;
             switch fname
                 case 'exp'
-                    str = ['e^{' a{1}.to_latex(m, '', false) '}'];
+                    str = ['e^{' a{1}.to_latex(m, dated, '', false) '}'];
                 case 'sqrt'
-                    str = ['\sqrt{' a{1}.to_latex(m, '', false) '}'];
+                    str = ['\sqrt{' a{1}.to_latex(m, dated, '', false) '}'];
                 case 'cbrt'
-                    str = ['\sqrt[3]{' a{1}.to_latex(m, '', false) '}'];
+                    str = ['\sqrt[3]{' a{1}.to_latex(m, dated, '', false) '}'];
                 case 'abs'
-                    str = ['\left|' a{1}.to_latex(m, '', false) '\right|'];
+                    str = ['\left|' a{1}.to_latex(m, dated, '', false) '\right|'];
                 otherwise
                     parts = cell(1, numel(a));
                     for i = 1:numel(a)
-                        parts{i} = a{i}.to_latex(m, '', false);
+                        parts{i} = a{i}.to_latex(m, dated, '', false);
                     end
                     str = [ast.latex_fname(fname) '\left(' strjoin(parts, ', ') '\right)'];
             end
         end % function
 
-        function str = latex_binop(o, m, parent_op, is_right)
+        function str = latex_binop(o, m, dated, parent_op, is_right)
         % Render a binary-operator node to LaTeX, applying the same canonical-form
         % pretty-printing as ast.string (a + (-b) → "a - b", a · b^(-1) → \frac{a}{b})
         % plus the LaTeX-specific constructs (\frac, ^{}). Division and power are
@@ -2949,10 +2963,10 @@ classdef ast
             switch op
                 case '/'
                     % \frac groups numerator and denominator, so neither child needs parens.
-                    str = ['\frac{' L.to_latex(m, '', false) '}{' R.to_latex(m, '', false) '}'];
+                    str = ['\frac{' L.to_latex(m, dated, '', false) '}{' R.to_latex(m, dated, '', false) '}'];
                     boxed = true;
                 case '^'
-                    base = L.to_latex(m, '', false);
+                    base = L.to_latex(m, dated, '', false);
                     if ast.latex_base_needs_invisible(L)
                         % Base already ends in a superscript (name^{\star}, e^{…}); a second
                         % superscript would be an invalid double superscript. Wrap in invisible
@@ -2962,11 +2976,11 @@ classdef ast
                     elseif ast.latex_base_needs_parens(L)
                         base = ['\left(' base '\right)'];
                     end
-                    str = [base '^{' R.to_latex(m, '', false) '}'];
+                    str = [base '^{' R.to_latex(m, dated, '', false) '}'];
                     boxed = true;
                 otherwise
-                    lStr = L.to_latex(m, op, false);
-                    rStr = R.to_latex(m, op, true);
+                    lStr = L.to_latex(m, dated, op, false);
+                    rStr = R.to_latex(m, dated, op, true);
                     if strcmp(op, '*')
                         str = [lStr ast.latex_mult_sep(rStr) rStr];
                     else

@@ -3600,6 +3600,92 @@ classdef modBuilder < handle
 
         end % function
 
+        function out = tex_model(o, filename)
+        % Render the model equations as a LaTeX align environment.
+        %
+        % INPUTS:
+        % - o         [modBuilder]
+        % - filename  [char]   (optional) path to write the LaTeX to. If omitted, nothing is
+        %                      written; the rendering is only returned.
+        %
+        % OUTPUTS:
+        % - out       [char]   the LaTeX string (assigned only when an output is requested).
+        %
+        % REMARKS:
+        % - Each equation "LHS = RHS" becomes an aligned row "<LHS> &= <RHS>" inside a single
+        %   \begin{align} … \end{align} block, in declaration order. An equation with no '='
+        %   is rendered as a residual "<expr> &= 0".
+        % - Symbols are rendered via ast.to_latex using the per-symbol texname metadata
+        %   (parameter(..., 'texname', ...) and friends); symbols without a texname render
+        %   literally. Endogenous and exogenous variables are dated: a current-period use gets
+        %   a _t subscript (y → y_t) and a lead/lag its period (k(-1) → k_{t-1}), while
+        %   parameters stay bare.
+        % - The expressions keep their full dynamics (no staticisation).
+        %
+        % EXAMPLES:
+        % tex = m.tex_model();              % return the LaTeX string
+        % m.tex_model('paper/model.tex');   % write it to a file
+            arguments
+                o
+                filename (1,:) char = ''
+            end
+            map = o.texname_map();
+            dated = [o.var(:, modBuilder.COL_NAME); o.varexo(:, modBuilder.COL_NAME)];
+            neq = size(o.equations, 1);
+            rows = cell(neq, 1);
+            for i = 1:neq
+                LHSRHS = strsplit(o.equations{i, modBuilder.EQ_COL_EXPR}, '=');
+                if isscalar(LHSRHS)
+                    rows{i} = ['  ' ast(strtrim(LHSRHS{1})).to_latex(map, dated) ' &= 0'];
+                else
+                    lhs = ast(strtrim(LHSRHS{1})).to_latex(map, dated);
+                    rhs = ast(strtrim(LHSRHS{2})).to_latex(map, dated);
+                    rows{i} = ['  ' lhs ' &= ' rhs];
+                end
+            end
+            % Assemble the align body. The row break "\\" is appended by plain
+            % concatenation, NOT through strjoin, whose delimiter is escape-translated
+            % (it would collapse "\\" to a single "\").
+            nl = newline;
+            body = ['\begin{align}' nl];
+            for i = 1:neq
+                body = [body rows{i}]; %#ok<AGROW>
+                if i < neq
+                    body = [body ' \\']; %#ok<AGROW>
+                end
+                body = [body nl]; %#ok<AGROW>
+            end
+            body = [body '\end{align}' nl];
+            if ~isempty(filename)
+                fid = fopen(filename, 'w');
+                if fid == -1
+                    error('modBuilder:tex_model:cannotOpen', 'Cannot open file "%s" for writing.', filename);
+                end
+                c = onCleanup(@() fclose(fid)); %#ok<NASGU>
+                fprintf(fid, '%s', body);
+            end
+            if nargout > 0
+                out = body;
+            end
+        end % function
+
+        function map = texname_map(o)
+        % Build a struct mapping each symbol name to its declared LaTeX name (texname),
+        % skipping symbols without one (those render literally). Shared by the LaTeX
+        % reporting methods and passed as the texname_map argument of ast.to_latex.
+            map = struct();
+            tables = {o.var, o.varexo, o.params};
+            for t = 1:numel(tables)
+                tbl = tables{t};
+                for i = 1:size(tbl, 1)
+                    tx = tbl{i, modBuilder.COL_TEX_NAME};
+                    if ~isempty(tx)
+                        map.(tbl{i, modBuilder.COL_NAME}) = tx;
+                    end
+                end
+            end
+        end % function
+
         function s = saveobj(o)
         % Serialize a modBuilder object, used when saving object to mat file.
         %

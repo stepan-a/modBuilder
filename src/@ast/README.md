@@ -326,7 +326,7 @@ Tested in `tests/ast/t24` (structural cases plus an `autoDiff1`
 cross-check at several points for every rule) and `tests/ast/t25`
 (the `noRule` path).
 
-#### `t.to_latex([texname_map])`
+#### `t.to_latex([texname_map[, dated]])`
 
 Render the tree as a LaTeX math expression (the contents of a math
 environment — no surrounding `$ … $`):
@@ -334,17 +334,23 @@ environment — no surrounding `$ … $`):
 ```matlab
 ast('alpha*K(-1)^alpha').to_latex(struct('alpha', '\alpha'))
 %  →  \alpha\,K_{t-1}^{\alpha}
+ast('y - rho*y(-1)').to_latex(struct(), {'y'})
+%  →  y_t - rho\,y_{t-1}
 ```
 
 `texname_map` is an optional struct mapping symbol names to their LaTeX
 form (`struct('alpha', '\alpha', 'K', 'K')`); names absent from the map
-render literally. `modBuilder`'s `tex_*` wrappers will build this map
-from the per-symbol `texname` metadata.
+render literally. `dated` is an optional cellstr of time-varying variable
+names: a bare `sym` in that set gets the current-period subscript
+(`y` → `y_t`) so current and lagged uses read consistently (`y_t`,
+`k_{t-1}`); parameters (names not listed) stay bare. `modBuilder`'s
+`tex_*` methods build both from the per-symbol `texname` metadata and the
+variable lists.
 
 Rendering highlights:
 
-- `tsym` lags → time subscripts (`K(-1)` → `K_{t-1}`); `ss` → `·^{\star}`
-  (`STEADY_STATE(K)` → `K^{\star}`).
+- `tsym` lags → time subscripts (`K(-1)` → `K_{t-1}`); a bare sym in
+  `dated` → `K_t`; `ss` → `·^{\star}` (`STEADY_STATE(K)` → `K^{\star}`).
 - division → `\frac{·}{·}`; `exp` → `e^{·}`; `sqrt` → `\sqrt{·}`;
   `cbrt` → `\sqrt[3]{·}`; `abs` → `\left|·\right|`; trig/hyperbolic and
   the rest as `\sin(·)`, `\Phi(·)`, `\operatorname{…}(·)`, etc.
