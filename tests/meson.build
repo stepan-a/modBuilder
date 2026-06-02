@@ -115,6 +115,7 @@ listoftests = [
   'solvers/t22.m',
   'solvers/t23.m',
   'solvers/t24.m',
+  'solvers/t25.m',
   'subsref/rbc1.m',
   'subsref/t01.m',
   'subsref/t02.m',
