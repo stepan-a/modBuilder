@@ -27,7 +27,9 @@ Each equation in a modBuilder model is explicitly associated with one endogenous
 - **Consistency Checking**: Validates that each endogenous variable has exactly one equation
 - **Regex Support**: Search for symbols using regular expressions
 - **Model Operations**: Copy, merge, extract submodels, and more
+- **Symbolic Differentiation**: Analytical partial derivatives and Jacobians via an AST engine (`partial`, `symbolic_jacobian`)
 - **Dynare Export**: Generate syntactically valid `.mod` files ready for simulation
+- **LaTeX Export**: Render the model as paper-ready LaTeX (`tex_model`)
 
 ## Quick Start
 
@@ -732,6 +734,50 @@ m.solve_system({'y', 'c'}, {'alpha', 'c'});
 m.solve_system({'k', 'y', 'c'}, {'k', 'y', 'c'}, 'tol', 1e-12);
 ```
 
+### Symbolic Differentiation
+
+Built on the AST engine's [`ast.diff_ast`](src/@ast/README.md).
+
+#### `partial(eqname, varname[, Lag])`
+
+Return the symbolic partial derivative of an equation's residual (LHS − RHS) with respect to a symbol, as a simplified `ast`.
+
+**Arguments:**
+- `eqname` — equation name
+- `varname` — symbol to differentiate with respect to
+- `Lag` (optional name-value) — period of the target. Omitted gives the **static** partial: the residual is staticised first, so all leads/lags of the variable aggregate (the same semantics as the AD Jacobian). `Lag = k` gives the **dynamic**, period-specific block (`Lag = 0` contemporaneous, `Lag = -1` the one-lag block, ...).
+
+**Example:**
+
+```matlab
+m.partial('y', 'k')            % static: d(residual_y)/dk, all lags aggregated
+m.partial('y', 'k', Lag=-1)    % dynamic: d(residual_y)/dk(-1)
+```
+
+#### `symbolic_jacobian(eqnames, varnames[, Lag])`
+
+Return the matrix of symbolic partials as an `m×n` cell of `ast` objects. The matrix is sparse: structural-zero entries are stored as `[]`, so `isempty(J{i,j})` tests whether `varnames{j}` is absent from equation `i`. Same static/dynamic `Lag` semantics as `partial` (a multi-period dynamic Jacobian is one call per lag).
+
+**Example:**
+
+```matlab
+J = m.symbolic_jacobian({'y', 'c'}, {'y', 'k', 'c'});   % static Jacobian
+isempty(J{2, 2})    % structural zero?
+```
+
+### LaTeX Export
+
+#### `tex_model([filename])`
+
+Render the model equations as a LaTeX `align` block — one aligned `LHS &= RHS` row per equation, in declaration order — using each symbol's declared `tex_name` (see [`ast.to_latex`](src/@ast/README.md)). Endogenous and exogenous variables are dated, so a current-period use gets a `_t` subscript (`y` → `y_t`) and a lead/lag its period (`k(-1)` → `k_{t-1}`), while parameters stay bare. Returns the LaTeX string and, when a filename is given, writes it to that file.
+
+**Example:**
+
+```matlab
+tex = m.tex_model();              % return the LaTeX string
+m.tex_model('paper/model.tex');   % write it to a file
+```
+
 ### Indexing and Access
 
 modBuilder supports custom indexing:
@@ -830,8 +876,11 @@ Tests are located in the `tests/` directory:
 tests/
 ├── rbc/            - Real Business Cycle model tests
 ├── ad/             - Automatic differentiation tests
+├── ast/            - AST engine tests (parse, simplify, diff_ast, to_latex)
 ├── ar/             - Autoregressive model tests
 ├── solvers/        - Numerical solver tests
+├── partial/        - Symbolic partial / Jacobian tests
+├── tex-model/      - LaTeX model-export tests
 ├── implicit-loops/ - Implicit loop functionality tests
 ├── load-mod-file/  - Mod file loading tests
 ├── flip/           - Flip method tests
