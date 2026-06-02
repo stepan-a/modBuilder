@@ -609,6 +609,79 @@ classdef ast
             o = ast.diff_node(o, target_name).simplify();
         end % function
 
+        function str = to_latex(o, texname_map, parent_op, is_right)
+        % Render the tree as a LaTeX math expression.
+        %
+        % INPUTS:
+        % - o            [ast]      node to render
+        % - texname_map  [struct]   (optional) map from symbol name to its LaTeX form, e.g.
+        %                           struct('alpha', '\alpha', 'K', 'K'). Names absent from the
+        %                           map render literally. Defaults to an empty struct.
+        % - parent_op    [char]     (optional) parent operator, used internally by the recursion
+        %                           to decide on parenthesisation; outside callers omit it.
+        % - is_right     [logical]  (optional) true iff this node is the right child of its parent;
+        %                           also internal.
+        %
+        % OUTPUTS:
+        % - str          [char]     1×n array, the rendered LaTeX (math-mode contents, no $ … $)
+        %
+        % REMARKS:
+        % - Outside callers use t.to_latex() or t.to_latex(map); parent_op / is_right are passed
+        %   by recursive invocations on children.
+        % - Renders whatever tree it is given. Canonical-form patterns are pretty-printed the way
+        %   string() does: a + (-b) → "a - b", and a · b^(-1) → \frac{a}{b}. A lone negative power
+        %   (e.g. x^(-1)) is kept as x^{-1} rather than rewritten to a fraction, preserving the
+        %   readability the steady-state forms rely on.
+        % - tsym lags render as time subscripts (K(-1) → K_{t-1}); ss nodes as ·^{\star}
+        %   (STEADY_STATE(K) → K^{\star}); exp as e^{·}; sqrt as \sqrt{·}; division as
+        %   \frac{·}{·}; abs as \left|·\right|. Grouping uses \left( … \right) so tall content
+        %   (fractions, powers) brackets correctly; a base that merely ends in a superscript
+        %   (K^{\star}, e^{·}) raised to a power uses invisible \left. … \right. delimiters
+        %   instead, e.g. STEADY_STATE(K)^2 → \left. K^{\star} \right.^{2}.
+            arguments
+                o
+                texname_map = struct()
+                parent_op = ''
+                is_right  = false
+            end
+            switch o.type
+                case 'num'
+                    str = ast.latex_num(o.value);
+                case 'sym'
+                    str = ast.latex_name(o.value, texname_map);
+                case 'tsym'
+                    base = ast.latex_name(o.value{1}, texname_map);
+                    if o.value{2} == 0
+                        str = base;
+                    else
+                        str = sprintf('%s_{t%+d}', base, o.value{2});
+                    end
+                case 'ss'
+                    % Steady-state variable: postfix superscript star, e.g. K^{\star}.
+                    str = [ast.latex_name(o.value, texname_map) '^{\star}'];
+                case 'call'
+                    str = ast.latex_call(o, texname_map);
+                case 'uminus'
+                    child = o.children{1};
+                    cs = child.to_latex(texname_map, '', false);
+                    % Only an additive child needs parentheses under unary minus: -(a+b).
+                    % A product or power does not (-a\,b and -x^{2} are unambiguous), so we
+                    % drop string()'s round-trip parentheses here for cleaner paper output.
+                    if strcmp(child.type, 'binop') && (strcmp(child.value, '+') || strcmp(child.value, '-'))
+                        cs = ['\left(' cs '\right)'];
+                    end
+                    str = ['-' cs];
+                    % Wrap the whole -… when the parent binds tighter than unary minus ('^').
+                    if ast.op_precedence(parent_op) > 3
+                        str = ['\left(' str '\right)'];
+                    end
+                case 'binop'
+                    str = ast.latex_binop(o, texname_map, parent_op, is_right);
+                otherwise
+                    error('ast:to_latex', 'Unknown node type "%s".', o.type);
+            end
+        end % function
+
         function tf = is_linear_in(o, x)
         % Test whether the tree is linear in symbol x.
         %
@@ -2773,6 +2846,157 @@ classdef ast
         % counts as a use (symbol_names drops the lag), so the general / non-constant
         % branch is taken; the period-specific du/dv factor then zeroes it out anyway.
             tf = ~ismember(target, node.symbol_names());
+        end % function
+
+        function s = latex_num(v)
+        % Render a numeric literal for LaTeX. %.16g drops trailing zeros and prints
+        % integers without a decimal point, matching ast.string.
+            s = num2str(v, '%.16g');
+        end % function
+
+        function s = latex_name(name, m)
+        % Look up a symbol's LaTeX form in the texname map, or fall back to the literal name.
+            if isfield(m, name)
+                s = m.(name);
+            else
+                s = name;
+            end
+        end % function
+
+        function s = latex_fname(fname)
+        % LaTeX command for a function name (used by latex_call for the parenthesised forms;
+        % exp/sqrt/cbrt/abs are handled specially by latex_call and never reach this map).
+            switch fname
+                case 'log',     s = '\log';
+                case 'ln',      s = '\ln';
+                case 'log10',   s = '\log_{10}';
+                case 'sin',     s = '\sin';
+                case 'cos',     s = '\cos';
+                case 'tan',     s = '\tan';
+                case 'asin',    s = '\arcsin';
+                case 'acos',    s = '\arccos';
+                case 'atan',    s = '\arctan';
+                case 'sinh',    s = '\sinh';
+                case 'cosh',    s = '\cosh';
+                case 'tanh',    s = '\tanh';
+                case 'asinh',   s = '\operatorname{arsinh}';
+                case 'acosh',   s = '\operatorname{arcosh}';
+                case 'atanh',   s = '\operatorname{artanh}';
+                case 'sign',    s = '\operatorname{sign}';
+                case 'erf',     s = '\operatorname{erf}';
+                case 'normcdf', s = '\Phi';
+                case 'normpdf', s = '\phi';
+                case 'min',     s = '\min';
+                case 'max',     s = '\max';
+                otherwise,      s = ['\operatorname{' fname '}'];
+            end
+        end % function
+
+        function str = latex_call(node, m)
+        % Render a function-call node. exp, sqrt, cbrt and abs use dedicated LaTeX
+        % constructs; everything else renders as <command>\left( arg, … \right).
+            fname = node.value;
+            a = node.children;
+            switch fname
+                case 'exp'
+                    str = ['e^{' a{1}.to_latex(m, '', false) '}'];
+                case 'sqrt'
+                    str = ['\sqrt{' a{1}.to_latex(m, '', false) '}'];
+                case 'cbrt'
+                    str = ['\sqrt[3]{' a{1}.to_latex(m, '', false) '}'];
+                case 'abs'
+                    str = ['\left|' a{1}.to_latex(m, '', false) '\right|'];
+                otherwise
+                    parts = cell(1, numel(a));
+                    for i = 1:numel(a)
+                        parts{i} = a{i}.to_latex(m, '', false);
+                    end
+                    str = [ast.latex_fname(fname) '\left(' strjoin(parts, ', ') '\right)'];
+            end
+        end % function
+
+        function str = latex_binop(o, m, parent_op, is_right)
+        % Render a binary-operator node to LaTeX, applying the same canonical-form
+        % pretty-printing as ast.string (a + (-b) → "a - b", a · b^(-1) → \frac{a}{b})
+        % plus the LaTeX-specific constructs (\frac, ^{}). Division and power are
+        % self-grouping, so only the inline operators (+, -, *) take precedence-based
+        % \left( … \right) wrapping; a non-atomic power base is wrapped explicitly.
+            op = o.value;
+            L = o.children{1};
+            R = o.children{2};
+            if strcmp(op, '+') && strcmp(R.type, 'uminus')
+                op = '-'; R = R.children{1};
+            elseif strcmp(op, '+') && strcmp(R.type, 'num') && R.value < 0
+                op = '-'; R = ast('num', -R.value, {});
+            elseif strcmp(op, '*') && strcmp(R.type, 'binop') && strcmp(R.value, '^') && ast.is_neg_one(R.children{2})
+                op = '/'; R = R.children{1};
+            end
+            boxed = false;
+            switch op
+                case '/'
+                    % \frac groups numerator and denominator, so neither child needs parens.
+                    str = ['\frac{' L.to_latex(m, '', false) '}{' R.to_latex(m, '', false) '}'];
+                    boxed = true;
+                case '^'
+                    base = L.to_latex(m, '', false);
+                    if ast.latex_base_needs_invisible(L)
+                        % Base already ends in a superscript (name^{\star}, e^{…}); a second
+                        % superscript would be an invalid double superscript. Wrap in invisible
+                        % \left. … \right. delimiters so the outer exponent attaches without
+                        % showing parentheses the reader does not need.
+                        base = ['\left. ' base ' \right.'];
+                    elseif ast.latex_base_needs_parens(L)
+                        base = ['\left(' base '\right)'];
+                    end
+                    str = [base '^{' R.to_latex(m, '', false) '}'];
+                    boxed = true;
+                otherwise
+                    lStr = L.to_latex(m, op, false);
+                    rStr = R.to_latex(m, op, true);
+                    if strcmp(op, '*')
+                        str = [lStr ast.latex_mult_sep(rStr) rStr];
+                    else
+                        str = [lStr ' ' op ' ' rStr];
+                    end
+            end
+            % Self-grouping constructs (\frac, x^{y}) never need outer parens from an
+            % additive/multiplicative parent; inline operators do, by precedence.
+            if ~boxed
+                cp = ast.op_precedence(op);
+                pp = ast.op_precedence(parent_op);
+                if cp < pp || (cp == pp && is_right)
+                    str = ['\left(' str '\right)'];
+                end
+            end
+        end % function
+
+        function s = latex_mult_sep(rStr)
+        % Separator for a LaTeX product: \cdot when the right factor begins with a digit or
+        % a minus sign (so juxtaposition would not misread as a single number), else a thin
+        % space \, (the usual implicit-multiplication convention, e.g. \alpha\,K_{t-1}).
+            if ~isempty(rStr) && (isstrprop(rStr(1), 'digit') || rStr(1) == '-')
+                s = ' \cdot ';
+            else
+                s = '\,';
+            end
+        end % function
+
+        function tf = latex_base_needs_parens(L)
+        % True iff a power base must be wrapped in VISIBLE \left( … \right) because the
+        % parentheses carry meaning: any binop (incl. \frac and a^b, where (a^b)^c must be
+        % distinguished from a^{b^c}), a unary minus, or a negative literal. Bases that
+        % merely end in a superscript (ss, exp) take invisible delimiters instead — see
+        % latex_base_needs_invisible.
+            tf = strcmp(L.type, 'binop') || strcmp(L.type, 'uminus') || ...
+                 (strcmp(L.type, 'num') && L.value < 0);
+        end % function
+
+        function tf = latex_base_needs_invisible(L)
+        % True iff a power base renders with a trailing superscript and so would form an
+        % invalid double superscript under a further exponent, but carries no precedence
+        % ambiguity: an ss node (name^{\star}) or exp (e^{…}). These take invisible
+        % \left. … \right. delimiters rather than visible parentheses.
+            tf = strcmp(L.type, 'ss') || (strcmp(L.type, 'call') && strcmp(L.value, 'exp'));
         end % function
 
         function b = is_neg_one(o)

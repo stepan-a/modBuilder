@@ -323,6 +323,46 @@ Tested in `tests/ast/t24` (structural cases plus an `autoDiff1`
 cross-check at several points for every rule) and `tests/ast/t25`
 (the `noRule` path).
 
+#### `t.to_latex([texname_map])`
+
+Render the tree as a LaTeX math expression (the contents of a math
+environment — no surrounding `$ … $`):
+
+```matlab
+ast('alpha*K(-1)^alpha').to_latex(struct('alpha', '\alpha'))
+%  →  \alpha\,K_{t-1}^{\alpha}
+```
+
+`texname_map` is an optional struct mapping symbol names to their LaTeX
+form (`struct('alpha', '\alpha', 'K', 'K')`); names absent from the map
+render literally. `modBuilder`'s `tex_*` wrappers will build this map
+from the per-symbol `texname` metadata.
+
+Rendering highlights:
+
+- `tsym` lags → time subscripts (`K(-1)` → `K_{t-1}`); `ss` → `·^{\star}`
+  (`STEADY_STATE(K)` → `K^{\star}`).
+- division → `\frac{·}{·}`; `exp` → `e^{·}`; `sqrt` → `\sqrt{·}`;
+  `cbrt` → `\sqrt[3]{·}`; `abs` → `\left|·\right|`; trig/hyperbolic and
+  the rest as `\sin(·)`, `\Phi(·)`, `\operatorname{…}(·)`, etc.
+- Grouping uses `\left( … \right)`, so tall content (fractions, powers)
+  brackets correctly — e.g. `(a/b)^c` → `\left(\frac{a}{b}\right)^{c}`.
+  A base that merely ends in a superscript (`K^{\star}`, `e^{·}`) raised to
+  a power instead uses *invisible* `\left. … \right.` delimiters, avoiding
+  the double-superscript clash without showing parentheses — e.g.
+  `STEADY_STATE(K)^2` → `\left. K^{\star} \right.^{2}`. Genuine precedence
+  cases (sums, products, `(a^b)^c`) keep visible parentheses.
+- Canonical-form patterns are pretty-printed as in `string()`:
+  `a + (-b)` → `a - b`, `a·b^(-1)` → `\frac{a}{b}`. A lone negative power
+  (`x^(-1)`) is kept as `x^{-1}` rather than rewritten to a fraction,
+  matching the readability the steady-state forms rely on.
+
+`to_latex` renders whatever tree it is given (it does not canonicalise),
+so the caller controls the algebraic form. One known rough edge: a sum
+term with a negative numeric coefficient still prints additively
+(`1 + -2\,x + …` rather than `1 - 2\,x + …`), mirroring `string()`.
+Tested in `tests/ast/t26`.
+
 #### `disp(t)`
 
 Compact display: print the rendered expression. Implicitly invoked when
