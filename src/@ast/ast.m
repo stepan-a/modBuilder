@@ -580,6 +580,35 @@ classdef ast
             end
         end % function
 
+        function o = diff_ast(o, target_name)
+        % Symbolic derivative of the tree with respect to a symbol.
+        %
+        % INPUTS:
+        % - o            [ast]    tree to differentiate
+        % - target_name  [char]   1×n array, name of the symbol to differentiate w.r.t.
+        %
+        % OUTPUTS:
+        % - o            [ast]    simplified derivative ∂o/∂target_name
+        %
+        % REMARKS:
+        % - Differentiation is period-specific: only bare 'sym' nodes whose name equals
+        %   target_name carry a non-zero derivative. A 'tsym' node (a lead or lag such as
+        %   K(-1)) is treated as an independent variable, so diff_ast(K(-1), 'K') is 0.
+        %   Callers wanting steady-state (all-periods) semantics call staticise() first.
+        % - 'ss' nodes (STEADY_STATE(x)) are constants and differentiate to 0.
+        % - The result is passed through simplify() before returning; the raw chain-rule
+        %   output is unreadable.
+        % - Higher-order and mixed partials chain: t.diff_ast('x').diff_ast('y').
+        % - abs, sign, min and max follow the autoDiff1 kink conventions: abs(u)' =
+        %   sign(u)*u', sign(u)' = 0, and min/max are differentiated through the identity
+        %   max(u,v) = (u+v+|u-v|)/2 (averaged sub-gradient at the tie u=v). Only the
+        %   Dynare time-series operators diff, adl and EXPECTATIONS have no pointwise
+        %   derivative and raise 'ast:diff_ast:noRule'. The Method='auto' solver path uses
+        %   that as the signal to fall back to automatic differentiation.
+            target_name = char(target_name);
+            o = ast.diff_node(o, target_name).simplify();
+        end % function
+
         function tf = is_linear_in(o, x)
         % Test whether the tree is linear in symbol x.
         %
@@ -2553,6 +2582,197 @@ classdef ast
         function b = is_one(o)
         % True iff o is the numeric literal 1.
             b = strcmp(o.type, 'num') && o.value == 1;
+        end % function
+
+        function d = diff_node(node, target)
+        % Recursive symbolic differentiation of node w.r.t. the symbol name target.
+        % Returns an UNSIMPLIFIED ast; the public diff_ast wrapper simplifies the result.
+            switch node.type
+                case 'num'
+                    d = ast('num', 0, {});
+                case 'sym'
+                    if strcmp(node.value, target)
+                        d = ast('num', 1, {});
+                    else
+                        d = ast('num', 0, {});
+                    end
+                case 'tsym'
+                    % Period-specific: a lead/lag is an independent variable (see diff_ast).
+                    d = ast('num', 0, {});
+                case 'ss'
+                    % STEADY_STATE(x) is a constant w.r.t. the dynamic variable x.
+                    d = ast('num', 0, {});
+                case 'uminus'
+                    d = ast('uminus', [], {ast.diff_node(node.children{1}, target)});
+                case 'binop'
+                    d = ast.diff_binop(node, target);
+                case 'call'
+                    d = ast.diff_call(node, target);
+                otherwise
+                    error('ast:diff_ast:badNode', 'Cannot differentiate node of type "%s".', node.type);
+            end
+        end % function
+
+        function d = diff_binop(node, target)
+        % Differentiate a binary-operator node by the standard calculus rules.
+            op = node.value;
+            u = node.children{1};
+            v = node.children{2};
+            du = ast.diff_node(u, target);
+            dv = ast.diff_node(v, target);
+            switch op
+                case '+'
+                    d = ast('binop', '+', {du, dv});
+                case '-'
+                    d = ast('binop', '-', {du, dv});
+                case '*'
+                    % Product rule: du*v + u*dv.
+                    d = ast('binop', '+', {ast('binop', '*', {du, v}), ast('binop', '*', {u, dv})});
+                case '/'
+                    % Quotient rule: (du*v - u*dv) / v^2.
+                    numerator = ast('binop', '-', {ast('binop', '*', {du, v}), ast('binop', '*', {u, dv})});
+                    denominator = ast('binop', '^', {v, ast('num', 2, {})});
+                    d = ast('binop', '/', {numerator, denominator});
+                case '^'
+                    d = ast.diff_power(u, v, du, dv, target);
+                otherwise
+                    error('ast:diff_ast:badOp', 'Cannot differentiate operator "%s".', op);
+            end
+        end % function
+
+        function d = diff_power(u, v, du, dv, target)
+        % Differentiate u^v, branching on which of base/exponent depends on target.
+            u_const = ast.is_constant_wrt(u, target);
+            v_const = ast.is_constant_wrt(v, target);
+            if u_const && v_const
+                d = ast('num', 0, {});
+            elseif v_const
+                % u^v with v constant: v * u^(v-1) * du.
+                exponent = ast('binop', '-', {v, ast('num', 1, {})});
+                power = ast('binop', '^', {u, exponent});
+                d = ast('binop', '*', {ast('binop', '*', {v, power}), du});
+            elseif u_const
+                % a^v with a constant: a^v * log(a) * dv.
+                power = ast('binop', '^', {u, v});
+                d = ast('binop', '*', {ast('binop', '*', {power, ast('call', 'log', {u})}), dv});
+            else
+                % General u^v: u^v * (dv*log(u) + v*du/u).
+                power = ast('binop', '^', {u, v});
+                term1 = ast('binop', '*', {dv, ast('call', 'log', {u})});
+                term2 = ast('binop', '*', {v, ast('binop', '/', {du, u})});
+                bracket = ast('binop', '+', {term1, term2});
+                d = ast('binop', '*', {power, bracket});
+            end
+        end % function
+
+        function d = diff_call(node, target)
+        % Differentiate a single-argument function call by the chain rule: f'(g) * g'.
+        % Raises 'ast:diff_ast:noRule' for functions without a differentiation rule.
+            fname = node.value;
+            arg = node.children{1};
+            if strcmp(fname, 'sign')
+                % sign is piecewise-constant: derivative is 0 wherever it is defined,
+                % independent of the argument. (It is non-differentiable at the argument's
+                % zeros — autoDiff1 errors there; the symbolic form returns 0, matching the
+                % derivative value autoDiff1 gives everywhere else.) Short-circuit so a
+                % non-differentiable argument does not need a rule.
+                d = ast('num', 0, {});
+                return
+            end
+            if strcmp(fname, 'max') || strcmp(fname, 'min')
+                % max(u,v) = (u + v + |u-v|)/2 and min(u,v) = (u + v - |u-v|)/2, so via
+                % the abs rule (abs(w)' = sign(w)*w'):
+                %   max(u,v)' = (u'+v')/2 + sign(u-v)*(u'-v')/2
+                %   min(u,v)' = (u'+v')/2 - sign(u-v)*(u'-v')/2
+                % At the tie u=v the result is the averaged sub-gradient (sign(0)=0),
+                % the same kink convention abs/sign use (see autoDiff1.abs and ad/t36).
+                u = node.children{1};
+                v = node.children{2};
+                du = ast.diff_node(u, target);
+                dv = ast.diff_node(v, target);
+                avg = ast('binop', '/', {ast('binop', '+', {du, dv}), ast('num', 2, {})});
+                s = ast('call', 'sign', {ast('binop', '-', {u, v})});
+                half_diff = ast('binop', '/', {ast('binop', '-', {du, dv}), ast('num', 2, {})});
+                correction = ast('binop', '*', {s, half_diff});
+                if strcmp(fname, 'max')
+                    d = ast('binop', '+', {avg, correction});
+                else
+                    d = ast('binop', '-', {avg, correction});
+                end
+                return
+            end
+            darg = ast.diff_node(arg, target);
+            one = ast('num', 1, {});
+            two = ast('num', 2, {});
+            switch fname
+                case 'abs'
+                    % abs(u)' = sign(u)*u'. The sub-gradient choice at u = 0 is sign(0) = 0,
+                    % matching autoDiff1.abs and Dynare's sign(0) = 0 convention.
+                    outer = ast('call', 'sign', {arg});
+                case {'log', 'ln'}
+                    outer = ast('binop', '/', {one, arg});
+                case 'log10'
+                    outer = ast('binop', '/', {one, ast('binop', '*', {arg, ast('call', 'log', {ast('num', 10, {})})})});
+                case 'exp'
+                    outer = ast('call', 'exp', {arg});
+                case 'sqrt'
+                    outer = ast('binop', '/', {one, ast('binop', '*', {two, ast('call', 'sqrt', {arg})})});
+                case 'cbrt'
+                    % 1/(3*cbrt(x)^2).
+                    outer = ast('binop', '/', {one, ast('binop', '*', {ast('num', 3, {}), ast('binop', '^', {ast('call', 'cbrt', {arg}), two})})});
+                case 'sin'
+                    outer = ast('call', 'cos', {arg});
+                case 'cos'
+                    outer = ast('uminus', [], {ast('call', 'sin', {arg})});
+                case 'tan'
+                    % 1/cos(x)^2.
+                    outer = ast('binop', '/', {one, ast('binop', '^', {ast('call', 'cos', {arg}), two})});
+                case 'asin'
+                    % 1/sqrt(1-x^2).
+                    outer = ast('binop', '/', {one, ast('call', 'sqrt', {ast('binop', '-', {one, ast('binop', '^', {arg, two})})})});
+                case 'acos'
+                    % -1/sqrt(1-x^2).
+                    outer = ast('uminus', [], {ast('binop', '/', {one, ast('call', 'sqrt', {ast('binop', '-', {one, ast('binop', '^', {arg, two})})})})});
+                case 'atan'
+                    % 1/(1+x^2).
+                    outer = ast('binop', '/', {one, ast('binop', '+', {one, ast('binop', '^', {arg, two})})});
+                case 'sinh'
+                    outer = ast('call', 'cosh', {arg});
+                case 'cosh'
+                    outer = ast('call', 'sinh', {arg});
+                case 'tanh'
+                    % 1 - tanh(x)^2.
+                    outer = ast('binop', '-', {one, ast('binop', '^', {ast('call', 'tanh', {arg}), two})});
+                case 'asinh'
+                    % 1/sqrt(x^2+1).
+                    outer = ast('binop', '/', {one, ast('call', 'sqrt', {ast('binop', '+', {ast('binop', '^', {arg, two}), one})})});
+                case 'acosh'
+                    % 1/sqrt(x^2-1).
+                    outer = ast('binop', '/', {one, ast('call', 'sqrt', {ast('binop', '-', {ast('binop', '^', {arg, two}), one})})});
+                case 'atanh'
+                    % 1/(1-x^2).
+                    outer = ast('binop', '/', {one, ast('binop', '-', {one, ast('binop', '^', {arg, two})})});
+                case 'normcdf'
+                    outer = ast('call', 'normpdf', {arg});
+                case 'normpdf'
+                    % -x*normpdf(x).
+                    outer = ast('uminus', [], {ast('binop', '*', {arg, ast('call', 'normpdf', {arg})})});
+                case 'erf'
+                    % (2/sqrt(pi))*exp(-x^2).
+                    coef = ast('binop', '/', {two, ast('call', 'sqrt', {ast('num', pi, {})})});
+                    outer = ast('binop', '*', {coef, ast('call', 'exp', {ast('uminus', [], {ast('binop', '^', {arg, two})})})});
+                otherwise
+                    error('ast:diff_ast:noRule', 'No differentiation rule for function "%s".', fname);
+            end
+            d = ast('binop', '*', {outer, darg});
+        end % function
+
+        function tf = is_constant_wrt(node, target)
+        % True iff target does not appear among the symbol names of node. Used by
+        % diff_power to pick the applicable power rule. A 'tsym' lead/lag of target
+        % counts as a use (symbol_names drops the lag), so the general / non-constant
+        % branch is taken; the period-specific du/dv factor then zeroes it out anyway.
+            tf = ~ismember(target, node.symbol_names());
         end % function
 
         function b = is_neg_one(o)

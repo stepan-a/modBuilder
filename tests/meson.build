@@ -83,6 +83,8 @@ listoftests = [
   'ast/t21',
   'ast/t22',
   'ast/t23',
+  'ast/t24',
+  'ast/t25',
   'solvers/t00.m',
   'solvers/t01.m',
   'solvers/t02.m',

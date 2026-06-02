@@ -288,6 +288,41 @@ symbol; `values.(name)` is the scalar substituted for any `sym`,
 Used by `modBuilder.evaluate` to compute LHS, RHS and residual of a
 static equation under the current calibration.
 
+#### `t.diff_ast(target_name)`
+
+Symbolic derivative of the tree with respect to a symbol, returned as a
+simplified `ast`:
+
+```matlab
+ast('alpha*K^alpha').diff_ast('K')   % alpha^2 * K^(alpha-1)
+```
+
+- Differentiation is **period-specific**: only bare `sym` nodes whose
+  name equals `target_name` carry a non-zero derivative. A `tsym`
+  lead/lag such as `K(-1)` is an independent variable, so
+  `ast('K(-1)').diff_ast('K')` is `0`. Call `staticise()` first for
+  steady-state (all-periods) semantics.
+- `ss` nodes (`STEADY_STATE(x)`) are constants and differentiate to `0`.
+- The result is passed through `simplify()` before returning. Higher-order
+  and mixed partials chain: `t.diff_ast('x').diff_ast('y')`.
+- The `^` rule branches on which of base/exponent depends on the target
+  (`u^n`, `a^v`, general `u^v`). Functions are handled by the chain rule.
+- 24 functions have rules: `log`/`ln`, `log10`, `exp`, `sqrt`, `cbrt`,
+  the six trig and six hyperbolic functions and their inverses,
+  `normcdf`, `normpdf`, `erf`, plus `abs`, `sign`, `min` and `max`
+  following the `autoDiff1` sub-gradient conventions: `abs(u)' =
+  sign(u)·u'`, `sign(u)' = 0`, and `min`/`max` via the identity
+  `max(u,v) = (u+v+|u−v|)/2` (so `max(u,v)' = (u'+v')/2 +
+  sign(u−v)·(u'−v')/2`, averaged sub-gradient at the tie `u=v`). Only the
+  Dynare time-series operators `diff`, `adl` and `EXPECTATIONS` lack a
+  pointwise derivative and raise `ast:diff_ast:noRule` — the signal for a
+  `Method='auto'` solver path to fall back to automatic differentiation
+  (`autoDiff1`).
+
+Tested in `tests/ast/t24` (structural cases plus an `autoDiff1`
+cross-check at several points for every rule) and `tests/ast/t25`
+(the `noRule` path).
+
 #### `disp(t)`
 
 Compact display: print the rendered expression. Implicitly invoked when
