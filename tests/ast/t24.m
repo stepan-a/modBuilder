@@ -23,6 +23,15 @@ assert(ast.ast_equal(ast('1/x').diff_ast('x'), ast('-1/x^2').simplify()),  'd(1/
 % Higher-order via chaining.
 assert(ast.ast_equal(ast('x^3').diff_ast('x').diff_ast('x'), ast('6*x').simplify()), 'd2(x^3)/dx2 = 6*x');
 
+% Period-specific differentiation via the optional lag argument. Default lag 0 targets the
+% bare current-period symbol; a non-zero lag targets the matching lead/lag (tsym).
+assert(ast.ast_equal(ast('K(-1)').diff_ast('K', -1), ast('1')),  'd(K(-1))/dK(-1) = 1');
+assert(ast.ast_equal(ast('K(-1)').diff_ast('K',  0), ast('0')),  'd(K(-1))/dK(0)  = 0');
+assert(ast.ast_equal(ast('K').diff_ast('K', -1),     ast('0')),  'd(K)/dK(-1)     = 0');
+assert(ast.ast_equal(ast('K(+1)').diff_ast('K', 1),  ast('1')),  'd(K(+1))/dK(+1) = 1');
+assert(ast.ast_equal(ast('2*K(-1) + 3*K').diff_ast('K', -1), ast('2')), 'lag block picks out the K(-1) coefficient');
+assert(ast.ast_equal(ast('2*K(-1) + 3*K').diff_ast('K'),     ast('3')), 'default lag 0 picks out the contemporaneous coefficient');
+
 % cbrt has only an autoDiff1 overload (no plain-double implementation), so it is
 % checked structurally rather than through the numeric oracle below.
 assert(ast.ast_equal(ast('cbrt(x)').diff_ast('x'), ast('1/(3*cbrt(x)^2)').simplify()), 'd(cbrt(x))/dx = 1/(3*cbrt(x)^2)');

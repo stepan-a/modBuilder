@@ -288,20 +288,23 @@ symbol; `values.(name)` is the scalar substituted for any `sym`,
 Used by `modBuilder.evaluate` to compute LHS, RHS and residual of a
 static equation under the current calibration.
 
-#### `t.diff_ast(target_name)`
+#### `t.diff_ast(target_name[, target_lag])`
 
-Symbolic derivative of the tree with respect to a symbol, returned as a
-simplified `ast`:
+Symbolic derivative of the tree with respect to a symbol at a given
+period, returned as a simplified `ast`:
 
 ```matlab
-ast('alpha*K^alpha').diff_ast('K')   % alpha^2 * K^(alpha-1)
+ast('alpha*K^alpha').diff_ast('K')        % alpha^2 * K^(alpha-1)
+ast('y - rho*y(-1)').diff_ast('y', -1)    % -rho   (the lag-1 block)
 ```
 
-- Differentiation is **period-specific**: only bare `sym` nodes whose
-  name equals `target_name` carry a non-zero derivative. A `tsym`
-  lead/lag such as `K(-1)` is an independent variable, so
-  `ast('K(-1)').diff_ast('K')` is `0`. Call `staticise()` first for
-  steady-state (all-periods) semantics.
+- Differentiation is **period-specific**. With the default
+  `target_lag = 0`, only bare `sym` nodes named `target_name` carry a
+  non-zero derivative; a `tsym` lead/lag such as `K(-1)` is an
+  independent variable, so `ast('K(-1)').diff_ast('K')` is `0`. Pass the
+  lag explicitly (`diff_ast('K', -1)`) to differentiate w.r.t. that
+  lead/lag, or call `staticise()` first for steady-state (all-periods
+  aggregated) semantics.
 - `ss` nodes (`STEADY_STATE(x)`) are constants and differentiate to `0`.
 - The result is passed through `simplify()` before returning. Higher-order
   and mixed partials chain: `t.diff_ast('x').diff_ast('y')`.

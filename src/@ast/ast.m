@@ -580,21 +580,26 @@ classdef ast
             end
         end % function
 
-        function o = diff_ast(o, target_name)
-        % Symbolic derivative of the tree with respect to a symbol.
+        function o = diff_ast(o, target_name, target_lag)
+        % Symbolic derivative of the tree with respect to a symbol at a given period.
         %
         % INPUTS:
-        % - o            [ast]    tree to differentiate
-        % - target_name  [char]   1×n array, name of the symbol to differentiate w.r.t.
+        % - o            [ast]      tree to differentiate
+        % - target_name  [char]     1×n array, name of the symbol to differentiate w.r.t.
+        % - target_lag   [integer]  (optional) period of the target, default 0. 0 targets the
+        %                           current-period variable (the bare 'sym'); a non-zero value
+        %                           targets that lead/lag (the matching 'tsym'), e.g.
+        %                           diff_ast('K', -1) differentiates w.r.t. K(-1).
         %
         % OUTPUTS:
-        % - o            [ast]    simplified derivative ∂o/∂target_name
+        % - o            [ast]      simplified derivative ∂o/∂target_name(target_lag)
         %
         % REMARKS:
-        % - Differentiation is period-specific: only bare 'sym' nodes whose name equals
-        %   target_name carry a non-zero derivative. A 'tsym' node (a lead or lag such as
-        %   K(-1)) is treated as an independent variable, so diff_ast(K(-1), 'K') is 0.
-        %   Callers wanting steady-state (all-periods) semantics call staticise() first.
+        % - Differentiation is period-specific. With the default target_lag = 0, only bare
+        %   'sym' nodes named target_name carry a non-zero derivative; a 'tsym' lead/lag such
+        %   as K(-1) is an independent variable, so diff_ast(K(-1), 'K') is 0. Pass the lag
+        %   explicitly (diff_ast('K', -1)) to differentiate w.r.t. that lead/lag instead; or
+        %   staticise() first for steady-state (all-periods aggregated) semantics.
         % - 'ss' nodes (STEADY_STATE(x)) are constants and differentiate to 0.
         % - The result is passed through simplify() before returning; the raw chain-rule
         %   output is unreadable.
@@ -606,7 +611,10 @@ classdef ast
         %   derivative and raise 'ast:diff_ast:noRule'. The Method='auto' solver path uses
         %   that as the signal to fall back to automatic differentiation.
             target_name = char(target_name);
-            o = ast.diff_node(o, target_name).simplify();
+            if nargin < 3
+                target_lag = 0;
+            end
+            o = ast.diff_node(o, target_name, target_lag).simplify();
         end % function
 
         function str = to_latex(o, texname_map, parent_op, is_right)
@@ -2657,42 +2665,48 @@ classdef ast
             b = strcmp(o.type, 'num') && o.value == 1;
         end % function
 
-        function d = diff_node(node, target)
-        % Recursive symbolic differentiation of node w.r.t. the symbol name target.
+        function d = diff_node(node, target, target_lag)
+        % Recursive symbolic differentiation of node w.r.t. the symbol target at period
+        % target_lag (0 = current period / bare sym, non-zero = the matching tsym lead/lag).
         % Returns an UNSIMPLIFIED ast; the public diff_ast wrapper simplifies the result.
             switch node.type
                 case 'num'
                     d = ast('num', 0, {});
                 case 'sym'
-                    if strcmp(node.value, target)
+                    % A bare symbol is the current-period (lag 0) variable.
+                    if target_lag == 0 && strcmp(node.value, target)
                         d = ast('num', 1, {});
                     else
                         d = ast('num', 0, {});
                     end
                 case 'tsym'
-                    % Period-specific: a lead/lag is an independent variable (see diff_ast).
-                    d = ast('num', 0, {});
+                    % A lead/lag matches only when both the name and the period agree.
+                    if node.value{2} == target_lag && strcmp(node.value{1}, target)
+                        d = ast('num', 1, {});
+                    else
+                        d = ast('num', 0, {});
+                    end
                 case 'ss'
                     % STEADY_STATE(x) is a constant w.r.t. the dynamic variable x.
                     d = ast('num', 0, {});
                 case 'uminus'
-                    d = ast('uminus', [], {ast.diff_node(node.children{1}, target)});
+                    d = ast('uminus', [], {ast.diff_node(node.children{1}, target, target_lag)});
                 case 'binop'
-                    d = ast.diff_binop(node, target);
+                    d = ast.diff_binop(node, target, target_lag);
                 case 'call'
-                    d = ast.diff_call(node, target);
+                    d = ast.diff_call(node, target, target_lag);
                 otherwise
                     error('ast:diff_ast:badNode', 'Cannot differentiate node of type "%s".', node.type);
             end
         end % function
 
-        function d = diff_binop(node, target)
+        function d = diff_binop(node, target, target_lag)
         % Differentiate a binary-operator node by the standard calculus rules.
             op = node.value;
             u = node.children{1};
             v = node.children{2};
-            du = ast.diff_node(u, target);
-            dv = ast.diff_node(v, target);
+            du = ast.diff_node(u, target, target_lag);
+            dv = ast.diff_node(v, target, target_lag);
             switch op
                 case '+'
                     d = ast('binop', '+', {du, dv});
@@ -2738,7 +2752,7 @@ classdef ast
             end
         end % function
 
-        function d = diff_call(node, target)
+        function d = diff_call(node, target, target_lag)
         % Differentiate a single-argument function call by the chain rule: f'(g) * g'.
         % Raises 'ast:diff_ast:noRule' for functions without a differentiation rule.
             fname = node.value;
@@ -2761,8 +2775,8 @@ classdef ast
                 % the same kink convention abs/sign use (see autoDiff1.abs and ad/t36).
                 u = node.children{1};
                 v = node.children{2};
-                du = ast.diff_node(u, target);
-                dv = ast.diff_node(v, target);
+                du = ast.diff_node(u, target, target_lag);
+                dv = ast.diff_node(v, target, target_lag);
                 avg = ast('binop', '/', {ast('binop', '+', {du, dv}), ast('num', 2, {})});
                 s = ast('call', 'sign', {ast('binop', '-', {u, v})});
                 half_diff = ast('binop', '/', {ast('binop', '-', {du, dv}), ast('num', 2, {})});
@@ -2774,7 +2788,7 @@ classdef ast
                 end
                 return
             end
-            darg = ast.diff_node(arg, target);
+            darg = ast.diff_node(arg, target, target_lag);
             one = ast('num', 1, {});
             two = ast('num', 2, {});
             switch fname
