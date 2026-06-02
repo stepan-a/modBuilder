@@ -1040,6 +1040,117 @@ classdef modBuilder < handle
             J = sparse(II, JJ, VV, m, n);
         end % function
 
+        function g = partial(o, eqname, varname, options)
+        % Symbolic partial derivative of an equation's residual w.r.t. a symbol.
+        %
+        % INPUTS:
+        % - o        [modBuilder]
+        % - eqname   [char]         1×n array, name of an equation (its endogenous variable)
+        % - varname  [char]         1×n array, name of the symbol to differentiate w.r.t.
+        % - Lag      [integer]      (name-value) period of the target. Omitted (the default) gives
+        %                           the STATIC partial; an explicit value gives the dynamic,
+        %                           period-specific partial (see REMARKS).
+        %
+        % OUTPUTS:
+        % - g        [ast]          simplified ∂(LHS−RHS)/∂varname
+        %
+        % REMARKS:
+        % - Default (no Lag): the residual is staticised first (every lead/lag collapses to the
+        %   current period), so the derivative aggregates all occurrences of varname across time —
+        %   the same semantics as the AD jacobian, which compile_equations also staticises. This is
+        %   the steady-state partial the analytical Jacobian for solve_system needs.
+        % - With Lag = k: the residual is NOT staticised and the derivative is taken w.r.t. the
+        %   variable at that period — varname (the bare current-period symbol) when k = 0, or the
+        %   lead/lag varname(k) when k ≠ 0. So Lag = 0 is the contemporaneous block and
+        %   Lag = -1 the one-lag block; the static default instead sums these.
+        % - varname need not appear in the equation; the partial is then a numeric 0 ast.
+        % - Raises modBuilder:partial:unknownEquation if eqname is not an equation, and
+        %   modBuilder:partial:unparsableEquation if the equation cannot be parsed.
+        % - Differentiating a function without a rule raises ast:diff_ast:noRule (see ast.diff_ast).
+            arguments
+                o
+                eqname  (1,:) char {mustBeNonempty}
+                varname (1,:) char {mustBeNonempty}
+                options.Lag double {mustBeScalarOrEmpty, mustBeInteger} = []
+            end
+            if isempty(options.Lag)
+                f = o.resolve_residual(eqname, 'partial', true);
+                g = f.diff_ast(varname);
+            else
+                f = o.resolve_residual(eqname, 'partial', false);
+                g = f.diff_ast(varname, options.Lag);
+            end
+        end % function
+
+        function J = symbolic_jacobian(o, eqnames, varnames, options)
+        % Matrix of symbolic partial derivatives of the equation residuals.
+        %
+        % INPUTS:
+        % - o          [modBuilder]
+        % - eqnames    [cell]        1×m cell array of equation names
+        % - varnames   [cell]        1×n cell array of symbol names to differentiate w.r.t.
+        % - Lag        [integer]     (name-value) period of the targets. Omitted (the default)
+        %                            gives the STATIC Jacobian; an explicit value gives the dynamic
+        %                            Jacobian block for that period (one call per lead/lag).
+        %
+        % OUTPUTS:
+        % - J          [cell]        m×n cell of ast objects; entry (i,j) is ∂(residual_i)/∂var_j.
+        %                            Structural zeros are stored as [] (the matrix is sparse), so
+        %                            isempty(J{i,j}) tests whether var_j is absent from equation i.
+        %
+        % REMARKS:
+        % - Same static-vs-dynamic semantics as partial (see its Lag remarks). A dynamic Jacobian
+        %   over several periods is obtained with one call per lag (e.g. Lag=-1, Lag=0, Lag=1),
+        %   each returning the m×n block for that period.
+        % - Each equation's residual is built once and differentiated w.r.t. every variable
+        %   (cheaper than m·n independent partial() calls).
+        % - Recomputed on demand (no caching, per the AST-cache decision in the roadmap).
+        % - Raises modBuilder:symbolic_jacobian:unknownEquation / :unparsableEquation as partial does.
+            arguments
+                o
+                eqnames  cell
+                varnames cell
+                options.Lag double {mustBeScalarOrEmpty, mustBeInteger} = []
+            end
+            make_static = isempty(options.Lag);
+            m = numel(eqnames);
+            n = numel(varnames);
+            J = cell(m, n);
+            for i = 1:m
+                f = o.resolve_residual(eqnames{i}, 'symbolic_jacobian', make_static);
+                for j = 1:n
+                    if make_static
+                        g = f.diff_ast(varnames{j});
+                    else
+                        g = f.diff_ast(varnames{j}, options.Lag);
+                    end
+                    if strcmp(g.type, 'num') && g.value == 0
+                        J{i, j} = [];   % structural zero
+                    else
+                        J{i, j} = g;
+                    end
+                end
+            end
+        end % function
+
+        function f = resolve_residual(o, eqname, caller, make_static)
+        % Look up an equation by name and return its LHS−RHS residual AST, staticised when
+        % make_static is true (else the dynamic residual). Shared by partial and
+        % symbolic_jacobian; caller names the error id namespace.
+            eq_idx = find(strcmp(eqname, o.equations(:, modBuilder.EQ_COL_NAME)), 1);
+            if isempty(eq_idx)
+                error(['modBuilder:' caller ':unknownEquation'], 'No equation named "%s".', eqname);
+            end
+            if make_static
+                f = modBuilder.static_residual(o, eq_idx);
+            else
+                f = modBuilder.dynamic_residual(o, eq_idx);
+            end
+            if isempty(f)
+                error(['modBuilder:' caller ':unparsableEquation'], 'Equation "%s" cannot be parsed.', eqname);
+            end
+        end % function
+
         function matches = collect_matches(o, eqnames, pattern)
         % Return the unique regex matches found across the specified equations.
         %
@@ -1849,6 +1960,22 @@ classdef modBuilder < handle
                 Lt = ast(strtrim(LHSRHS{1})).staticise();
                 Rt = ast(strtrim(LHSRHS{2})).staticise();
                 f = ast('binop', '-', {Lt, Rt});
+            else
+                f = [];
+            end
+        end % function
+
+        function f = dynamic_residual(o, eq_idx)
+        % Build the dynamic (NON-staticised) residual AST for the equation at row eq_idx of
+        % o.equations: "LHS - RHS" (or "LHS" if there is no '=' symbol), with all leads/lags
+        % preserved. Empty if the equation cannot be parsed. The dynamic counterpart of
+        % static_residual; used by partial / symbolic_jacobian for period-specific derivatives.
+            eq_str = o.equations{eq_idx, modBuilder.EQ_COL_EXPR};
+            LHSRHS = strsplit(eq_str, '=');
+            if isscalar(LHSRHS)
+                f = ast(strtrim(LHSRHS{1}));
+            elseif length(LHSRHS) == 2
+                f = ast('binop', '-', {ast(strtrim(LHSRHS{1})), ast(strtrim(LHSRHS{2}))});
             else
                 f = [];
             end
