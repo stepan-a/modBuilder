@@ -60,6 +60,7 @@ listoftests = [
   'ad/t39',
   'ad/t40',
   'ad/t41',
+  'ad/t42',
   'ast/t01',
   'ast/t02',
   'ast/t03',

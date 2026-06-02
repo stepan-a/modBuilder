@@ -156,37 +156,20 @@ classdef autoDiff1
 
         function q = sign(o)
         % Overload the sign function.
-            if abs(o.x)>0
-
-                if o.x>0
-                    q = autoDiff1(1, 0);
-                else
-                    q = autoDiff1(-1, 0);
-                end
+        % sign is piecewise-constant, so the derivative is 0 wherever it is defined. At
+        % the jump x = 0 the distributional derivative is a Dirac delta (2δ(x)⋅dx); for
+        % the purpose of this toolbox (zeroing a static equation at the steady state) we
+        % do not approximate it (e.g. by k⋅sech(k⋅x)⋅dx from sign(x) ≈ tanh(k⋅x)).
+        % Instead we return the finite sub-gradient (0, 0) at the kink, consistent with
+        % the abs / min / max convention in this class, with Dynare's sign(0) = 0, and
+        % with ast.diff_ast (which emits sign(u)' = 0). A finite value also keeps a Newton
+        % iterate that lands exactly on the kink from aborting the solve.
+            if o.x > 0
+                q = autoDiff1(1, 0);
+            elseif o.x < 0
+                q = autoDiff1(-1, 0);
             else
-                % The generalized derivative (distribution theory) should be:
-                %
-                %      2δ(x)⋅dx
-                %
-                % where δ(x) is the Dirac function. In practice instead of throwing an arror (below) we could use a
-                % smooth approximation of sign(x) with the hyperbolic tangent:
-                %
-                %      sign(x) ≈ tanh(k⋅x)
-                %
-                % where k is a large positive constant (e.g. 1000). The first derivative, for all x ∈ R, would be given
-                % by the hyperbolic secant:
-                %
-                %      k⋅sech(k⋅x)⋅dx
-                %
-                % where the hyperbolic secant is defined as the the inverse of the hyperbolic cosine:
-                %
-                %      sech(x) = 1/cosh(x)
-                %
-                % For the purpose of the toolbox (finding the zero of a static equation for the steady state) we probably
-                % do not need such an approximation. Note that Dynare will return 0 if x is equal to 0 (see the reference
-                % manual).
-                error('autoDiff1:sign:nonDifferentiable', ...
-                      'sign is not differentiable at x = 0.')
+                q = autoDiff1(0, 0);
             end
         end % function
 
@@ -301,27 +284,33 @@ classdef autoDiff1
 
         function q = max(o, p)
         % Overload the max function.
+        % At the tie o.x == p.x, max is non-differentiable (the one-sided derivatives
+        % o.dx and p.dx differ in general); we return the averaged sub-gradient
+        % (o.x, (o.dx + p.dx)/2). This is exactly max(u,v) = (u + v + |u-v|)/2 evaluated
+        % at u = v, matches the abs / sign kink convention in this class, and matches
+        % ast.diff_ast, which differentiates max through that same identity.
             [o, p] = autoDiff1.convert(o, p);
             if o.x>p.x
                 q = autoDiff1(o.x, o.dx);
             elseif o.x<p.x
                 q = autoDiff1(p.x, p.dx);
             else
-                error('autoDiff1:max:nonDifferentiable', ...
-                      'Domain error: non differentiable when both arguments are equal.')
+                q = autoDiff1(o.x, (o.dx + p.dx)/2);
             end
         end % function
 
         function q = min(o, p)
         % Overload the min function.
+        % At the tie o.x == p.x, min is non-differentiable; we return the averaged
+        % sub-gradient (o.x, (o.dx + p.dx)/2) — min(u,v) = (u + v - |u-v|)/2 at u = v —
+        % matching the abs / sign / max kink convention and ast.diff_ast.
             [o, p] = autoDiff1.convert(o, p);
             if o.x>p.x
                 q = autoDiff1(p.x, p.dx);
             elseif o.x<p.x
                 q = autoDiff1(o.x, o.dx);
             else
-                error('autoDiff1:min:nonDifferentiable', ...
-                      'Domain error: non differentiable when both arguments are equal.')
+                q = autoDiff1(o.x, (o.dx + p.dx)/2);
             end
         end % function
 

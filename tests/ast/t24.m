@@ -91,6 +91,28 @@ for k = 1:size(cases, 1)
 end
 
 % ---------------------------------------------------------------------------
+% min / max at the tie u = v. Both diff_ast and autoDiff1 now adopt the averaged
+% sub-gradient there, so the cross-check holds at ties too (it no longer needs to
+% dodge them). At x = y, d(max(x,y))/dx = (1 + 0)/2 = 1/2 and d(min(x,y))/dx = 1/2.
+% ---------------------------------------------------------------------------
+tie_cases = {'max(x, y)', 'x'; 'min(x, y)', 'x'};
+for k = 1:size(tie_cases, 1)
+    expr = tie_cases{k, 1};
+    tgt  = tie_cases{k, 2};
+    g = ast(expr).diff_ast(tgt);
+    for val = [0.4 1.3 2.0]
+        pt = struct('x', val, 'y', val, 'z', 1);   % x and y tied
+        analytic = g.eval(pt);
+        oracle = adcheck(expr, tgt, pt);
+        assert(abs(analytic - 0.5) < 1e-12, ...
+               sprintf('d(%s)/d%s at the tie should be 1/2, got %.12g', expr, tgt, analytic));
+        assert(abs(analytic - oracle) < 1e-12, ...
+               sprintf('diff_ast/AD disagree at the tie for d(%s)/d%s: analytic=%.12g, AD=%.12g', ...
+                       expr, tgt, analytic, oracle));
+    end
+end
+
+% ---------------------------------------------------------------------------
 % normcdf / normpdf: autoDiff1 has no rule for these, so cross-check against a
 % central finite difference of the original expression instead.
 % ---------------------------------------------------------------------------
