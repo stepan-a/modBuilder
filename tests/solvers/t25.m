@@ -55,4 +55,24 @@ catch
 end
 assert(threw, 'an unknown Method should error');
 
+% Static-Jacobian cache: the analytical path must stay correct after an equation is
+% changed (the cache is content-guarded on the equation text, so a changed equation
+% rebuilds its partials). Solve once to populate the cache, change an equation, solve
+% again, and check the new steady state.
+m = modBuilder();
+m.add('y', 'y = alpha*x + beta');
+m.add('x', 'x = gamma');
+m.parameter('alpha', 2);
+m.parameter('beta',  1);
+m.parameter('gamma', 3);
+m.endogenous('y', 0);
+m.endogenous('x', 0);
+m.solve_system({'y', 'x'}, {'y', 'x'}, 'Method', 'analytical', 'tol', 1e-12);
+assert(abs(m.y - 7) < 1e-9 && abs(m.x - 3) < 1e-9, 'first analytical solve: y=7, x=3');
+
+m.change('y', 'y = alpha*x^2 + beta');   % new equation -> cache entry for y is rebuilt
+m.y = 0; m.x = 0;
+m.solve_system({'y', 'x'}, {'y', 'x'}, 'Method', 'analytical', 'tol', 1e-12);
+assert(abs(m.y - 19) < 1e-9 && abs(m.x - 3) < 1e-9, 'after change: analytical solve gives y=19, x=3');
+
 fprintf('solvers/t25.m: solve_system Method= argument OK\n');

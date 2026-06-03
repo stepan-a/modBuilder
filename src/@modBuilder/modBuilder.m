@@ -144,6 +144,21 @@ classdef modBuilder < handle
         % false = tables are up-to-date
         % Automatically managed by modification and read methods
         tables_dirty = false
+
+        % Lazy cache of STATIC (steady-state) Jacobian partials, keyed by equation name.
+        %   static_jacobian_cache(eqname) = struct( ...
+        %     eqstr,    [char]       equation expression the partials were derived from — the
+        %                            validity guard; a mismatch with o.equations means stale;
+        %     fallback, [logical]    true if the equation has no analytical Jacobian (an operator
+        %                            with no differentiation rule) and must use AD;
+        %     partials, [dictionary] symbol_name -> struct(ast): the simplified static partial
+        %                            ∂(staticised residual)/∂symbol (lags aggregated into the
+        %                            bare-name partial). )
+        % Populated on demand by the Method='analytical'/'auto' path and evaluated against
+        % current symbol values, so it survives parameter-value changes (the eqstr guard
+        % catches equation-text changes). Pure derived state: not serialized (see saveobj),
+        % rebuilt lazily — same lifecycle as symbol_map.
+        static_jacobian_cache = configureDictionary("string", "struct")
     end
 
 
@@ -6158,14 +6173,14 @@ classdef modBuilder < handle
         % - snames         [cell]         1×n cell array of symbol names to solve for
         % - options.tol    [double]       convergence tolerance (default 1e-6)
         % - options.maxit  [double]       maximum iterations (default 100)
-        % - options.Method [char]         Jacobian method (default 'ad'):
-        %                                    'ad'         — automatic differentiation (autoDiff1);
-        %                                    'analytical' — analytical only; errors on an operator
-        %                                                   with no differentiation rule;
+        % - options.Method [char]         Jacobian method (default 'auto'):
         %                                    'auto'       — analytical where a differentiation
         %                                                   rule exists, automatic differentiation
         %                                                   per equation otherwise (warns once per
         %                                                   fallen-back equation);
+        %                                    'analytical' — analytical only; errors on an operator
+        %                                                   with no differentiation rule;
+        %                                    'ad'         — automatic differentiation (autoDiff1);
         %                                    'numerical'  — finite-difference Jacobian.
         %
         % OUTPUTS:
@@ -6178,11 +6193,10 @@ classdef modBuilder < handle
         % - Current symbol values are used as the initial guess.
         % - All methods use the same sparsity pattern from the symbol table; analytical and
         %   AD agree numerically, so the choice affects speed, not the solution.
-        % - The default is 'ad'. The analytical/auto strategy is built once per call (before the
-        %   Newton loop), and that per-call symbolic differentiation makes 'analytical'/'auto'
-        %   slower than 'ad' on small systems (≈4× on a 3-equation RBC steady state); they are
-        %   provided for inspectable/generated Jacobians, not speed, until the symbolic Jacobian
-        %   is cached across calls.
+        % - The default is 'auto'. Analytical partials are cached per equation
+        %   (static_jacobian_cache, content-guarded on the equation text), so the symbolic
+        %   differentiation is paid once and reused across calls — 'auto'/'analytical' then run
+        %   at AD speed. The cache is transient (not saved, empty after copy) and rebuilt lazily.
         %
         % EXAMPLES:
         % % Solve for the RBC steady state
@@ -6207,7 +6221,7 @@ classdef modBuilder < handle
                 snames cell
                 options.tol (1,1) double = 1e-6
                 options.maxit (1,1) double = 100
-                options.Method (1,:) char {mustBeMember(options.Method, {'auto', 'analytical', 'ad', 'numerical'})} = 'ad'
+                options.Method (1,:) char {mustBeMember(options.Method, {'auto', 'analytical', 'ad', 'numerical'})} = 'auto'
             end
 
             m = length(eqnames);
@@ -6256,11 +6270,13 @@ classdef modBuilder < handle
 
         function jfn = analytical_jacobian_fn(o, eqnames, snames, incidence, fhandles, method)
         % Build a Jacobian closure that evaluates the analytical partials at a Newton iterate.
-        % The per-equation strategy is precomputed once here: each equation's static residual
-        % is differentiated w.r.t. the symbols it contains; an equation whose residual uses an
-        % operator with no differentiation rule either aborts (method='analytical') or falls
-        % back to automatic differentiation for that equation only (method='auto'). The returned
-        % closure reuses this strategy across Newton iterations.
+        % The per-equation strategy is assembled once here: each equation's static residual is
+        % differentiated w.r.t. the symbols it contains, reusing partials from (and populating)
+        % static_jacobian_cache so the diff_ast/simplify cost is paid once per equation across
+        % calls. An equation whose residual uses an operator with no differentiation rule either
+        % aborts (method='analytical') or falls back to automatic differentiation for that
+        % equation only (method='auto'). The returned closure reuses the strategy across
+        % Newton iterations.
             m = numel(eqnames);
             n = numel(snames);
             rows = cell(m, 1);            % rows{i}{j} = partial ast (set only where incidence(i,j))
@@ -6271,13 +6287,30 @@ classdef modBuilder < handle
                 if isempty(eq_idx)
                     error('modBuilder:solve_system:unknownEquation', 'No equation named "%s".', eqnames{i});
                 end
-                f = modBuilder.static_residual(o, eq_idx);
+                eqstr = o.equations{eq_idx, modBuilder.EQ_COL_EXPR};
+                entry = o.static_jacobian_entry(eqnames{i}, eqstr);   % cached or fresh (content-guarded)
+
+                if entry.fallback
+                    % Already known to have no analytical Jacobian (cached decision).
+                    use_ad(i) = true;
+                    o.static_jacobian_cache(eqnames{i}) = entry;
+                    continue
+                end
+
+                f = [];   % static residual built only on a cache miss
                 rowasts = cell(1, n);
                 ok = true;
                 try
                     for j = 1:n
                         if incidence(i, j)
-                            rowasts{j} = f.diff_ast(snames{j});
+                            if entry.partials.isKey(snames{j})
+                                rowasts{j} = entry.partials(snames{j}).ast;
+                            else
+                                if isempty(f), f = modBuilder.static_residual(o, eq_idx); end
+                                g = f.diff_ast(snames{j});
+                                entry.partials(snames{j}) = struct('ast', g);
+                                rowasts{j} = g;
+                            end
                         end
                     end
                 catch err
@@ -6286,6 +6319,7 @@ classdef modBuilder < handle
                     end
                     ok = false;
                 end
+
                 if ok
                     rows{i} = rowasts;
                     for j = 1:n
@@ -6293,15 +6327,19 @@ classdef modBuilder < handle
                             refsyms = [refsyms, rowasts{j}.symbol_names()]; %#ok<AGROW>
                         end
                     end
-                elseif strcmp(method, 'analytical')
-                    error('modBuilder:solve_system:noAnalyticalJacobian', ...
-                          ['Equation "%s" uses a function with no differentiation rule; ', ...
-                           'use Method=''auto'' or Method=''ad''.'], eqnames{i});
                 else
+                    entry.fallback = true;
+                    if strcmp(method, 'analytical')
+                        o.static_jacobian_cache(eqnames{i}) = entry;
+                        error('modBuilder:solve_system:noAnalyticalJacobian', ...
+                              ['Equation "%s" uses a function with no differentiation rule; ', ...
+                               'use Method=''auto'' or Method=''ad''.'], eqnames{i});
+                    end
                     use_ad(i) = true;
                     warning('modBuilder:solve_system:analyticalFallback', ...
                             'Equation "%s" has no analytical Jacobian (unsupported operator); falling back to AD for it.', eqnames{i});
                 end
+                o.static_jacobian_cache(eqnames{i}) = entry;   % write back (value-type dictionary)
             end
             % Fixed values for every non-solve symbol referenced, looked up once.
             refsyms = setdiff(unique(refsyms), snames);
@@ -6310,6 +6348,20 @@ classdef modBuilder < handle
                 base.(refsyms{k}) = o.get_value(refsyms{k});
             end
             jfn = @(x) eval_analytical_jacobian(rows, use_ad, base, snames, fhandles, incidence, x, m, n);
+        end % function
+
+        function entry = static_jacobian_entry(o, eqname, eqstr)
+        % Return the static-Jacobian cache entry for eqname, or a fresh empty entry if absent
+        % or stale (the stored equation string no longer matches eqstr — a content change).
+        % The caller fills in partials / fallback and writes the entry back.
+            if o.static_jacobian_cache.isKey(eqname)
+                entry = o.static_jacobian_cache(eqname);
+                if strcmp(entry.eqstr, eqstr)
+                    return
+                end
+            end
+            entry = struct('eqstr', eqstr, 'fallback', false, ...
+                           'partials', configureDictionary("string", "struct"));
         end % function
 
         function varargout = subsref(o, S)
