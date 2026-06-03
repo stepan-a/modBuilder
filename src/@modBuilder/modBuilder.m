@@ -1166,6 +1166,96 @@ classdef modBuilder < handle
             end
         end % function
 
+        function result = lagrangian_foc(o, value_eqname, constraint_eqnames, control_vars)
+        % Derive the first-order conditions of a recursive (Bellman) optimisation problem.
+        %
+        % INPUTS:
+        % - o                  [modBuilder]
+        % - value_eqname       [char]   name of the value equation, written recursively as
+        %                               W = u(controls, states) + beta*W(+1) (more generally
+        %                               W = u + <continuation in W(+1)>). Its LHS variable is W.
+        % - constraint_eqnames [cell]   equation names of the constraints (law of motion of the
+        %                               states, other equilibrium conditions). Each gets a fresh
+        %                               Lagrange multiplier mult_<eqname>.
+        % - control_vars       [cell]   the controls/states to take FOCs with respect to.
+        %
+        % OUTPUTS:
+        % - result   [struct]   with fields:
+        %                         .multipliers [cell] the multiplier names introduced (one per
+        %                                             constraint);
+        %                         .controls    [cell] = control_vars;
+        %                         .foc         [cell] the FOC equation strings ("<expr> = 0"),
+        %                                             parallel to .controls.
+        %
+        % REMARKS:
+        % - The value function is eliminated by the envelope theorem: the density is
+        %   ell = u + Σ_c mult_c·g_c (multipliers on the CONSTRAINTS, not on the Bellman
+        %   equation), and the FOC for a control v is
+        %     Σ_k  weight(k)·shift_lag( ∂ell/∂v(k), −k )  =  0
+        %   over the periods k at which v appears, with the one-period weight given by the
+        %   marginal continuation value M = ∂(value rhs)/∂W(+1) (the discount; M = beta in the
+        %   time-additive case, a state-dependent expression for recursive preferences). A pure
+        %   control has only the k=0 term (a static FOC); a state appears as a lead in the law
+        %   of motion and picks up the discounted forward term (the Euler equation).
+        % - This derives and RETURNS the FOCs (and the multipliers introduced); it does not yet
+        %   add them to the model.
+            arguments
+                o
+                value_eqname       (1,:) char {mustBeNonempty}
+                constraint_eqnames cell
+                control_vars       cell
+            end
+            paramnames = o.params(:, modBuilder.COL_NAME);
+
+            % Value equation: split LHS = RHS; extract the per-period return u (rhs with the
+            % continuation W(+1) zeroed) and the discount M = ∂rhs/∂W(+1).
+            vidx = find(strcmp(value_eqname, o.equations(:, modBuilder.EQ_COL_NAME)), 1);
+            if isempty(vidx)
+                error('modBuilder:lagrangian_foc:unknownEquation', 'No equation named "%s".', value_eqname);
+            end
+            LHSRHS = strsplit(o.equations{vidx, modBuilder.EQ_COL_EXPR}, '=');
+            if numel(LHSRHS) ~= 2
+                error('modBuilder:lagrangian_foc:badValueEquation', ...
+                      'The value equation "%s" must have the form W = u + ... .', value_eqname);
+            end
+            vrhs = ast(strtrim(LHSRHS{2}));
+            M = vrhs.diff_ast(value_eqname, 1).simplify();
+            u = vrhs.replace_subtree(ast([value_eqname '(+1)']), ast('num', 0, {})).simplify();
+
+            % Lagrangian density: u + Σ_c mult_c · g_c, with a fresh multiplier per constraint.
+            ell = u;
+            mults = cell(1, numel(constraint_eqnames));
+            for ci = 1:numel(constraint_eqnames)
+                cidx = find(strcmp(constraint_eqnames{ci}, o.equations(:, modBuilder.EQ_COL_NAME)), 1);
+                if isempty(cidx)
+                    error('modBuilder:lagrangian_foc:unknownEquation', 'No equation named "%s".', constraint_eqnames{ci});
+                end
+                g = modBuilder.dynamic_residual(o, cidx);
+                mults{ci} = ['mult_' constraint_eqnames{ci}];
+                ell = ast('binop', '+', {ell, ast('binop', '*', {ast('sym', mults{ci}, {}), g})});
+            end
+
+            % FOC per control: sum over the periods where the control appears.
+            focs = cell(1, numel(control_vars));
+            for vi = 1:numel(control_vars)
+                v = control_vars{vi};
+                ks = ell.lags_of(v);
+                foc = ast('num', 0, {});
+                for kk = 1:numel(ks)
+                    k = ks(kk);
+                    d = ell.diff_ast(v, k);
+                    s = d.shift_lag(-k, paramnames);
+                    w = modBuilder.foc_weight(M, k, paramnames);
+                    foc = ast('binop', '+', {foc, ast('binop', '*', {w, s})});
+                end
+                focs{vi} = [foc.simplify().string() ' = 0'];
+            end
+
+            result.multipliers = mults;
+            result.controls = control_vars;
+            result.foc = focs;
+        end % function
+
         function matches = collect_matches(o, eqnames, pattern)
         % Return the unique regex matches found across the specified equations.
         %
@@ -1994,6 +2084,31 @@ classdef modBuilder < handle
             else
                 f = [];
             end
+        end % function
+
+        function w = foc_weight(M, k, paramnames)
+        % One-period weight applied to the lag-k term of a Lagrangian FOC: the relative
+        % cumulative discount between the period where the control lives and the period whose
+        % equation contributes. M is the marginal continuation value (the discount). For a
+        % constant M = beta this is beta^(-k); the products below also cover a state-dependent
+        % M (recursive preferences), with M dated to the contributing period.
+            if k == 0
+                w = ast('num', 1, {});
+            elseif k > 0
+                % 1 / ( M(-1)·M(-2)·…·M(-k) )
+                w = ast('num', 1, {});
+                for j = 1:k
+                    mj = M.shift_lag(-j, paramnames);
+                    w = ast('binop', '*', {w, ast('binop', '^', {mj, ast('num', -1, {})})});
+                end
+            else
+                % M(0)·M(+1)·…·M(-k-1)
+                w = ast('num', 1, {});
+                for j = 0:(-k - 1)
+                    w = ast('binop', '*', {w, M.shift_lag(j, paramnames)});
+                end
+            end
+            w = w.simplify();
         end % function
 
         function [eq2var, unmatched_eqs, unmatched_vars] = matchequations(eqasts, eqlhs_symbols, candidates)

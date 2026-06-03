@@ -1010,6 +1010,35 @@ classdef ast
             end
         end % function
 
+        function lags = lags_of(o, name)
+        % Return the sorted distinct periods at which symbol `name` appears: 0 for a bare
+        % 'sym' (current period), the signed lag for each matching 'tsym'. Empty if `name`
+        % does not appear. 'ss' (STEADY_STATE) nodes are constants and are not counted.
+        % Used by the FOC builders to know which period-specific partials to take.
+            acc = [];
+            acc = walk(o, acc);
+            lags = unique(acc);
+
+            function acc = walk(node, acc)
+                switch node.type
+                    case 'sym'
+                        if strcmp(node.value, name)
+                            acc(end+1) = 0; %#ok<AGROW>
+                        end
+                    case 'tsym'
+                        if strcmp(node.value{1}, name)
+                            acc(end+1) = node.value{2}; %#ok<AGROW>
+                        end
+                    case {'num', 'ss'}
+                        % no children to recurse / not counted
+                    otherwise
+                        for j = 1:numel(node.children)
+                            acc = walk(node.children{j}, acc);
+                        end
+                end
+            end
+        end % function
+
         function o = canonicalise(o)
         % Return a canonical form of the tree.
         %

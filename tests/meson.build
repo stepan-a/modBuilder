@@ -87,6 +87,7 @@ listoftests = [
   'ast/t24',
   'ast/t25',
   'ast/t26',
+  'foc/t01',
   'partial/t01',
   'partial/t02',
   'tex-model/t01',
