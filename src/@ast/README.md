@@ -283,6 +283,38 @@ never match: `STEADY_STATE(x)` is a constant w.r.t. the dynamic variable
 `x`. The check is purely structural; cases that require algebraic
 simplification (e.g. `w/w → 1`) are not detected — see *Limitations*.
 
+#### `t.isolate(x)`
+
+Solve the equation `t = 0` for the symbol `x` — `t` is read as the
+residual `LHS - RHS`. Returns an AST `rhs` such that `x = rhs`, or `[]`
+when no recogniser applies. It canonicalises and simplifies first, then
+tries an invertible-call recogniser (`exp` / `log`, recursing on the
+inverted equation), a linear recogniser, and a monomial one, in that
+order. Returns `[]` when `x`'s coefficient folds to 0 (the equation does
+not actually pin `x`) or when the pattern is none of the recognised closed
+forms.
+
+Semantics are **steady-state**: `x` and its leads/lags are treated as the
+same unknown, so the solve aggregates them (this is what `steady_plan`
+wants — a closed-form steady-state value). Other variables keep their
+lead/lag structure in the result.
+
+```matlab
+ast('-mult_1 + 1/c').isolate('mult_1')      % c ^ -1                 (mult_1 = 1/c)
+ast('y - rho*y(-1) - e').isolate('y')        % e / (1 - rho)          (y and y(-1) aggregated)
+ast('mult_1 - beta*c(+1)/c').isolate('mult_1')   % beta * c(1) / c    (other lags preserved)
+ast('log(y) + y^3 - x').isolate('y')         % []                     (no closed form)
+```
+
+Used by `steady_plan` to close singleton steady-state blocks, and by
+[`modBuilder.eliminate`](../@modBuilder), which isolates an endogenous
+variable from its **own** equation and substitutes the result throughout
+(lag-aware) to remove it from the model — e.g. substituting a Lagrange
+multiplier introduced by `augment` back out to recover the textbook
+condition. Because of the steady-state aggregation above, `eliminate`
+only applies to a variable defined *statically* by its equation (one not
+involving its own lead/lag); it refuses an AR(1)-style law of motion.
+
 #### `t.eval(values)`
 
 Evaluate the tree numerically. `values` is a struct with one field per
