@@ -44,7 +44,9 @@ fprintf('foc/t01.m: lagrangian_foc OK\n');
 % Compare a returned FOC ("<expr> = 0") to an expected expression, modulo the AST's
 % canonical form.
 function tf = foc_equal(focstr, expected)
+    % Equal up to algebra: expand+simplify the difference and check it vanishes (robust to
+    % fractions the local simplify leaves un-distributed). tsym lags are kept distinct.
     parts = strsplit(focstr, '=');
-    lhs = ast(strtrim(parts{1})).simplify();
-    tf = ast.ast_equal(lhs, ast(expected).simplify());
+    d = ast('binop', '-', {ast(strtrim(parts{1})), ast(expected)}).expand().simplify();
+    tf = strcmp(d.type, 'num') && abs(d.value) < 1e-12;
 end

@@ -1256,6 +1256,41 @@ classdef modBuilder < handle
             result.foc = focs;
         end % function
 
+        function result = ramsey_foc(o, value_eqname, instrument_vars)
+        % Derive the Ramsey (optimal-policy) first-order conditions: a specialisation of
+        % lagrangian_foc where every model equation other than the value equation is a
+        % constraint, and the planner optimises over all endogenous variables plus the policy
+        % instruments.
+        %
+        % INPUTS:
+        % - o               [modBuilder]
+        % - value_eqname    [char]   name of the recursive welfare equation (W = u + beta*W(+1)).
+        % - instrument_vars [cell]   the policy instruments. Their own equations (e.g. a policy
+        %                            rule), if any, are removed from the constraint set, since
+        %                            under Ramsey the planner sets policy optimally; the
+        %                            instruments are still controls.
+        %
+        % OUTPUTS:
+        % - result   [struct]   as lagrangian_foc: .multipliers, .controls, .foc.
+        %
+        % REMARKS:
+        % - Constraints = all equations except the value equation and any instrument's rule.
+        % - Controls = the endogenous variables plus the instruments, minus the value variable.
+        %   The FOC of an instrument that appears in only one constraint pins that constraint's
+        %   multiplier (often to zero), reproducing the textbook result.
+            arguments
+                o
+                value_eqname    (1,:) char {mustBeNonempty}
+                instrument_vars cell
+            end
+            alleq = o.equations(:, modBuilder.EQ_COL_NAME);
+            excluded = [{value_eqname}, reshape(instrument_vars, 1, [])];
+            constraint_eqnames = reshape(alleq(~ismember(alleq, excluded)), 1, []);
+            controls = unique([reshape(o.var(:, modBuilder.COL_NAME), 1, []), reshape(instrument_vars, 1, [])], 'stable');
+            controls = controls(~strcmp(controls, value_eqname));
+            result = o.lagrangian_foc(value_eqname, constraint_eqnames, controls);
+        end % function
+
         function matches = collect_matches(o, eqnames, pattern)
         % Return the unique regex matches found across the specified equations.
         %
