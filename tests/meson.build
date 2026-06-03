@@ -96,6 +96,7 @@ listoftests = [
   'tex-model/t02',
   'tex-ss/t01',
   'tex-linearise/t01',
+  'tex-linearise/t02',
   'solvers/t00.m',
   'solvers/t01.m',
   'solvers/t02.m',
