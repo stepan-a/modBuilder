@@ -80,6 +80,22 @@ catch e
 end
 assert(caught, 'a non-closed-form variable must raise notClosedForm');
 
+% ---------------------------------------------------------------------------
+% A variable defined dynamically by its own equation (its own lead/lag appears)
+% cannot be eliminated by static substitution.
+% ---------------------------------------------------------------------------
+m4 = modBuilder();
+m4.add('a', 'a = rho*a(-1) + e');   % AR(1): a depends on its own lag
+m4.parameter('rho', 0.95);
+m4.exogenous('e', 0);
+caught = false;
+try
+    m4.eliminate('a');
+catch e
+    caught = strcmp(e.identifier, 'modBuilder:eliminate:dynamicDefinition');
+end
+assert(caught, 'a variable defined by its own lead/lag must raise dynamicDefinition');
+
 fprintf('eliminate/t01.m: eliminate OK\n');
 
 % Equal up to algebra AND overall sign (a residual = 0 is unchanged by negation): expand+simplify

@@ -5657,6 +5657,10 @@ classdef modBuilder < handle
         % - Only an endogenous variable can be eliminated: it is the one that owns a defining
         %   equation. A parameter, an exogenous variable or an unknown symbol raises
         %   modBuilder:eliminate:notEndogenous.
+        % - varname must be defined statically by its own equation: if it appears at a lead/lag of
+        %   itself the equation is a genuine difference equation (e.g. an AR(1) law of motion) and
+        %   raises modBuilder:eliminate:dynamicDefinition (ast.isolate would otherwise aggregate the
+        %   leads/lags into a steady-state value, an invalid dynamic substitution).
         % - The variable's equation (LHS - RHS = 0) is solved for varname with ast.isolate, which
         %   handles the linear / monomial / invertible-call cases. If it cannot isolate varname in
         %   closed form it returns nothing and this raises modBuilder:eliminate:notClosedForm; the
@@ -5680,7 +5684,15 @@ classdef modBuilder < handle
                 error('modBuilder:eliminate:notEndogenous', 'Can only eliminate an endogenous variable; "%s" is not one.', varname);
             end
             idx = find(strcmp(varname, o.equations(:, modBuilder.EQ_COL_NAME)), 1);
-            sol = modBuilder.dynamic_residual(o, idx).isolate(varname);
+            res = modBuilder.dynamic_residual(o, idx);
+            % varname must be defined statically by its own equation. If it appears at a lead/lag
+            % of itself the equation is a genuine difference equation (e.g. an AR(1) law of motion);
+            % ast.isolate would aggregate those occurrences into a steady-state value, which is not a
+            % valid dynamic substitution, so refuse.
+            if any(res.lags_of(varname) ~= 0)
+                error('modBuilder:eliminate:dynamicDefinition', 'The equation defining "%s" involves its own lead/lag, so it cannot be eliminated by static substitution.', varname);
+            end
+            sol = res.isolate(varname);
             if isempty(sol) || ismember(varname, sol.symbol_names())
                 error('modBuilder:eliminate:notClosedForm', 'Cannot solve the equation for "%s" in closed form; eliminate it manually with subs.', varname);
             end
