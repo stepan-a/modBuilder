@@ -6173,14 +6173,14 @@ classdef modBuilder < handle
         % - snames         [cell]         1×n cell array of symbol names to solve for
         % - options.tol    [double]       convergence tolerance (default 1e-6)
         % - options.maxit  [double]       maximum iterations (default 100)
-        % - options.Method [char]         Jacobian method (default 'auto'):
+        % - options.Method [char]         Jacobian method (default 'ad'):
+        %                                    'ad'         — automatic differentiation (autoDiff1);
+        %                                    'analytical' — analytical only; errors on an operator
+        %                                                   with no differentiation rule;
         %                                    'auto'       — analytical where a differentiation
         %                                                   rule exists, automatic differentiation
         %                                                   per equation otherwise (warns once per
         %                                                   fallen-back equation);
-        %                                    'analytical' — analytical only; errors on an operator
-        %                                                   with no differentiation rule;
-        %                                    'ad'         — automatic differentiation (autoDiff1);
         %                                    'numerical'  — finite-difference Jacobian.
         %
         % OUTPUTS:
@@ -6193,10 +6193,12 @@ classdef modBuilder < handle
         % - Current symbol values are used as the initial guess.
         % - All methods use the same sparsity pattern from the symbol table; analytical and
         %   AD agree numerically, so the choice affects speed, not the solution.
-        % - The default is 'auto'. Analytical partials are cached per equation
-        %   (static_jacobian_cache, content-guarded on the equation text), so the symbolic
-        %   differentiation is paid once and reused across calls — 'auto'/'analytical' then run
-        %   at AD speed. The cache is transient (not saved, empty after copy) and rebuilt lazily.
+        % - The default is 'ad': benchmarking showed AD is as fast or faster than the analytical
+        %   path (parity on tiny systems, ~2× faster at scale), so analytical/auto are provided
+        %   for an inspectable/symbolic Jacobian rather than speed. The analytical partials are
+        %   still cached per equation (static_jacobian_cache, content-guarded on the equation
+        %   text) so repeated analytical/auto solves do not re-differentiate; the cache is
+        %   transient (not saved, empty after copy) and rebuilt lazily.
         %
         % EXAMPLES:
         % % Solve for the RBC steady state
@@ -6221,7 +6223,7 @@ classdef modBuilder < handle
                 snames cell
                 options.tol (1,1) double = 1e-6
                 options.maxit (1,1) double = 100
-                options.Method (1,:) char {mustBeMember(options.Method, {'auto', 'analytical', 'ad', 'numerical'})} = 'auto'
+                options.Method (1,:) char {mustBeMember(options.Method, {'auto', 'analytical', 'ad', 'numerical'})} = 'ad'
             end
 
             m = length(eqnames);
