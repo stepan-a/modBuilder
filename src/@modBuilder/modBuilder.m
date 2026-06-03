@@ -5642,6 +5642,52 @@ classdef modBuilder < handle
             o.updatesymboltables();
         end % function
 
+        function o = eliminate(o, varname)
+        % Eliminate an endogenous variable: solve its own equation for it, substitute the result
+        % into every equation, and drop the now-redundant defining equation and the variable.
+        %
+        % INPUTS:
+        % - o        [modBuilder]
+        % - varname  [char]   name of the endogenous variable to eliminate
+        %
+        % OUTPUTS:
+        % - o        [modBuilder]   updated object (one equation and one variable fewer)
+        %
+        % REMARKS:
+        % - Only an endogenous variable can be eliminated: it is the one that owns a defining
+        %   equation. A parameter, an exogenous variable or an unknown symbol raises
+        %   modBuilder:eliminate:notEndogenous.
+        % - The variable's equation (LHS - RHS = 0) is solved for varname with ast.isolate, which
+        %   handles the linear / monomial / invertible-call cases. If it cannot isolate varname in
+        %   closed form it returns nothing and this raises modBuilder:eliminate:notClosedForm; the
+        %   user can still eliminate the variable by hand with subs.
+        % - The substitution is model-wide and lag-aware: every occurrence of varname is replaced,
+        %   so a lead/lag varname(k) becomes the solved expression shifted to period k. The model
+        %   stays square (one equation and one variable removed).
+        % - This packages the isolate -> subs -> remove composition. Typical use: substitute a
+        %   Lagrange multiplier introduced by augment back out to recover the textbook condition,
+        %   e.g. eliminate('mult_1') turns the optimal-growth FOCs into the consumption Euler.
+        %
+        % EXAMPLES:
+        % r = m.lagrangian_foc('W', {'k'}, {'c', 'k'});
+        % m.augment(r);
+        % m.eliminate('mult_1');   % isolate mult_1 = 1/c, substitute throughout, drop the equation
+            arguments
+                o
+                varname (1,:) char {mustBeNonempty}
+            end
+            if ~o.isendogenous(varname)
+                error('modBuilder:eliminate:notEndogenous', 'Can only eliminate an endogenous variable; "%s" is not one.', varname);
+            end
+            idx = find(strcmp(varname, o.equations(:, modBuilder.EQ_COL_NAME)), 1);
+            sol = modBuilder.dynamic_residual(o, idx).isolate(varname);
+            if isempty(sol) || ismember(varname, sol.symbol_names())
+                error('modBuilder:eliminate:notClosedForm', 'Cannot solve the equation for "%s" in closed form; eliminate it manually with subs.', varname);
+            end
+            o = o.subs(varname, sol.string());
+            o = o.remove(varname);
+        end % function
+
         function o = substitute(o, expr1, expr2, varargin)
         % Substitute expr1 by expr2 in equation eqname (use regexprep).
         %
