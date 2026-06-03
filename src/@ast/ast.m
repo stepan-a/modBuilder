@@ -665,6 +665,9 @@ classdef ast
                 case 'sym'
                     str = ast.latex_name(o.value, texname_map);
                     if ismember(o.value, dated)
+                        if ast.needs_subscript_brace(str)
+                            str = ['{' str '}'];   % avoid a double subscript (\mu_{1} → {\mu_{1}}_t)
+                        end
                         str = [str '_t'];   % current-period subscript for a dated variable
                     end
                 case 'tsym'
@@ -672,6 +675,9 @@ classdef ast
                     if o.value{2} == 0
                         str = base;
                     else
+                        if ast.needs_subscript_brace(base)
+                            base = ['{' base '}'];   % avoid a double subscript (\mu_{1} → {\mu_{1}}_{t-1})
+                        end
                         str = sprintf('%s_{t%+d}', base, o.value{2});
                     end
                 case 'ss'
@@ -2917,6 +2923,33 @@ classdef ast
                 s = m.(name);
             else
                 s = strrep(name, '_', '\_');
+            end
+        end % function
+
+        function tf = needs_subscript_brace(s)
+        % True if the rendered base s already carries a top-level (unbraced, unescaped)
+        % subscript or superscript, so appending a time index would otherwise produce an
+        % invalid double subscript (e.g. \mu_{1} → \mu_{1}_t). The caller brace-wraps the
+        % base in that case ({\mu_{1}}_t). An escaped underscore (\_) and a subscript already
+        % inside braces do not count, so the common case (y → y_t, not {y}_t) stays clean.
+            tf = false;
+            depth = 0;
+            i = 1;
+            n = numel(s);
+            while i <= n
+                c = s(i);
+                if c == '\'
+                    i = i + 2;   % escape: the following char is literal, skip it
+                    continue
+                elseif c == '{'
+                    depth = depth + 1;
+                elseif c == '}'
+                    depth = depth - 1;
+                elseif depth == 0 && (c == '_' || c == '^')
+                    tf = true;
+                    return
+                end
+                i = i + 1;
             end
         end % function
 

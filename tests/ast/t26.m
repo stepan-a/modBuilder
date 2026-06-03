@@ -85,4 +85,14 @@ assert(strcmp(ast('c_h').to_latex(struct(), {'c_h'}),       'c\_h_t'),     'date
 assert(strcmp(ast('c_h(-1)').to_latex(),                    'c\_h_{t-1}'), 'lagged underscore name escaped');
 assert(strcmp(ast('a_b_c').to_latex(struct('a_b_c', '\xi')),'\xi'),        'mapped texname used verbatim, not escaped');
 
+% A texname that already carries a subscript (e.g. a Lagrange multiplier \mu_{1}) is
+% brace-wrapped before the time index so the dated form is a single valid subscript
+% ({\mu_{1}}_t, {\mu_{1}}_{t-1}), not an invalid double subscript. A texname with no
+% top-level subscript (\beta) is left unwrapped, and an escaped underscore (\_) does not
+% trigger wrapping.
+mu = struct('mu', '\mu_{1}', 'b', '\beta');
+assert(strcmp(ast('mu').to_latex(mu, {'mu'}),     '{\mu_{1}}_t'),     'dated subscripted texname brace-wrapped');
+assert(strcmp(ast('mu(-1)').to_latex(mu),         '{\mu_{1}}_{t-1}'), 'lagged subscripted texname brace-wrapped');
+assert(strcmp(ast('b').to_latex(mu, {'b'}),       '\beta_t'),         'texname without a subscript not wrapped');
+
 fprintf('t26.m: ast.to_latex OK\n');
