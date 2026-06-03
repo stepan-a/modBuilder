@@ -3973,6 +3973,84 @@ classdef modBuilder < handle
             end
         end % function
 
+        function out = tex_steady_state_system(o, filename)
+        % Render the steady-state system as a LaTeX align environment: each equation's static
+        % residual, simplified, set to zero.
+        %
+        % INPUTS:
+        % - o         [modBuilder]
+        % - filename  [char]   (optional) path to write the LaTeX to. If omitted, nothing is
+        %                      written; the rendering is only returned.
+        %
+        % OUTPUTS:
+        % - out       [char]   the LaTeX string (assigned only when an output is requested).
+        %
+        % REMARKS:
+        % - Each equation becomes a row "<residual> = 0". The residual is the static "LHS - RHS"
+        %   (all leads/lags collapsed to the steady-state value) passed through simplify, so the
+        %   dynamic structure cancels (e.g. c(-1)/c reduces to 1 and an Euler equation collapses
+        %   to its steady-state form). An equation with no '=' is taken as "<expr> = 0".
+        % - Rows are LEFT-aligned: the align column sits at the left of every equation, not on the
+        %   equals sign, so the equations line up flush on the left.
+        % - Endogenous variables carry the steady-state superscript (k -> k^{\star}); exogenous
+        %   variables and parameters render with their texname (or escaped literal) and stay bare.
+        %   Symbol texnames come from the per-symbol metadata (parameter(..., 'texname', ...) etc.).
+        %
+        % EXAMPLES:
+        % tex = m.tex_steady_state_system();                 % return the LaTeX string
+        % m.tex_steady_state_system('paper/steady.tex');     % write it to a file
+            arguments
+                o
+                filename (1,:) char = ''
+            end
+            % Star the endogenous variables in the texname map: a steady-state value is k^{\star},
+            % built on the declared texname when there is one and on the (underscore-escaped)
+            % literal otherwise. Exogenous variables and parameters are left untouched.
+            map = o.texname_map();
+            endo = o.var(:, modBuilder.COL_NAME);
+            for i = 1:numel(endo)
+                v = endo{i};
+                if isfield(map, v)
+                    base = map.(v);
+                else
+                    base = strrep(v, '_', '\_');
+                end
+                map.(v) = [base '^{\star}'];
+            end
+            neq = size(o.equations, 1);
+            rows = cell(neq, 1);
+            for i = 1:neq
+                r = modBuilder.static_residual(o, i);
+                if isempty(r)
+                    error('modBuilder:tex_steady_state_system:unparsableEquation', 'Equation "%s" cannot be parsed.', o.equations{i, modBuilder.EQ_COL_NAME});
+                end
+                rows{i} = ['  &' r.simplify().to_latex(map) ' = 0'];
+            end
+            % Assemble the align body. The row break "\\" is appended by plain concatenation, NOT
+            % through strjoin, whose delimiter is escape-translated (it would collapse "\\" to "\").
+            nl = newline;
+            body = ['\begin{align}' nl];
+            for i = 1:neq
+                body = [body rows{i}]; %#ok<AGROW>
+                if i < neq
+                    body = [body ' \\']; %#ok<AGROW>
+                end
+                body = [body nl]; %#ok<AGROW>
+            end
+            body = [body '\end{align}' nl];
+            if ~isempty(filename)
+                fid = fopen(filename, 'w');
+                if fid == -1
+                    error('modBuilder:tex_steady_state_system:cannotOpen', 'Cannot open file "%s" for writing.', filename);
+                end
+                c = onCleanup(@() fclose(fid)); %#ok<NASGU>
+                fprintf(fid, '%s', body);
+            end
+            if nargout > 0
+                out = body;
+            end
+        end % function
+
         function map = texname_map(o)
         % Build a struct mapping each symbol name to its declared LaTeX name (texname),
         % skipping symbols without one (those render literally). Shared by the LaTeX
