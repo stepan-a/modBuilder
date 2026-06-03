@@ -14,13 +14,13 @@ m.parameter('alpha', 0.33);
 m.parameter('delta', 0.025);
 
 r = m.lagrangian_foc('W', {'k'}, {'c', 'k'});
-assert(isequal(r.multipliers, {'mult_k'}), 'one multiplier per constraint');
+assert(isequal(r.multipliers, {'mult_1'}), 'one multiplier per constraint, named positionally');
 assert(isequal(r.controls, {'c', 'k'}),    'controls echoed back');
 
-% FOC(c): 1/c - mult_k = 0
-assert(foc_equal(r.foc{1}, '1/c - mult_k'), sprintf('FOC(c) wrong: %s', r.foc{1}));
-% FOC(k): -mult_k + beta*mult_k(+1)*(A*alpha*k^(alpha-1) + 1 - delta) = 0  (consumption Euler)
-assert(foc_equal(r.foc{2}, '-mult_k + beta*mult_k(+1)*(A*alpha*k^(alpha-1) + 1 - delta)'), ...
+% FOC(c): 1/c - mult_1 = 0
+assert(foc_equal(r.foc{1}, '1/c - mult_1'), sprintf('FOC(c) wrong: %s', r.foc{1}));
+% FOC(k): -mult_1 + beta*mult_1(+1)*(A*alpha*k^(alpha-1) + 1 - delta) = 0  (consumption Euler)
+assert(foc_equal(r.foc{2}, '-mult_1 + beta*mult_1(+1)*(A*alpha*k^(alpha-1) + 1 - delta)'), ...
        sprintf('FOC(k) wrong: %s', r.foc{2}));
 
 % ---------------------------------------------------------------------------
@@ -36,8 +36,13 @@ m2.parameter('py', 2);
 m2.parameter('I', 10);
 
 r2 = m2.lagrangian_foc('U', {'x'}, {'x', 'y'});
-assert(foc_equal(r2.foc{1}, 'a*x^(a-1)*y^(1-a) + mult_x*px'),   sprintf('static FOC(x) wrong: %s', r2.foc{1}));
-assert(foc_equal(r2.foc{2}, '(1-a)*x^a*y^(-a) + mult_x*py'),    sprintf('static FOC(y) wrong: %s', r2.foc{2}));
+assert(foc_equal(r2.foc{1}, 'a*x^(a-1)*y^(1-a) + mult_1*px'),   sprintf('static FOC(x) wrong: %s', r2.foc{1}));
+assert(foc_equal(r2.foc{2}, '(1-a)*x^a*y^(-a) + mult_1*py'),    sprintf('static FOC(y) wrong: %s', r2.foc{2}));
+
+% Multiplier-name override: MultiplierNames replaces the positional default.
+r3 = m2.lagrangian_foc('U', {'x'}, {'x', 'y'}, 'MultiplierNames', {'lambda'});
+assert(isequal(r3.multipliers, {'lambda'}), 'MultiplierNames overrides the positional name');
+assert(foc_equal(r3.foc{1}, 'a*x^(a-1)*y^(1-a) + lambda*px'), sprintf('override FOC(x) wrong: %s', r3.foc{1}));
 
 fprintf('foc/t01.m: lagrangian_foc OK\n');
 

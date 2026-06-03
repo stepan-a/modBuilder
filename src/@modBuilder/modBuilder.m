@@ -1166,7 +1166,7 @@ classdef modBuilder < handle
             end
         end % function
 
-        function result = lagrangian_foc(o, value_eqname, constraint_eqnames, control_vars)
+        function result = lagrangian_foc(o, value_eqname, constraint_eqnames, control_vars, options)
         % Derive the first-order conditions of a recursive (Bellman) optimisation problem.
         %
         % INPUTS:
@@ -1176,16 +1176,25 @@ classdef modBuilder < handle
         %                               W = u + <continuation in W(+1)>). Its LHS variable is W.
         % - constraint_eqnames [cell]   equation names of the constraints (law of motion of the
         %                               states, other equilibrium conditions). Each gets a fresh
-        %                               Lagrange multiplier mult_<eqname>.
+        %                               Lagrange multiplier, named mult_1, mult_2, ... in
+        %                               constraint order (override with MultiplierPrefix/MultiplierNames).
         % - control_vars       [cell]   the controls/states to take FOCs with respect to.
+        %
+        % OPTIONS (name-value):
+        % - MultiplierPrefix   [char]   prefix for the auto-generated multiplier names; the i-th
+        %                               multiplier is named <prefix>_<i> (default 'mult').
+        % - MultiplierNames    [cell]   explicit multiplier names, one per constraint, overriding
+        %                               the positional default (default {}).
         %
         % OUTPUTS:
         % - result   [struct]   with fields:
-        %                         .multipliers [cell] the multiplier names introduced (one per
-        %                                             constraint);
-        %                         .controls    [cell] = control_vars;
-        %                         .foc         [cell] the FOC equation strings ("<expr> = 0"),
-        %                                             parallel to .controls.
+        %                         .multipliers  [cell] the multiplier names introduced (one per
+        %                                              constraint), positional unless overridden;
+        %                         .controls     [cell] = control_vars;
+        %                         .foc          [cell] the FOC equation strings ("<expr> = 0"),
+        %                                              parallel to .controls;
+        %                         .constraints  [cell] = constraint_eqnames (echoed for augment);
+        %                         .value_eqname [char] = value_eqname (echoed for augment).
         %
         % REMARKS:
         % - The value function is eliminated by the envelope theorem: the density is
@@ -1201,9 +1210,14 @@ classdef modBuilder < handle
         %   add them to the model.
             arguments
                 o
-                value_eqname       (1,:) char {mustBeNonempty}
-                constraint_eqnames cell
-                control_vars       cell
+                value_eqname              (1,:) char {mustBeNonempty}
+                constraint_eqnames        cell
+                control_vars              cell
+                options.MultiplierPrefix  (1,:) char = 'mult'
+                options.MultiplierNames   cell = {}
+            end
+            if ~isempty(options.MultiplierNames) && numel(options.MultiplierNames) ~= numel(constraint_eqnames)
+                error('modBuilder:lagrangian_foc:multiplierCount', 'MultiplierNames must have one name per constraint (%u given, %u expected).', numel(options.MultiplierNames), numel(constraint_eqnames));
             end
             paramnames = o.params(:, modBuilder.COL_NAME);
 
@@ -1231,7 +1245,11 @@ classdef modBuilder < handle
                     error('modBuilder:lagrangian_foc:unknownEquation', 'No equation named "%s".', constraint_eqnames{ci});
                 end
                 g = modBuilder.dynamic_residual(o, cidx);
-                mults{ci} = ['mult_' constraint_eqnames{ci}];
+                if isempty(options.MultiplierNames)
+                    mults{ci} = sprintf('%s_%u', options.MultiplierPrefix, ci);
+                else
+                    mults{ci} = options.MultiplierNames{ci};
+                end
                 ell = ast('binop', '+', {ell, ast('binop', '*', {ast('sym', mults{ci}, {}), g})});
             end
 
@@ -1254,9 +1272,11 @@ classdef modBuilder < handle
             result.multipliers = mults;
             result.controls = control_vars;
             result.foc = focs;
+            result.constraints = reshape(constraint_eqnames, 1, []);
+            result.value_eqname = value_eqname;
         end % function
 
-        function result = ramsey_foc(o, value_eqname, instrument_vars)
+        function result = ramsey_foc(o, value_eqname, instrument_vars, options)
         % Derive the Ramsey (optimal-policy) first-order conditions: a specialisation of
         % lagrangian_foc where every model equation other than the value equation is a
         % constraint, and the planner optimises over all endogenous variables plus the policy
@@ -1270,8 +1290,12 @@ classdef modBuilder < handle
         %                            under Ramsey the planner sets policy optimally; the
         %                            instruments are still controls.
         %
+        % OPTIONS (name-value):
+        % - MultiplierPrefix / MultiplierNames: forwarded to lagrangian_foc (see there).
+        %
         % OUTPUTS:
-        % - result   [struct]   as lagrangian_foc: .multipliers, .controls, .foc.
+        % - result   [struct]   as lagrangian_foc: .multipliers, .controls, .foc, .constraints,
+        %                       .value_eqname.
         %
         % REMARKS:
         % - Constraints = all equations except the value equation and any instrument's rule.
@@ -1280,15 +1304,126 @@ classdef modBuilder < handle
         %   multiplier (often to zero), reproducing the textbook result.
             arguments
                 o
-                value_eqname    (1,:) char {mustBeNonempty}
-                instrument_vars cell
+                value_eqname              (1,:) char {mustBeNonempty}
+                instrument_vars           cell
+                options.MultiplierPrefix  (1,:) char = 'mult'
+                options.MultiplierNames   cell = {}
             end
             alleq = o.equations(:, modBuilder.EQ_COL_NAME);
             excluded = [{value_eqname}, reshape(instrument_vars, 1, [])];
             constraint_eqnames = reshape(alleq(~ismember(alleq, excluded)), 1, []);
             controls = unique([reshape(o.var(:, modBuilder.COL_NAME), 1, []), reshape(instrument_vars, 1, [])], 'stable');
             controls = controls(~strcmp(controls, value_eqname));
-            result = o.lagrangian_foc(value_eqname, constraint_eqnames, controls);
+            result = o.lagrangian_foc(value_eqname, constraint_eqnames, controls, 'MultiplierPrefix', options.MultiplierPrefix, 'MultiplierNames', options.MultiplierNames);
+        end % function
+
+        function o = augment(o, result, options)
+        % Augment the model in place with the first-order conditions returned by lagrangian_foc
+        % or ramsey_foc: add the Lagrange multipliers as endogenous variables and the FOCs as
+        % equations, so the model becomes the (square) optimal-policy / planner problem ready for
+        % write() and the LaTeX reporting methods.
+        %
+        % INPUTS:
+        % - o        [modBuilder]
+        % - result   [struct]   the struct returned by lagrangian_foc / ramsey_foc, with fields
+        %                       .multipliers, .controls, .foc, .constraints, .value_eqname.
+        %
+        % OPTIONS (name-value):
+        % - MultiplierTexnames [cell]  one LaTeX name per multiplier (default {}: the i-th
+        %                              multiplier gets '\mu_{i}').
+        %
+        % REMARKS:
+        % - The value equation and the constraints are kept; an instrument's own rule (an equation
+        %   keyed to a control that is not a constraint and not the value equation) is removed, since
+        %   under the optimum the planner sets it via the FOCs.
+        % - Each control that is currently exogenous (a policy instrument) or untyped is promoted to
+        %   endogenous when its FOC is added; the multipliers are added as fresh endogenous variables.
+        % - Equation keying: because a FOC need not contain the variable it is keyed to (e.g. an
+        %   instrument that appears in no FOC), the FOCs are matched to the "needy" variables (the
+        %   multipliers plus the controls that have no equation) preferring a variable that appears
+        %   in the FOC, then arbitrarily. The key is only an internal label; it has no bearing on the
+        %   .mod output, where equations and variable declarations are listed separately.
+        % - Errors if a multiplier name already exists (pass MultiplierPrefix/MultiplierNames to
+        %   lagrangian_foc/ramsey_foc to avoid the clash) or if the FOC count does not match the
+        %   number of variables to determine (an ill-posed optimisation problem).
+            arguments
+                o
+                result struct
+                options.MultiplierTexnames cell = {}
+            end
+            mults = result.multipliers;
+            controls = result.controls;
+            focs = result.foc;
+            constraints = result.constraints;
+            value_eqname = result.value_eqname;
+            if ~isempty(options.MultiplierTexnames) && numel(options.MultiplierTexnames) ~= numel(mults)
+                error('modBuilder:augment:texnameCount', 'MultiplierTexnames must have one name per multiplier (%u given, %u expected).', numel(options.MultiplierTexnames), numel(mults));
+            end
+
+            % A multiplier name must be free: it is about to become a new endogenous variable.
+            for i = 1:numel(mults)
+                [found, type, ~] = o.lookup_symbol(mults{i});
+                if found
+                    error('modBuilder:augment:multiplierExists', 'Multiplier name "%s" is already a %s. Pass MultiplierPrefix= or MultiplierNames= to lagrangian_foc/ramsey_foc to choose free names.', mults{i}, type);
+                end
+            end
+
+            % Drop instrument rules: an equation keyed to a control that is neither a constraint nor
+            % the value equation. remove() demotes the variable to exogenous when it still appears
+            % elsewhere, so the FOC add below re-promotes it to endogenous.
+            eqnames = o.equations(:, modBuilder.EQ_COL_NAME);
+            keep = [reshape(constraints, 1, []), {value_eqname}];
+            drop = eqnames(ismember(eqnames, controls) & ~ismember(eqnames, keep));
+            for i = 1:numel(drop)
+                o = o.remove(drop{i});
+            end
+
+            % Needy variables (those that must receive a FOC equation): the multipliers plus the
+            % controls that currently have no equation of their own.
+            eqnames = o.equations(:, modBuilder.EQ_COL_NAME);
+            controls_wo_eq = controls(~ismember(controls, reshape(eqnames, 1, [])));
+            needy = [reshape(mults, 1, []), reshape(controls_wo_eq, 1, [])];
+            if numel(needy) ~= numel(focs)
+                error('modBuilder:augment:notWellPosed', 'Cannot augment: %u first-order conditions but %u variables to determine (%u multipliers + %u controls without an equation). The optimisation problem is not square.', numel(focs), numel(needy), numel(mults), numel(controls_wo_eq));
+            end
+
+            % Match each FOC to a needy variable, preferring a variable that appears in the FOC so the
+            % key is meaningful where possible, then assigning the remainder arbitrarily.
+            focsyms = cellfun(@(e) modBuilder.getsymbols(e), focs, 'UniformOutput', false);
+            assigned = false(1, numel(focs));
+            pair = zeros(1, numel(needy));
+            for j = 1:numel(needy)
+                for f = 1:numel(focs)
+                    if ~assigned(f) && ismember(needy{j}, focsyms{f})
+                        pair(j) = f;
+                        assigned(f) = true;
+                        break
+                    end
+                end
+            end
+            leftovers = find(~assigned);
+            unfilled = find(pair == 0);
+            for t = 1:numel(unfilled)
+                pair(unfilled(t)) = leftovers(t);
+            end
+            for j = 1:numel(needy)
+                o = o.addeq(needy{j}, focs{pair(j)}, false);
+            end
+
+            % Attach LaTeX names to the multipliers (\mu_{i} by default), warning on a clash with an
+            % already-declared texname (ambiguous rendering, harmless to the model).
+            existing_tex = struct2cell(o.texname_map());
+            for i = 1:numel(mults)
+                if isempty(options.MultiplierTexnames)
+                    tn = sprintf('\\mu_{%u}', i);
+                else
+                    tn = options.MultiplierTexnames{i};
+                end
+                if ismember(tn, existing_tex)
+                    warning('modBuilder:augment:texnameClash', 'Multiplier texname "%s" is already used by another symbol; the two will render identically.', tn);
+                end
+                o = o.endogenous(mults{i}, [], 'texname', tn);
+            end
         end % function
 
         function matches = collect_matches(o, eqnames, pattern)
@@ -2640,13 +2775,16 @@ classdef modBuilder < handle
             end
         end % function
 
-        function o = addeq(o, varname, equation)
+        function o = addeq(o, varname, equation, require_in_equation)
         % Add an equation to the model and associate an endogenous variable (internal method)
         %
         % INPUTS:
-        % - o           [modBuilder]
-        % - varname     [char]         1×n, name of an endogenous variable
-        % - equation    [char]         1×m, equation expression
+        % - o                   [modBuilder]
+        % - varname             [char]      1×n, name of an endogenous variable
+        % - equation            [char]      1×m, equation expression
+        % - require_in_equation [logical]   scalar, require varname to appear in equation
+        %                                   (default true; augment passes false to key a FOC to a
+        %                                   variable — e.g. an instrument — that need not appear in it)
         %
         % OUTPUTS:
         % - o           [modBuilder]   updated object (with new equation)
@@ -2660,8 +2798,9 @@ classdef modBuilder < handle
         % - Validates equation syntax (parentheses balance, no ==, no ./, etc.)
             arguments
                 o
-                varname  (1,:) char {mustBeNonempty}
-                equation (1,:) char {mustBeNonempty}
+                varname             (1,:) char {mustBeNonempty}
+                equation            (1,:) char {mustBeNonempty}
+                require_in_equation (1,1) logical = true
             end
 
             % Validate equation syntax
@@ -2676,7 +2815,7 @@ classdef modBuilder < handle
 
             % Validate that the endogenous variable appears in the equation
             symbols_in_eq = modBuilder.getsymbols(equation);
-            if ~ismember(varname, symbols_in_eq)
+            if require_in_equation && ~ismember(varname, symbols_in_eq)
                 error('modBuilder:addeq:notInEquation', 'Endogenous variable "%s" does not appear in its equation:\n\n\t%s\n', varname, equation)
             end
 

@@ -12,18 +12,20 @@ m.exogenous('i', 0);                                       % instrument
 
 r = m.ramsey_foc('W', {'i'});
 
-% Constraints = NKPC and IS -> one multiplier each; controls = endogenous + instrument - W.
-assert(isequal(r.multipliers, {'mult_pi', 'mult_y'}), 'a multiplier per constraint');
-assert(isequal(r.controls, {'pi', 'y', 'i'}),          'controls = pi, y, i');
+% Constraints = NKPC and IS -> one multiplier each (positional names); controls = endogenous + instrument - W.
+assert(isequal(r.multipliers, {'mult_1', 'mult_2'}), 'a multiplier per constraint');
+assert(isequal(r.controls, {'pi', 'y', 'i'}),         'controls = pi, y, i');
+assert(isequal(r.constraints, {'pi', 'y'}),           'constraints echoed for augment');
+assert(strcmp(r.value_eqname, 'W'),                   'value equation echoed for augment');
 
-% FOC(pi): -pi + mult_pi - mult_pi(-1) - (sigma/beta)*mult_y(-1) = 0
-assert(foc_equal(r.foc{1}, '-pi + mult_pi - mult_pi(-1) - sigma/beta*mult_y(-1)'), ...
+% FOC(pi): -pi + mult_1 - mult_1(-1) - (sigma/beta)*mult_2(-1) = 0
+assert(foc_equal(r.foc{1}, '-pi + mult_1 - mult_1(-1) - sigma/beta*mult_2(-1)'), ...
        sprintf('FOC(pi) wrong: %s', r.foc{1}));
-% FOC(y): mult_y - kappa*mult_pi - lambda*y - mult_y(-1)/beta = 0
-assert(foc_equal(r.foc{2}, 'mult_y - kappa*mult_pi - lambda*y - mult_y(-1)/beta'), ...
+% FOC(y): mult_2 - kappa*mult_1 - lambda*y - mult_2(-1)/beta = 0
+assert(foc_equal(r.foc{2}, 'mult_2 - kappa*mult_1 - lambda*y - mult_2(-1)/beta'), ...
        sprintf('FOC(y) wrong: %s', r.foc{2}));
-% FOC(i): the instrument appears only in the IS curve, so its FOC pins mult_y to zero.
-assert(foc_equal(r.foc{3}, 'sigma*mult_y'), sprintf('FOC(i) wrong: %s', r.foc{3}));
+% FOC(i): the instrument appears only in the IS curve, so its FOC pins mult_2 to zero.
+assert(foc_equal(r.foc{3}, 'sigma*mult_2'), sprintf('FOC(i) wrong: %s', r.foc{3}));
 
 fprintf('foc/t02.m: ramsey_foc OK\n');
 
