@@ -28,8 +28,9 @@ Each equation in a modBuilder model is explicitly associated with one endogenous
 - **Regex Support**: Search for symbols using regular expressions
 - **Model Operations**: Copy, merge, extract submodels, and more
 - **Symbolic Differentiation**: Analytical partial derivatives and Jacobians via an AST engine (`partial`, `symbolic_jacobian`)
+- **Optimal-Policy FOCs**: Derive the first-order conditions of a recursive optimisation and grow the model into the (square) planner problem (`lagrangian_foc`, `ramsey_foc`, `augment`)
 - **Dynare Export**: Generate syntactically valid `.mod` files ready for simulation
-- **LaTeX Export**: Render the model as paper-ready LaTeX (`tex_model`)
+- **LaTeX Export**: Render the model, its steady-state system, and its log-linearisation as paper-ready LaTeX (`tex_model`, `tex_steady_state_system`, `tex_linearise`)
 
 ## Quick Start
 
@@ -765,6 +766,68 @@ J = m.symbolic_jacobian({'y', 'c'}, {'y', 'k', 'c'});   % static Jacobian
 isempty(J{2, 2})    % structural zero?
 ```
 
+### Optimal-Policy First-Order Conditions
+
+Derive the first-order conditions Dynare does not derive on its own. The problem is written over **two periods** (a Bellman/recursive formulation), not as an infinite-sum Lagrangian.
+
+#### `lagrangian_foc(value_eqname, constraint_eqnames, control_vars[, MultiplierPrefix, MultiplierNames])`
+
+Derive the FOCs of a recursive optimisation. `value_eqname` is the recursive value equation (`W = u + beta*W(+1)`), `constraint_eqnames` the constraints (each gets a fresh Lagrange multiplier), and `control_vars` the variables to take FOCs with respect to. Returns a struct with fields `.multipliers`, `.controls`, `.foc` (the FOC strings `"<expr> = 0"`), `.constraints` and `.value_eqname`. Multipliers are named `mult_1, mult_2, …` by default; override with the `MultiplierPrefix` (default `'mult'`) or `MultiplierNames` name-values.
+
+Unlike `ramsey_foc` (which treats *every* model equation as a constraint), `lagrangian_foc` lets you name exactly the constraints and controls, so `augment` adds a **targeted, smaller** set of equations — useful for a sub-problem such as a single household's optimisation or a bargaining condition. For the optimal-growth model, naming the resource constraint and the controls `c`, `k` adds one multiplier and the two FOCs (marginal utility `1/c = mult_1` and the consumption Euler):
+
+```matlab
+m.add('W', 'W = log(c) + beta*W(+1)');                     % objective
+m.add('k', 'A*k(-1)^alpha + (1-delta)*k(-1) = c + k');     % resource constraint
+% ... parameters beta, A, alpha, delta ...
+r = m.lagrangian_foc('W', {'k'}, {'c', 'k'});   % constraints and controls chosen explicitly
+% r is a struct describing the derivation (the FOCs are canonical "<expr> = 0" strings):
+%   r.multipliers  = {'mult_1'}                  one multiplier (one constraint)
+%   r.controls     = {'c', 'k'}
+%   r.foc          = { '-mult_1 + c ^ -1 = 0', ...                         % 1/c = mult_1
+%                      '-mult_1 + beta * mult_1(1) * (1 - delta + A * alpha * k ^ (-1 + alpha)) = 0' }  % Euler
+%   r.constraints  = {'k'}
+%   r.value_eqname = 'W'
+m.augment(r);                                   % adds mult_1 and the two FOC equations
+```
+
+The multiplier is mechanical: its own equation defines `mult_1 = 1/c`, so it can be substituted out with the lag-aware `subs` method — which rewrites `mult_1(+1)` as `1/c(+1)` — to recover the textbook consumption Euler, then dropped:
+
+```matlab
+m.subs('mult_1', '1/c');   % the c equation becomes 1/c = beta*(1/c(+1))*(1 - delta + A*alpha*k^(alpha-1))
+m.remove('mult_1');        % drop the now-trivial defining equation and the unused multiplier
+% the model is now the square system in (W, k, c) — the standard optimal-growth form
+```
+
+#### `ramsey_foc(value_eqname, instrument_vars[, MultiplierPrefix, MultiplierNames])`
+
+Ramsey (optimal-policy) specialisation of `lagrangian_foc`: every equation other than the value equation and the instruments' own rules is a constraint, and the planner optimises over the endogenous variables and the policy instruments. Same return struct.
+
+#### `augment(result[, MultiplierTexnames])`
+
+Grow the model **in place** into the square optimal-policy problem from a `lagrangian_foc` / `ramsey_foc` result: add the multipliers as endogenous variables (with a `\mu_{i}` texname) and the FOCs as equations, dropping an instrument's own rule and promoting the instrument so the planner sets it. Errors if a multiplier name is already taken (`modBuilder:augment:multiplierExists` — pass `MultiplierPrefix`/`MultiplierNames` to the FOC builder) or if the FOC count does not match the number of variables to determine.
+
+**Example:**
+
+```matlab
+m.add('pi', 'pi = beta*pi(+1) + kappa*y');                 % NKPC
+m.add('y',  'y = y(+1) - sigma*(i - pi(+1))');             % IS
+m.add('W',  'W = -(pi^2 + lambda*y^2)/2 + beta*W(+1)');    % welfare
+% ... parameters ...; m.exogenous('i', 0);                 % instrument
+r = m.ramsey_foc('W', {'i'});   % derive the FOCs + multipliers
+% r has the same fields; here every equation but the value equation is a constraint:
+%   r.multipliers  = {'mult_1', 'mult_2'}        one per constraint (NKPC, IS)
+%   r.controls     = {'pi', 'y', 'i'}            endogenous + instrument - W
+%   r.foc          = { 'mult_1 - pi + (-(beta * mult_1(-1)) - mult_2(-1) * sigma) / beta = 0', ...
+%                      'mult_2 - kappa * mult_1 - lambda * y - mult_2(-1) / beta = 0', ...
+%                      'mult_2 * sigma = 0' }     % FOC(i): the instrument pins mult_2 = 0
+%   r.constraints  = {'pi', 'y'}
+%   r.value_eqname = 'W'
+m.augment(r);                   % grow the model into the planner problem
+```
+
+To keep the nonlinear model untouched (e.g. let Dynare handle the optimisation natively) while still reporting the derivation, augment a copy: `m.copy().ramsey_foc(...)` then `augment` + `tex_model`.
+
 ### LaTeX Export
 
 #### `tex_model([filename])`
@@ -776,6 +839,28 @@ Render the model equations as a LaTeX `align` block — one aligned `LHS &= RHS`
 ```matlab
 tex = m.tex_model();              % return the LaTeX string
 m.tex_model('paper/model.tex');   % write it to a file
+```
+
+#### `tex_steady_state_system([filename])`
+
+Render the steady-state system as a LaTeX `align` block: each equation's static residual (LHS − RHS, all leads/lags collapsed) is simplified and set to zero, exposing the cancellations (e.g. `c(-1)/c → 1`). Rows are **left-aligned** (the align column sits at the left of each equation, not on the equals sign). Endogenous variables carry the steady-state superscript (`k → k^{\star}`); exogenous variables and parameters stay bare.
+
+```matlab
+tex = m.tex_steady_state_system();
+m.tex_steady_state_system('paper/steady.tex');
+```
+
+#### `tex_linearise([varlist, LevelVars, Evaluate, filename])`
+
+Render the log-linearised model as a LaTeX `align` block, each equation normalized on its keyed variable so a row reads `x_hat = ` a sum of elasticities (e.g. `y_hat = (c*/y*) c_hat + (i*/y*) i_hat`). `varlist` is the time-varying variables to linearise (default: all endogenous; the others are held at the steady state). Options:
+
+- `LevelVars` — variables that enter as a **level** deviation `(x_t - x^{\star})` rather than a log deviation `\hat{x}_t`. Use for variables with a zero or negative steady state (rates, Lagrange multipliers). The choice is per **variable**, so the resulting linear system stays consistent. Default `{}` (all log).
+- `Evaluate` — `false` (default) keeps the coefficients symbolic as steady-state expressions (`k^{\star}` etc.); `true` substitutes the numeric steady state (which must already be solved/set).
+
+```matlab
+tex = m.tex_linearise();                                   % all endogenous, symbolic
+tex = m.tex_linearise({'y','c','k'}, 'Evaluate', true);    % subset, numeric coefficients
+tex = m.tex_linearise({'y','pi','i'}, 'LevelVars', {'pi','i'});
 ```
 
 ### Indexing and Access

@@ -239,6 +239,22 @@ symbol node with an arbitrary subtree (and lag-shifts the replacement);
 wants to relabel a variable everywhere it appears. Used by
 `modBuilder.rename`.
 
+#### `t.at_steady_state(names)`
+
+Return a new tree with every variable leaf whose name is in `names`
+turned into a steady-state node. Both `sym(name)` (current period) and
+`tsym(name, k)` (any lead/lag) collapse to `ss(name)`, since all periods
+share the same steady-state value; `ss` nodes are already steady state
+and names not listed (e.g. parameters) are untouched.
+
+This is what the LaTeX reporting methods use to mark steady-state
+coefficients: rendering the result with `to_latex` then gives the
+`name^{\star}` form, and — because the marks are real `ss` nodes — a
+power of one (`1/k^{\star}`) is rendered with invisible delimiters
+(`\left. k^{\star} \right.^{-1}`) instead of an invalid double
+superscript. Used by `modBuilder.tex_linearise` and
+`modBuilder.tex_steady_state_system`.
+
 #### `t.shift_lag(k[, parameter_names])`
 
 Return a new tree with every time-varying variable's lag shifted by
