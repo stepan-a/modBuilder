@@ -536,6 +536,37 @@ classdef ast
             end
         end % function
 
+        function o = at_steady_state(o, names)
+        % Replace every variable leaf whose name is in `names` with its steady-state node, so the
+        % tree renders with the ^{\star} superscript (and powers of it via to_latex's invisible
+        % delimiters). Both 'sym' (current period) and 'tsym' (any lead/lag) collapse to the same
+        % steady-state value; 'ss' nodes are already steady state; names not listed (parameters)
+        % are untouched. Used by the LaTeX reporting methods to mark steady-state coefficients.
+        %
+        % INPUTS:
+        % - o      [ast]
+        % - names  [cell]   variable names to mark as steady state
+        %
+        % OUTPUTS:
+        % - o      [ast]    new tree with the matching leaves turned into 'ss' nodes
+            switch o.type
+                case 'sym'
+                    if ismember(o.value, names)
+                        o = ast('ss', o.value, {});
+                    end
+                case 'tsym'
+                    if ismember(o.value{1}, names)
+                        o = ast('ss', o.value{1}, {});
+                    end
+                case {'num', 'ss'}
+                    % leaf: nothing to convert
+                otherwise
+                    for i = 1:numel(o.children)
+                        o.children{i} = o.children{i}.at_steady_state(names);
+                    end
+            end
+        end % function
+
         function v = eval(o, values)
         % Evaluate the tree numerically given a struct mapping symbol names to scalar values.
         %

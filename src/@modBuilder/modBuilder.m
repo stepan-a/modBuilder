@@ -4003,20 +4003,10 @@ classdef modBuilder < handle
                 o
                 filename (1,:) char = ''
             end
-            % Star the endogenous variables in the texname map: a steady-state value is k^{\star},
-            % built on the declared texname when there is one and on the (underscore-escaped)
-            % literal otherwise. Exogenous variables and parameters are left untouched.
+            % Endogenous variables become steady-state nodes (rendered k^{\star}, with powers handled
+            % via to_latex's invisible delimiters); exogenous variables and parameters stay bare.
             map = o.texname_map();
-            endo = o.var(:, modBuilder.COL_NAME);
-            for i = 1:numel(endo)
-                v = endo{i};
-                if isfield(map, v)
-                    base = map.(v);
-                else
-                    base = strrep(v, '_', '\_');
-                end
-                map.(v) = [base '^{\star}'];
-            end
+            endo = reshape(o.var(:, modBuilder.COL_NAME), 1, []);
             neq = size(o.equations, 1);
             rows = cell(neq, 1);
             for i = 1:neq
@@ -4024,7 +4014,7 @@ classdef modBuilder < handle
                 if isempty(r)
                     error('modBuilder:tex_steady_state_system:unparsableEquation', 'Equation "%s" cannot be parsed.', o.equations{i, modBuilder.EQ_COL_NAME});
                 end
-                rows{i} = ['  &' r.simplify().to_latex(map) ' = 0'];
+                rows{i} = ['  &' r.simplify().at_steady_state(endo).to_latex(map) ' = 0'];
             end
             % Assemble the align body. The row break "\\" is appended by plain concatenation, NOT
             % through strjoin, whose delimiter is escape-translated (it would collapse "\\" to "\").
@@ -4048,6 +4038,239 @@ classdef modBuilder < handle
             end
             if nargout > 0
                 out = body;
+            end
+        end % function
+
+        function out = tex_linearise(o, varlist, options)
+        % Render the log-linearised model as a LaTeX align environment, each equation normalized
+        % on its keyed endogenous variable.
+        %
+        % INPUTS:
+        % - o         [modBuilder]
+        % - varlist   [cell]   (optional) the time-varying variables to linearise (and whose
+        %                      equations to render). Defaults to every endogenous variable. A
+        %                      variable not in varlist (any parameter, and exogenous/excluded
+        %                      variables) is held at its steady state and drops out.
+        %
+        % OPTIONS (name-value):
+        % - LevelVars  [cell]    variables to enter as a level deviation (x_t - x^{\star}) rather
+        %                        than a log deviation \hat{x}_t. Use for variables with a zero or
+        %                        negative steady state (rates, multipliers). Default {} (all log).
+        % - Evaluate   [logical] false (default) keeps the coefficients symbolic, as steady-state
+        %                        expressions (k^{\star} etc.); true substitutes the numeric steady
+        %                        state (which must already be solved/set). Default false.
+        % - filename   [char]    path to write the LaTeX to; if omitted nothing is written.
+        %
+        % OUTPUTS:
+        % - out       [char]   the LaTeX string (assigned only when an output is requested).
+        %
+        % REMARKS:
+        % - For each equation residual f, the coefficient on a variable v entering at lag k is the
+        %   period-specific partial df/dv(k) evaluated at the steady state, times v^{\star} when v
+        %   is a log variable (since dv = v^{\star} \hat{v}). The equation is then divided by the
+        %   keyed variable's own (lag-0) coefficient and that variable isolated on the left, so the
+        %   row reads x_hat = sum of elasticities (e.g. y_hat = (c*/y*) c_hat + (i*/y*) i_hat).
+        % - Rows are aligned on the equals sign. Log deviations render as \hat{x}_t / \hat{x}_{t-1};
+        %   level deviations as (x_t - x^{\star}); coefficients carry the ^{\star} steady-state mark
+        %   (Evaluate=false) or a number (Evaluate=true).
+        %
+        % EXAMPLES:
+        % tex = m.tex_linearise();                                  % all endogenous, symbolic
+        % tex = m.tex_linearise({'y','c','k'}, 'Evaluate', true);   % subset, numeric coefficients
+        % tex = m.tex_linearise({'y','pi','i'}, 'LevelVars', {'pi','i'});
+            arguments
+                o
+                varlist                cell = {}
+                options.LevelVars      cell = {}
+                options.Evaluate (1,1) logical = false
+                options.filename (1,:) char = ''
+            end
+            if isempty(varlist)
+                varlist = reshape(o.var(:, modBuilder.COL_NAME), 1, []);
+            end
+            map = o.texname_map();
+            % Variables (endogenous and exogenous) become steady-state values in a coefficient;
+            % parameters stay bare.
+            allvars = reshape([o.var(:, modBuilder.COL_NAME); o.varexo(:, modBuilder.COL_NAME)], 1, []);
+            if options.Evaluate
+                vals = o.steady_values_struct();
+            else
+                vals = struct();
+            end
+
+            neq = numel(varlist);
+            rows = cell(neq, 1);
+            for vi = 1:neq
+                key = varlist{vi};
+                eq_idx = find(strcmp(key, o.equations(:, modBuilder.EQ_COL_NAME)), 1);
+                if isempty(eq_idx)
+                    error('modBuilder:tex_linearise:notAnEquation', 'Variable "%s" has no equation to linearise.', key);
+                end
+                f = modBuilder.dynamic_residual(o, eq_idx);
+                if isempty(f)
+                    error('modBuilder:tex_linearise:unparsableEquation', 'Equation "%s" cannot be parsed.', key);
+                end
+                if ~ismember(0, f.lags_of(key))
+                    error('modBuilder:tex_linearise:cannotNormalise', 'Cannot normalise equation "%s" on "%s": the variable does not appear contemporaneously.', key, key);
+                end
+                den = coef_ast(key, 0, ismember(key, options.LevelVars));
+
+                terms = {};
+                for wi = 1:numel(varlist)
+                    v = varlist{wi};
+                    ks = f.lags_of(v);
+                    for kk = 1:numel(ks)
+                        k = ks(kk);
+                        if strcmp(v, key) && k == 0
+                            continue
+                        end
+                        % Coefficient is -(partial/den). Build the negation as 0 - ratio (not a
+                        % uminus), which simplify distributes cleanly: -(-1 + delta) collapses to the
+                        % readable 1 - delta rather than staying wrapped in a unary minus.
+                        ratio = ast('binop', '/', {coef_ast(v, k, ismember(v, options.LevelVars)), den}).simplify();
+                        c = ast('binop', '-', {ast('num', 0, {}), ratio}).simplify();
+                        [sgn, coefpart, skip] = render_coef(c);
+                        if skip
+                            continue
+                        end
+                        terms{end+1} = struct('sgn', sgn, 'core', [coefpart linearise_dev(v, k, ismember(v, options.LevelVars))]); %#ok<AGROW>
+                    end
+                end
+                lhs = linearise_dev(key, 0, ismember(key, options.LevelVars));
+                rows{vi} = ['  ' lhs ' &= ' assemble_sum(terms)];
+            end
+
+            % Assemble the align body. The row break "\\" is appended by plain concatenation, NOT
+            % through strjoin, whose delimiter is escape-translated (it would collapse "\\" to "\").
+            nl = newline;
+            body = ['\begin{align}' nl];
+            for i = 1:neq
+                body = [body rows{i}]; %#ok<AGROW>
+                if i < neq
+                    body = [body ' \\']; %#ok<AGROW>
+                end
+                body = [body nl]; %#ok<AGROW>
+            end
+            body = [body '\end{align}' nl];
+            if ~isempty(options.filename)
+                fid = fopen(options.filename, 'w');
+                if fid == -1
+                    error('modBuilder:tex_linearise:cannotOpen', 'Cannot open file "%s" for writing.', options.filename);
+                end
+                c = onCleanup(@() fclose(fid)); %#ok<NASGU>
+                fprintf(fid, '%s', body);
+            end
+            if nargout > 0
+                out = body;
+            end
+
+            % --- nested helpers (share f / map / starmap / vals / options) ---
+            function g = coef_ast(v, k, islevel)
+                % Steady-state coefficient on v at lag k: df/dv(k) at the SS, times v^{\star} for a
+                % log variable. Built symbolically (staticised); evaluated numerically downstream
+                % when Evaluate is true.
+                g = f.diff_ast(v, k);
+                if ~islevel
+                    g = ast('binop', '*', {g, ast('sym', v, {})});
+                end
+                g = g.staticise();
+            end
+
+            function [sgn, coefpart, skip] = render_coef(c)
+                % Split the (already negated) coefficient AST into a leading sign and the
+                % (parenthesised when additive) coefficient string, dropping a unit coefficient and
+                % a numerically zero term. Numeric when Evaluate.
+                skip = false;
+                if options.Evaluate
+                    x = c.eval(vals);
+                    if ~isfinite(x)
+                        error('modBuilder:tex_linearise:steadyStateRequired', 'Evaluate=true needs a finite steady state; a coefficient evaluated to a non-finite value. Solve or set the steady state first.');
+                    end
+                    if abs(x) < 1e-12
+                        skip = true; sgn = '+'; coefpart = ''; return
+                    end
+                    if x < 0, sgn = '-'; else, sgn = '+'; end
+                    a = abs(x);
+                    if abs(a - 1) < 1e-12
+                        coefpart = '';
+                    else
+                        coefpart = [ast('num', a, {}).to_latex() '\,'];
+                    end
+                    return
+                end
+                if strcmp(c.type, 'num') && c.value == 0
+                    skip = true; sgn = '+'; coefpart = ''; return
+                end
+                if strcmp(c.type, 'uminus')
+                    sgn = '-'; body = c.children{1};
+                elseif strcmp(c.type, 'num') && c.value < 0
+                    sgn = '-'; body = ast('num', -c.value, {});
+                else
+                    sgn = '+'; body = c;
+                end
+                bstr = body.at_steady_state(allvars).to_latex(map);
+                if strcmp(bstr, '1')
+                    coefpart = '';
+                else
+                    if strcmp(body.type, 'binop') && (strcmp(body.value, '+') || strcmp(body.value, '-'))
+                        bstr = ['\left(' bstr '\right)'];
+                    end
+                    coefpart = [bstr '\,'];
+                end
+            end
+
+            function d = linearise_dev(v, k, islevel)
+                % LaTeX for the deviation of v at lag k: a level deviation (v_t - v^{\star}) or a log
+                % deviation \hat{v}_t / \hat{v}_{t+k}.
+                if islevel
+                    if k == 0
+                        tp = ast('sym', v, {}).to_latex(map, {v});
+                    else
+                        tp = ast('tsym', {v, k}, {}).to_latex(map, {v});
+                    end
+                    d = ['\left(' tp ' - ' ast('ss', v, {}).to_latex(map) '\right)'];
+                else
+                    base = ast('sym', v, {}).to_latex(map);
+                    if k == 0
+                        d = ['\hat{' base '}_t'];
+                    else
+                        d = ['\hat{' base '}_{t' sprintf('%+d', k) '}'];
+                    end
+                end
+            end
+
+            function s = assemble_sum(terms)
+                if isempty(terms)
+                    s = '0';
+                    return
+                end
+                if strcmp(terms{1}.sgn, '-')
+                    s = ['-' terms{1}.core];
+                else
+                    s = terms{1}.core;
+                end
+                for i = 2:numel(terms)
+                    s = [s ' ' terms{i}.sgn ' ' terms{i}.core]; %#ok<AGROW>
+                end
+            end
+        end % function
+
+        function vals = steady_values_struct(o)
+        % Build a struct mapping every declared symbol to its current numeric value (calibration /
+        % steady state), for evaluating expressions at the steady state. Errors if a value is NaN,
+        % since a missing steady state would silently poison the evaluation.
+            vals = struct();
+            tables = {o.params, o.varexo, o.var};
+            for t = 1:numel(tables)
+                tbl = tables{t};
+                for i = 1:size(tbl, 1)
+                    name = tbl{i, modBuilder.COL_NAME};
+                    value = tbl{i, modBuilder.COL_VALUE};
+                    if isempty(value) || isnan(value)
+                        error('modBuilder:steady_values_struct:missingValue', 'Symbol "%s" has no value; solve or set the steady state before evaluating.', name);
+                    end
+                    vals.(name) = value;
+                end
             end
         end % function
 

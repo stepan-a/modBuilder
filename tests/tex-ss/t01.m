@@ -41,6 +41,17 @@ assert(~contains(tex, '\rho^{\star}'),        'parameter rho not starred');
 assert(~contains(tex, '\varepsilon^{\star}'), 'exogenous e not starred');
 assert(contains(tex, '\delta') && contains(tex, '\varepsilon'), 'parameter/exogenous texnames still rendered');
 
+% A power of an endogenous variable must star the base with invisible delimiters, never an
+% invalid double superscript (k^{\star}^{...}).
+mp = modBuilder();
+mp.add('y', 'y = k(-1)^alpha');
+mp.add('k', 'k = (1-delta)*k(-1) + y');
+mp.parameter('alpha', 0.33, 'texname', '\alpha');
+mp.parameter('delta', 0.025, 'texname', '\delta');
+texp = mp.tex_steady_state_system();
+assert(contains(texp, '\left. k^{\star} \right.^{\alpha}'), 'starred base under a power uses invisible delimiters');
+assert(~contains(texp, 'star}^{'), 'no double superscript on a starred base');
+
 % Writing to a file produces exactly the returned string.
 fname = [tempname '.tex'];
 m.tex_steady_state_system(fname);
