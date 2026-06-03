@@ -28,7 +28,7 @@ Each equation in a modBuilder model is explicitly associated with one endogenous
 - **Regex Support**: Search for symbols using regular expressions
 - **Model Operations**: Copy, merge, extract submodels, and more
 - **Symbolic Differentiation**: Analytical partial derivatives and Jacobians via an AST engine (`partial`, `symbolic_jacobian`)
-- **Optimal-Policy FOCs**: Derive the first-order conditions of a recursive optimisation and grow the model into the (square) planner problem (`lagrangian_foc`, `ramsey_foc`, `augment`)
+- **Optimal-Policy FOCs**: Derive the first-order conditions of a recursive optimisation and grow the model into the (square) planner problem (`lagrangian_foc`, `ramsey_foc`, `augment`); substitute auxiliary variables back out symbolically (`eliminate`)
 - **Dynare Export**: Generate syntactically valid `.mod` files ready for simulation
 - **LaTeX Export**: Render the model, its steady-state system, and its log-linearisation as paper-ready LaTeX (`tex_model`, `tex_steady_state_system`, `tex_linearise`)
 
@@ -379,6 +379,18 @@ m.substitute('[\w]+\*y', 'z', 'consumption_eq');
 
 % With implicit loops
 m.substitute('x_$1', 'y_$1 + z_$1', 'equation_$1', {1, 2, 3});
+```
+
+#### `eliminate(varname)`
+
+Eliminate an endogenous variable: solve its own equation for it (with the AST's symbolic `isolate`), substitute the result into every equation (lag-aware, so a lead/lag picks up the shifted expression), and remove the now-redundant defining equation and the variable, keeping the model square. Only an **endogenous** variable can be eliminated — a parameter, exogenous variable, or unknown symbol raises `modBuilder:eliminate:notEndogenous`; a variable that `isolate` cannot solve in closed form raises `modBuilder:eliminate:notClosedForm` (fall back to `subs` by hand). This packages the `isolate → subs → remove` composition; a common use is substituting an `augment` multiplier back out to recover a textbook condition.
+
+**Example:**
+
+```matlab
+r = m.lagrangian_foc('W', {'k'}, {'c', 'k'});
+m.augment(r);
+m.eliminate('mult_1');   % isolate mult_1 = 1/c, substitute throughout, drop the equation
 ```
 
 #### `tag(eqname, tagname, value)`
@@ -791,11 +803,10 @@ r = m.lagrangian_foc('W', {'k'}, {'c', 'k'});   % constraints and controls chose
 m.augment(r);                                   % adds mult_1 and the two FOC equations
 ```
 
-The multiplier is mechanical: its own equation defines `mult_1 = 1/c`, so it can be substituted out with the lag-aware `subs` method — which rewrites `mult_1(+1)` as `1/c(+1)` — to recover the textbook consumption Euler, then dropped:
+The multiplier is mechanical: its own equation defines `mult_1 = 1/c`, so it can be substituted out with [`eliminate`](#eliminatevarname) to recover the textbook consumption Euler:
 
 ```matlab
-m.subs('mult_1', '1/c');   % the c equation becomes 1/c = beta*(1/c(+1))*(1 - delta + A*alpha*k^(alpha-1))
-m.remove('mult_1');        % drop the now-trivial defining equation and the unused multiplier
+m.eliminate('mult_1');   % the c equation becomes 1/c = beta*(1/c(+1))*(1 - delta + A*alpha*k^(alpha-1))
 % the model is now the square system in (W, k, c) — the standard optimal-growth form
 ```
 
