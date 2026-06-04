@@ -30,7 +30,7 @@ Each equation in a modBuilder model is explicitly associated with one endogenous
 - **Symbolic Differentiation**: Analytical partial derivatives and Jacobians via an AST engine (`partial`, `symbolic_jacobian`)
 - **Optimal-Policy FOCs**: Derive the first-order conditions of a recursive optimisation and grow the model into the (square) planner problem (`lagrangian_foc`, `ramsey_foc`, `augment`); substitute auxiliary variables back out symbolically (`eliminate`)
 - **Dynare Export**: Generate syntactically valid `.mod` files ready for simulation
-- **LaTeX Export**: Render the model, its steady-state system, and its log-linearisation as paper-ready LaTeX (`tex_model`, `tex_steady_state_system`, `tex_linearise`)
+- **LaTeX Export**: Render the model, its steady-state system (flat or as a recursively-ordered block plan), and its log-linearisation as paper-ready LaTeX (`tex_model`, `tex_steady_state_system`, `tex_steady_state_plan`, `tex_linearise`)
 
 ## Quick Start
 
@@ -859,6 +859,15 @@ Render the steady-state system as a LaTeX `align` block: each equation's static 
 ```matlab
 tex = m.tex_steady_state_system();
 m.tex_steady_state_system('paper/steady.tex');
+```
+
+#### `tex_steady_state_plan([filename])`
+
+Like `tex_steady_state_system`, but the equations are ordered by `steady_plan`'s block decomposition (recursive/topological order) instead of declaration order, and each block renders according to whether it is solvable in closed form. A block solved analytically prints the **solutions** one per row (`<var>^{\star} = <expr>`); a block that needs a numerical solver prints the **residual system** (`<residual> = 0`). A model then reads as a recursive cascade: an analytic prologue solved from the parameters and exogenous variables, the simultaneous blocks a solver must close, then an analytic epilogue whose solutions are written in terms of the just-solved unknowns. The two forms are self-identifying (`= <expr>` vs `= 0`), so no block headers are emitted.
+
+```matlab
+tex = m.tex_steady_state_plan();
+m.tex_steady_state_plan('paper/steady_plan.tex');
 ```
 
 #### `tex_linearise([varlist, LevelVars, Evaluate, filename])`
