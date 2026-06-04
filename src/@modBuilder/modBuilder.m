@@ -2256,6 +2256,56 @@ classdef modBuilder < handle
             end
         end % function
 
+        function body = tex_align(blockrows, filename)
+        % Assemble pre-rendered rows into a LaTeX align environment, optionally writing it to a
+        % file, and return the string. Shared by the tex_* reporting methods.
+        %
+        % INPUTS:
+        % - blockrows  [cell]   cell array of blocks; each block is a cell array of row strings
+        %                       (already including the "&" alignment markers and indentation). A
+        %                       flat list of rows is a single block, e.g. tex_align({rows}).
+        % - filename   [char]   (optional) path to write the assembled string to.
+        %
+        % OUTPUTS:
+        % - body       [char]   the "\begin{align} ... \end{align}" string.
+        %
+        % REMARKS:
+        % - Rows within a block are separated by "\\"; consecutive blocks by "\\[\medskipamount]"
+        %   for a little vertical space. The row break is appended by plain concatenation, NOT
+        %   through strjoin, whose delimiter is escape-translated (it would collapse "\\" to "\").
+            arguments
+                blockrows cell
+                filename (1,:) char = ''
+            end
+            nl = newline;
+            body = ['\begin{align}' nl];
+            for bi = 1:numel(blockrows)
+                rows = blockrows{bi};
+                for ri = 1:numel(rows)
+                    body = [body rows{ri}]; %#ok<AGROW>
+                    last_in_block = ri == numel(rows);
+                    last_overall = bi == numel(blockrows) && last_in_block;
+                    if ~last_overall
+                        if last_in_block
+                            body = [body ' \\[\medskipamount]']; %#ok<AGROW>
+                        else
+                            body = [body ' \\']; %#ok<AGROW>
+                        end
+                    end
+                    body = [body nl]; %#ok<AGROW>
+                end
+            end
+            body = [body '\end{align}' nl];
+            if ~isempty(filename)
+                fid = fopen(filename, 'w');
+                if fid == -1
+                    error('modBuilder:tex_align:cannotOpen', 'Cannot open file "%s" for writing.', filename);
+                end
+                c = onCleanup(@() fclose(fid)); %#ok<NASGU>
+                fprintf(fid, '%s', body);
+            end
+        end % function
+
         function w = foc_weight(M, k, paramnames)
         % One-period weight applied to the lag-k term of a Lagrangian FOC: the relative
         % cumulative discount between the period where the control lives and the period whose
@@ -3947,27 +3997,7 @@ classdef modBuilder < handle
                     rows{i} = ['  ' lhs ' &= ' rhs];
                 end
             end
-            % Assemble the align body. The row break "\\" is appended by plain
-            % concatenation, NOT through strjoin, whose delimiter is escape-translated
-            % (it would collapse "\\" to a single "\").
-            nl = newline;
-            body = ['\begin{align}' nl];
-            for i = 1:neq
-                body = [body rows{i}]; %#ok<AGROW>
-                if i < neq
-                    body = [body ' \\']; %#ok<AGROW>
-                end
-                body = [body nl]; %#ok<AGROW>
-            end
-            body = [body '\end{align}' nl];
-            if ~isempty(filename)
-                fid = fopen(filename, 'w');
-                if fid == -1
-                    error('modBuilder:tex_model:cannotOpen', 'Cannot open file "%s" for writing.', filename);
-                end
-                c = onCleanup(@() fclose(fid)); %#ok<NASGU>
-                fprintf(fid, '%s', body);
-            end
+            body = modBuilder.tex_align({rows}, filename);
             if nargout > 0
                 out = body;
             end
@@ -4016,26 +4046,7 @@ classdef modBuilder < handle
                 end
                 rows{i} = ['  &' r.simplify().at_steady_state(endo).to_latex(map) ' = 0'];
             end
-            % Assemble the align body. The row break "\\" is appended by plain concatenation, NOT
-            % through strjoin, whose delimiter is escape-translated (it would collapse "\\" to "\").
-            nl = newline;
-            body = ['\begin{align}' nl];
-            for i = 1:neq
-                body = [body rows{i}]; %#ok<AGROW>
-                if i < neq
-                    body = [body ' \\']; %#ok<AGROW>
-                end
-                body = [body nl]; %#ok<AGROW>
-            end
-            body = [body '\end{align}' nl];
-            if ~isempty(filename)
-                fid = fopen(filename, 'w');
-                if fid == -1
-                    error('modBuilder:tex_steady_state_system:cannotOpen', 'Cannot open file "%s" for writing.', filename);
-                end
-                c = onCleanup(@() fclose(fid)); %#ok<NASGU>
-                fprintf(fid, '%s', body);
-            end
+            body = modBuilder.tex_align({rows}, filename);
             if nargout > 0
                 out = body;
             end
@@ -4103,37 +4114,8 @@ classdef modBuilder < handle
                     blockrows{end+1} = rows; %#ok<AGROW>
                 end
             end
-            % Assemble one align body. Rows within a block break with "\\"; consecutive blocks are
-            % separated by "\\[\medskipamount]" for a little vertical space (no headers). The row
-            % break is appended by plain concatenation, NOT through strjoin (whose delimiter is
-            % escape-translated, collapsing "\\" to "\").
-            nl = newline;
-            body = ['\begin{align}' nl];
-            for bi = 1:numel(blockrows)
-                rows = blockrows{bi};
-                for ri = 1:numel(rows)
-                    body = [body rows{ri}]; %#ok<AGROW>
-                    last_in_block = ri == numel(rows);
-                    last_overall = bi == numel(blockrows) && last_in_block;
-                    if ~last_overall
-                        if last_in_block
-                            body = [body ' \\[\medskipamount]']; %#ok<AGROW>
-                        else
-                            body = [body ' \\']; %#ok<AGROW>
-                        end
-                    end
-                    body = [body nl]; %#ok<AGROW>
-                end
-            end
-            body = [body '\end{align}' nl];
-            if ~isempty(filename)
-                fid = fopen(filename, 'w');
-                if fid == -1
-                    error('modBuilder:tex_steady_state_plan:cannotOpen', 'Cannot open file "%s" for writing.', filename);
-                end
-                c = onCleanup(@() fclose(fid)); %#ok<NASGU>
-                fprintf(fid, '%s', body);
-            end
+            % Each block renders as its own group, separated by a little vertical space (no headers).
+            body = modBuilder.tex_align(blockrows, filename);
             if nargout > 0
                 out = body;
             end
@@ -4238,26 +4220,7 @@ classdef modBuilder < handle
                 rows{vi} = ['  ' lhs ' &= ' assemble_sum(terms)];
             end
 
-            % Assemble the align body. The row break "\\" is appended by plain concatenation, NOT
-            % through strjoin, whose delimiter is escape-translated (it would collapse "\\" to "\").
-            nl = newline;
-            body = ['\begin{align}' nl];
-            for i = 1:neq
-                body = [body rows{i}]; %#ok<AGROW>
-                if i < neq
-                    body = [body ' \\']; %#ok<AGROW>
-                end
-                body = [body nl]; %#ok<AGROW>
-            end
-            body = [body '\end{align}' nl];
-            if ~isempty(options.filename)
-                fid = fopen(options.filename, 'w');
-                if fid == -1
-                    error('modBuilder:tex_linearise:cannotOpen', 'Cannot open file "%s" for writing.', options.filename);
-                end
-                c = onCleanup(@() fclose(fid)); %#ok<NASGU>
-                fprintf(fid, '%s', body);
-            end
+            body = modBuilder.tex_align({rows}, options.filename);
             if nargout > 0
                 out = body;
             end
