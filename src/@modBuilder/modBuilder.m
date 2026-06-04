@@ -4041,6 +4041,104 @@ classdef modBuilder < handle
             end
         end % function
 
+        function out = tex_steady_state_plan(o, filename)
+        % Render the steady-state system as a recursively-ordered LaTeX align block, following the
+        % block decomposition from steady_plan.
+        %
+        % INPUTS:
+        % - o         [modBuilder]
+        % - filename  [char]   (optional) path to write the LaTeX to. If omitted, nothing is
+        %                      written; the rendering is only returned.
+        %
+        % OUTPUTS:
+        % - out       [char]   the LaTeX string (assigned only when an output is requested).
+        %
+        % REMARKS:
+        % - The equations are ordered by steady_plan's SCC decomposition (topological order), not by
+        %   declaration order. Each block renders one of two ways:
+        %     * a block solved analytically (steady_plan found a closed form for every variable it
+        %       determines) prints the SOLUTIONS, one per row, "<var>^{\star} = <expr>";
+        %     * a block that needs a numerical solver prints the RESIDUAL system it must solve,
+        %       "<residual> = 0" per equation.
+        %   So a model reads as a recursive cascade: an analytic prologue solved from the parameters
+        %   and exogenous variables, then the simultaneous blocks a solver must close, then an
+        %   analytic epilogue whose solutions are written in terms of the just-solved unknowns. The
+        %   two forms are self-identifying (= <expr> vs = 0), so no block headers are emitted; blocks
+        %   are separated by a little vertical space.
+        % - Endogenous variables carry the steady-state superscript (k -> k^{\star}); exogenous
+        %   variables and parameters stay bare. Symbol texnames come from the per-symbol metadata.
+        %
+        % EXAMPLES:
+        % tex = m.tex_steady_state_plan();
+        % m.tex_steady_state_plan('paper/steady_plan.tex');
+            arguments
+                o
+                filename (1,:) char = ''
+            end
+            map = o.texname_map();
+            endo = reshape(o.var(:, modBuilder.COL_NAME), 1, []);
+            blocks = o.steady_plan();
+            blockrows = {};
+            for bi = 1:numel(blocks)
+                b = blocks(bi);
+                rows = {};
+                if ~isempty(b.vars) && numel(b.closed_form) == numel(b.vars)
+                    % Fully solved analytically: print each variable's closed-form solution. The
+                    % expression may reference earlier-solved variables (including the numerical
+                    % blocks' unknowns) by name, which render with the steady-state star.
+                    for j = 1:numel(b.closed_form)
+                        lhs = ast('ss', b.closed_form(j).var, {}).to_latex(map);
+                        rhs = ast(b.closed_form(j).expr).at_steady_state(endo).to_latex(map);
+                        rows{end+1} = ['  ' lhs ' &= ' rhs]; %#ok<AGROW>
+                    end
+                else
+                    % Needs a numerical solver: print the residual system it must close.
+                    for j = 1:numel(b.eqs)
+                        idx = find(strcmp(b.eqs{j}, o.equations(:, modBuilder.EQ_COL_NAME)), 1);
+                        r = modBuilder.static_residual(o, idx).simplify().at_steady_state(endo);
+                        rows{end+1} = ['  ' r.to_latex(map) ' &= 0']; %#ok<AGROW>
+                    end
+                end
+                if ~isempty(rows)
+                    blockrows{end+1} = rows; %#ok<AGROW>
+                end
+            end
+            % Assemble one align body. Rows within a block break with "\\"; consecutive blocks are
+            % separated by "\\[\medskipamount]" for a little vertical space (no headers). The row
+            % break is appended by plain concatenation, NOT through strjoin (whose delimiter is
+            % escape-translated, collapsing "\\" to "\").
+            nl = newline;
+            body = ['\begin{align}' nl];
+            for bi = 1:numel(blockrows)
+                rows = blockrows{bi};
+                for ri = 1:numel(rows)
+                    body = [body rows{ri}]; %#ok<AGROW>
+                    last_in_block = ri == numel(rows);
+                    last_overall = bi == numel(blockrows) && last_in_block;
+                    if ~last_overall
+                        if last_in_block
+                            body = [body ' \\[\medskipamount]']; %#ok<AGROW>
+                        else
+                            body = [body ' \\']; %#ok<AGROW>
+                        end
+                    end
+                    body = [body nl]; %#ok<AGROW>
+                end
+            end
+            body = [body '\end{align}' nl];
+            if ~isempty(filename)
+                fid = fopen(filename, 'w');
+                if fid == -1
+                    error('modBuilder:tex_steady_state_plan:cannotOpen', 'Cannot open file "%s" for writing.', filename);
+                end
+                c = onCleanup(@() fclose(fid)); %#ok<NASGU>
+                fprintf(fid, '%s', body);
+            end
+            if nargout > 0
+                out = body;
+            end
+        end % function
+
         function out = tex_linearise(o, varlist, options)
         % Render the log-linearised model as a LaTeX align environment, each equation normalized
         % on its keyed endogenous variable.
