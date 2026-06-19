@@ -232,22 +232,14 @@ classdef modBuilder < handle
             % until the first insertion sets the types.
             o.symbol_map = configureDictionary("string", "struct");
 
-            % Add all parameters
-            for i=1:size(o.params, 1)
-                o.symbol_map(o.params{i, modBuilder.COL_NAME}) = ...
-                    struct('type', 'parameter', 'idx', i);
-            end
-
-            % Add all exogenous variables
-            for i=1:size(o.varexo, 1)
-                o.symbol_map(o.varexo{i, modBuilder.COL_NAME}) = ...
-                    struct('type', 'exogenous', 'idx', i);
-            end
-
-            % Add all endogenous variables
-            for i=1:size(o.var, 1)
-                o.symbol_map(o.var{i, modBuilder.COL_NAME}) = ...
-                    struct('type', 'endogenous', 'idx', i);
+            % Map every declared symbol (parameter, exogenous, endogenous) to its type and row index.
+            kinds = modBuilder.symbol_kinds();
+            for k=1:numel(kinds)
+                tbl = o.(kinds(k).prop);
+                type = kinds(k).type;
+                for i=1:size(tbl, 1)
+                    o.symbol_map(tbl{i, modBuilder.COL_NAME}) = struct('type', type, 'idx', i);
+                end
             end
 
             o.symbol_map_dirty = false;
@@ -888,36 +880,20 @@ classdef modBuilder < handle
             matches = repmat(struct('name', '', 'type', '', 'equations', {{}}), 1, n_total);
             count = 0;
 
-            % Search parameters
-            for i = 1:size(o.params, 1)
-                name = o.params{i, modBuilder.COL_NAME};
-                if ~isempty(regexp(name, pattern, 'once'))
-                    count = count + 1;
-                    matches(count).name = name;
-                    matches(count).type = 'Parameter';
-                    matches(count).equations = o.T.params.(name);
-                end
-            end
-
-            % Search exogenous variables
-            for i = 1:size(o.varexo, 1)
-                name = o.varexo{i, modBuilder.COL_NAME};
-                if ~isempty(regexp(name, pattern, 'once'))
-                    count = count + 1;
-                    matches(count).name = name;
-                    matches(count).type = 'Exogenous variable';
-                    matches(count).equations = o.T.varexo.(name);
-                end
-            end
-
-            % Search endogenous variables
-            for i = 1:size(o.var, 1)
-                name = o.var{i, modBuilder.COL_NAME};
-                if ~isempty(regexp(name, pattern, 'once'))
-                    count = count + 1;
-                    matches(count).name = name;
-                    matches(count).type = 'Endogenous variable';
-                    matches(count).equations = o.T.var.(name);
+            % Search parameters, exogenous and endogenous variables.
+            kinds = modBuilder.symbol_kinds();
+            for k = 1:numel(kinds)
+                tbl = o.(kinds(k).prop);
+                Tf = o.T.(kinds(k).prop);
+                label = kinds(k).label;
+                for i = 1:size(tbl, 1)
+                    name = tbl{i, modBuilder.COL_NAME};
+                    if ~isempty(regexp(name, pattern, 'once'))
+                        count = count + 1;
+                        matches(count).name = name;
+                        matches(count).type = label;
+                        matches(count).equations = Tf.(name);
+                    end
                 end
             end
 
@@ -1573,6 +1549,17 @@ classdef modBuilder < handle
     end
 
     methods(Static, Access = private)
+
+        function kinds = symbol_kinds()
+        % Descriptor for the three symbol tables so code that treats parameters, exogenous and endogenous variables uniformly loops over one list instead of repeating three near-identical blocks.
+        %
+        % OUTPUTS:
+        % - kinds  [struct]  1×3 struct array with fields:
+        %                    .prop   - property name; o.<prop> is the n×4 table and o.T.<prop> the symbol→equations map (the two share the name)
+        %                    .type   - canonical type string ('parameter' / 'exogenous' / 'endogenous')
+        %                    .label  - display label used by findsymbol
+            kinds = struct('prop', {'params', 'varexo', 'var'}, 'type', {'parameter', 'exogenous', 'endogenous'}, 'label', {'Parameter', 'Exogenous variable', 'Endogenous variable'});
+        end % function
 
         function names = placeholders(s)
         % Return the sorted unique set of implicit-loop placeholders ($0, $1, ...) in s.
@@ -4387,23 +4374,21 @@ classdef modBuilder < handle
         % - Uses dictionary for O(1) symbol type lookups
         % - Significantly faster for large models (100+ equations)
 
-            % Initialize all symbol tables
-            o.T.params = struct();
-            o.T.varexo = struct();
-            o.T.var = struct();
-
-            % Pre-initialize fields for all known symbols (O(n))
-            for i=1:size(o.params, 1)
-                o.T.params.(o.params{i, modBuilder.COL_NAME}) = cell(1, 0);
-            end
-
-            for i=1:size(o.varexo, 1)
-                o.T.varexo.(o.varexo{i, modBuilder.COL_NAME}) = cell(1, 0);
-            end
-
-            % For endogenous variables, initialize with the variable itself (its own equation)
-            for i=1:size(o.var, 1)
-                o.T.var.(o.var{i, modBuilder.COL_NAME}) = o.var(i, modBuilder.COL_NAME);
+            % (Re)initialize all symbol tables and pre-create a field for every known symbol (O(n)).
+            % Parameters and exogenous start with no referencing equations; each endogenous seeds with its own equation.
+            kinds = modBuilder.symbol_kinds();
+            for k=1:numel(kinds)
+                tbl = o.(kinds(k).prop);
+                o.T.(kinds(k).prop) = struct();
+                seed_self = strcmp(kinds(k).type, 'endogenous');
+                for i=1:size(tbl, 1)
+                    name = tbl{i, modBuilder.COL_NAME};
+                    if seed_self
+                        o.T.(kinds(k).prop).(name) = {name};
+                    else
+                        o.T.(kinds(k).prop).(name) = cell(1, 0);
+                    end
+                end
             end
 
             % Update symbol map for O(1) lookups
