@@ -705,37 +705,22 @@ classdef modBuilder < handle
             i = 1;
             % Copy o-only parameters
             for j=1:length(o_only_params_list)
-                idx = o_param_idx(j);
-                q_params{i,modBuilder.COL_NAME} = o_only_params_list{j};
-                q_params{i,modBuilder.COL_VALUE} = o.params{idx,modBuilder.COL_VALUE};
-                q_params{i,modBuilder.COL_LONG_NAME} = o.params{idx,modBuilder.COL_LONG_NAME};
-                q_params{i,modBuilder.COL_TEX_NAME} = o.params{idx,modBuilder.COL_TEX_NAME};
+                q_params(i,:) = modBuilder.symbol_row(o_only_params_list{j}, o.params, o_param_idx(j));
                 i = i+1;
             end
             % Handle common parameters (p takes precedence if calibrated)
             for j=1:length(common_params)
                 p_idx = p_param_idx_common(j);
-                o_idx = o_param_idx_common(j);
-                q_params{i,modBuilder.COL_NAME} = common_params{j};
-                tmp = p.params{p_idx,modBuilder.COL_VALUE};
-                if not(isnan(tmp))
-                    q_params{i,modBuilder.COL_VALUE} = tmp;
-                    q_params{i,modBuilder.COL_LONG_NAME} = p.params{p_idx,modBuilder.COL_LONG_NAME};
-                    q_params{i,modBuilder.COL_TEX_NAME} = p.params{p_idx,modBuilder.COL_TEX_NAME};
+                if not(isnan(p.params{p_idx,modBuilder.COL_VALUE}))
+                    q_params(i,:) = modBuilder.symbol_row(common_params{j}, p.params, p_idx);
                 else
-                    q_params{i,modBuilder.COL_VALUE} = o.params{o_idx,modBuilder.COL_VALUE};
-                    q_params{i,modBuilder.COL_LONG_NAME} = o.params{o_idx,modBuilder.COL_LONG_NAME};
-                    q_params{i,modBuilder.COL_TEX_NAME} = o.params{o_idx,modBuilder.COL_TEX_NAME};
+                    q_params(i,:) = modBuilder.symbol_row(common_params{j}, o.params, o_param_idx_common(j));
                 end
                 i = i+1;
             end
             % Copy p-only parameters
             for j=1:length(p_only_params_list)
-                idx = p_param_idx(j);
-                q_params{i,modBuilder.COL_NAME} = p_only_params_list{j};
-                q_params{i,modBuilder.COL_VALUE} = p.params{idx,modBuilder.COL_VALUE};
-                q_params{i,modBuilder.COL_LONG_NAME} = p.params{idx,modBuilder.COL_LONG_NAME};
-                q_params{i,modBuilder.COL_TEX_NAME} = p.params{idx,modBuilder.COL_TEX_NAME};
+                q_params(i,:) = modBuilder.symbol_row(p_only_params_list{j}, p.params, p_param_idx(j));
                 i = i+1;
             end
         end % function
@@ -815,16 +800,10 @@ classdef modBuilder < handle
 
                 if in_p
                     % p takes precedence (for common) or is the only source (for p-only)
-                    idx = p_varexo_map(varname);
-                    q_varexo{i,modBuilder.COL_VALUE} = p.varexo{idx,modBuilder.COL_VALUE};
-                    q_varexo{i,modBuilder.COL_LONG_NAME} = p.varexo{idx,modBuilder.COL_LONG_NAME};
-                    q_varexo{i,modBuilder.COL_TEX_NAME} = p.varexo{idx,modBuilder.COL_TEX_NAME};
+                    q_varexo(i,:) = modBuilder.symbol_row(varname, p.varexo, p_varexo_map(varname));
                 elseif in_o
                     % o is the only source (o-only variables)
-                    idx = o_varexo_map(varname);
-                    q_varexo{i,modBuilder.COL_VALUE} = o.varexo{idx,modBuilder.COL_VALUE};
-                    q_varexo{i,modBuilder.COL_LONG_NAME} = o.varexo{idx,modBuilder.COL_LONG_NAME};
-                    q_varexo{i,modBuilder.COL_TEX_NAME} = o.varexo{idx,modBuilder.COL_TEX_NAME};
+                    q_varexo(i,:) = modBuilder.symbol_row(varname, o.varexo, o_varexo_map(varname));
                 end
             end
         end % function
@@ -1568,6 +1547,23 @@ classdef modBuilder < handle
         %                    .type   - canonical type string ('parameter' / 'exogenous' / 'endogenous')
         %                    .label  - display label used by findsymbol
             kinds = struct('prop', {'params', 'varexo', 'var'}, 'type', {'parameter', 'exogenous', 'endogenous'}, 'label', {'Parameter', 'Exogenous variable', 'Endogenous variable'});
+        end % function
+
+        function row = symbol_row(name, src, idx)
+        % Assemble one symbol-table row [name, value, long_name, tex_name] by taking the value and metadata from row idx of source table src under a (possibly new) name.
+        %
+        % INPUTS:
+        % - name  [char]   symbol name to store in the new row
+        % - src   [cell]   n×4 source symbol table (params / varexo / var)
+        % - idx   [integer] row of src to copy the value and metadata from
+        %
+        % OUTPUTS:
+        % - row   [cell]   1×4 row suitable for assignment into a merged table
+            row = cell(1, 4);
+            row{modBuilder.COL_NAME}      = name;
+            row{modBuilder.COL_VALUE}     = src{idx, modBuilder.COL_VALUE};
+            row{modBuilder.COL_LONG_NAME} = src{idx, modBuilder.COL_LONG_NAME};
+            row{modBuilder.COL_TEX_NAME}  = src{idx, modBuilder.COL_TEX_NAME};
         end % function
 
         function names = placeholders(s)
