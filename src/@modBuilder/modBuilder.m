@@ -97,8 +97,14 @@ classdef modBuilder < handle
         SS_COL_NAME = 1     % Symbol name (endogenous variable or parameter)
         SS_COL_EXPR = 2     % RHS expression (char)
 
-        % Valid symbol/component types for type checking
-        % Used by size(), validate_type(), and other methods
+        % Valid *collection names* for the dimension/display API (size(), table(),
+        % printlist2()), validated by validate_type(). This is the plural vocabulary
+        % and is DISTINCT from the singular symbol-type vocabulary
+        % ('parameter'/'exogenous'/'endogenous') returned by typeof()/lookup_symbol()
+        % and used by the classification internals — the two share 'exogenous' and
+        % 'endogenous' but are not interchangeable (note 'parameters' vs 'parameter',
+        % and 'equations' which is a collection only). table()/printlist2() accept a
+        % subset and validate it locally rather than via VALID_TYPES.
         VALID_TYPES = {'parameters', 'exogenous', 'endogenous', 'equations'}
 
         % Cost constants for the matchequations bipartite matcher.
@@ -1416,19 +1422,20 @@ classdef modBuilder < handle
     methods(Static)
 
         function validate_type(type)
-        % Validate that a type string is one of the allowed symbol/component types
+        % Validate that a type string is one of the allowed collection names
         %
         % INPUTS:
-        % - type   [char]   Type string to validate
+        % - type   [char]   Collection name to validate ('parameters', 'exogenous', 'endogenous' or 'equations')
         %
         % OUTPUTS:
         % None (throws error if invalid)
         %
         % REMARKS:
-        % - Validates against modBuilder.VALID_TYPES constant
+        % - Validates against modBuilder.VALID_TYPES, the plural collection-name vocabulary of the dimension/display API
+        % - This is NOT the singular symbol-type vocabulary ('parameter'/'exogenous'/'endogenous') returned by typeof(); do not feed typeof()'s result here
         % - Provides helpful error message listing valid options
-        % - Used internally by size() and other type-checking methods
-        % - Can be called by users to validate type strings before use
+        % - Used internally by size(); table()/printlist2() validate their own (smaller) subset
+        % - Can be called by users to validate collection names before use
         %
         % EXAMPLE:
         % modBuilder.validate_type('parameters')  % OK
