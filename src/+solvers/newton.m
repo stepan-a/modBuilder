@@ -16,11 +16,12 @@ function [x, fval, iter, flag] = newton(f, x0, tol, maxit)
 %                         1 = max iterations exceeded
 %                         2 = singular / non-finite Jacobian
 %                         3 = backtracking line-search failed
-%                         4 = divergence detected (residual grew sharply)
 %
 % REMARKS:
 % Forward-mode automatic differentiation is used (autoDiff1). The line
-% search uses an Armijo sufficient-decrease condition on |f(x)|.
+% search uses an Armijo sufficient-decrease condition on |f(x)|. Because a
+% step is accepted only when it strictly reduces |f(x)|, the residual is
+% monotone across iterations and no separate divergence test is needed.
 % Convergence is declared at the top of each iteration when the current
 % residual already satisfies |f(x)| < tol; this avoids re-running the
 % line search at machine-epsilon residual where Armijo's relative test
@@ -35,12 +36,9 @@ function [x, fval, iter, flag] = newton(f, x0, tol, maxit)
     armijo_c1   = 1e-4;
     alpha_floor = 1e-10;
     ls_max      = 50;
-    div_factor  = 10;     % residual growth factor that signals divergence
-    div_warmup  = 3;      % iterations before divergence detection kicks in
 
     x_ad     = autoDiff1(x0);     % seed: dx = 1
     flag     = 1;                  % presume max-iter exit
-    prev_res = Inf;
     r        = f(x_ad);
 
     for iter = 1:maxit
@@ -92,15 +90,6 @@ function [x, fval, iter, flag] = newton(f, x0, tol, maxit)
 
         x_ad = x_ad + alpha*dx_step;
         r    = trial;                 % reuse residual at accepted point
-
-        % Divergence test (after a short warmup).
-        if iter > div_warmup && abs(r.x) > div_factor*prev_res
-            flag = 4;
-            error('modBuilder:newton:diverging', ...
-                  'Residual grew from %g to %g at iter %d.', ...
-                  prev_res, abs(r.x), iter);
-        end
-        prev_res = abs(r.x);
     end
 
     x    = x_ad.x;

@@ -17,7 +17,6 @@ function [x, fval, iter, flag] = newton_system(residual_fn, jacobian_fn, x0, tol
 %                               1 = max iterations exceeded
 %                               2 = singular / non-finite Jacobian
 %                               3 = backtracking line-search failed
-%                               4 = divergence detected
 %                               5 = dimension mismatch
 %
 % REMARKS:
@@ -26,7 +25,9 @@ function [x, fval, iter, flag] = newton_system(residual_fn, jacobian_fn, x0, tol
 % Armijo sufficient-decrease condition on ||f(x)||_inf and is bounded
 % above by ls_max trials. The accepted residual is reused as the next
 % iteration's starting residual, saving one residual_fn evaluation per
-% outer iteration.
+% outer iteration. Because a step is accepted only when it strictly reduces
+% ||f(x)||_inf, the residual is monotone across iterations and no separate
+% divergence test is needed.
     arguments
         residual_fn (1,1) function_handle
         jacobian_fn (1,1) function_handle
@@ -38,8 +39,6 @@ function [x, fval, iter, flag] = newton_system(residual_fn, jacobian_fn, x0, tol
     armijo_c1   = 1e-4;
     alpha_floor = 1e-10;
     ls_max      = 50;
-    div_factor  = 10;
-    div_warmup  = 3;
 
     n        = numel(x0);
     x        = x0;
@@ -51,8 +50,6 @@ function [x, fval, iter, flag] = newton_system(residual_fn, jacobian_fn, x0, tol
         error('modBuilder:newtonSystem:dimMismatch', ...
               'residual_fn returned size %s, expected [%d 1].', mat2str(size(fx)), n);
     end
-
-    prev_res = Inf;
 
     for iter = 1:maxit
         if ~all(isfinite(fx))
@@ -125,15 +122,6 @@ function [x, fval, iter, flag] = newton_system(residual_fn, jacobian_fn, x0, tol
 
         x  = x_try;
         fx = fx_try;     % reuse: skip one residual_fn call next iteration
-
-        % Divergence test (after a short warmup).
-        if iter > div_warmup && norm(fx, inf) > div_factor*prev_res
-            flag = 4;
-            error('modBuilder:newtonSystem:diverging', ...
-                  'Residual norm grew from %g to %g at iter %d.', ...
-                  prev_res, norm(fx, inf), iter);
-        end
-        prev_res = norm(fx, inf);
     end
 
     fval = fx;
