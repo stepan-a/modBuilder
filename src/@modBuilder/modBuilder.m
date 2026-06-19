@@ -164,6 +164,16 @@ classdef modBuilder < handle
 
     methods (Access = private)
 
+        function mark_dirty(o)
+        % Flag both the symbol tables (o.T) and the symbol map as needing a rebuild.
+        %
+        % REMARKS:
+        % - Most mutators invalidate both at once; calling this keeps the pair in sync so a new modification path cannot set one and forget the other.
+        % - Deletion loops that must force linear lookups mid-mutation set o.symbol_map_dirty on its own and do not use this helper.
+            o.tables_dirty = true;
+            o.symbol_map_dirty = true;
+        end % function
+
         function val = get_value(o, name)
         % Return the calibration/steady-state value of a symbol
         %
@@ -585,8 +595,7 @@ classdef modBuilder < handle
                 % promotion; endogenous (in its unreachable promotion path)
                 % did not. Equation-driven endogenous declarations go via
                 % add(), which manages the dirty flag itself.
-                o.tables_dirty = true;
-                o.symbol_map_dirty = true;
+                o.mark_dirty();
             end
 
             o.symbols = setdiff(o.symbols, name);
@@ -2879,9 +2888,7 @@ classdef modBuilder < handle
             o.symbols = setdiff(o.symbols, o.symbols(cellfun(@o.issymbol, o.symbols)));
             o.tags.(varname).name = varname;
 
-            % Mark symbol tables as dirty (need updating)
-            o.tables_dirty = true;
-            o.symbol_map_dirty = true;
+            o.mark_dirty();
         end % function
 
         function o = tag(o, eqname, tagname, value, varargin)
@@ -3552,9 +3559,7 @@ classdef modBuilder < handle
 
             o.var(ismember(o.var(:,modBuilder.COL_NAME), eqname),:) = [];
 
-            % Mark symbol tables as dirty (need updating)
-            o.tables_dirty = true;
-            o.symbol_map_dirty = true;
+            o.mark_dirty();
         end % function
 
         function o = rm(o, varargin)
@@ -3743,9 +3748,7 @@ classdef modBuilder < handle
                 o.steady_state{i, modBuilder.SS_COL_EXPR} = ast(o.steady_state{i, modBuilder.SS_COL_EXPR}).rename(oldsymbol, newsymbol).string();
             end
 
-            % Mark symbol tables as dirty (need updating)
-            o.tables_dirty = true;
-            o.symbol_map_dirty = true;
+            o.mark_dirty();
         end % function
 
         function o = write(o, filename, options)
@@ -4981,9 +4984,7 @@ classdef modBuilder < handle
                 end
             end
 
-            % Mark symbol tables as dirty (need updating)
-            o.tables_dirty = true;
-            o.symbol_map_dirty = true;
+            o.mark_dirty();
         end % function
 
         function o = reassign(o, varargin)
@@ -5073,9 +5074,7 @@ classdef modBuilder < handle
                 o.tags.(names{target}) = old_tags{i};
             end
 
-            % Mark symbol tables as dirty
-            o.tables_dirty = true;
-            o.symbol_map_dirty = true;
+            o.mark_dirty();
         end % function
 
         function o = rmflip(o, eqname, newexo, varargin)
@@ -5456,9 +5455,7 @@ classdef modBuilder < handle
 
             o.T.equations.(varname) = ntokens;
 
-            % Mark symbol tables as dirty (need updating)
-            o.tables_dirty = true;
-            o.symbol_map_dirty = true;
+            o.mark_dirty();
         end % function
 
         function o = subs(o, expr1, expr2, varargin)
@@ -5683,8 +5680,7 @@ classdef modBuilder < handle
             referenced = unique([referenced_lists{:}]);
             o.params(~ismember(o.params(:, modBuilder.COL_NAME), referenced), :) = [];
             o.varexo(~ismember(o.varexo(:, modBuilder.COL_NAME), referenced), :) = [];
-            o.tables_dirty = true;
-            o.symbol_map_dirty = true;
+            o.mark_dirty();
             o.updatesymboltables();
         end % function
 
@@ -5996,9 +5992,7 @@ classdef modBuilder < handle
                 o.symbols = unique([o.symbols, list_of_unknown_symbols(1:unknown_count)]);
             end
 
-            % Mark symbol tables as dirty (need updating)
-            o.tables_dirty = true;
-            o.symbol_map_dirty = true;
+            o.mark_dirty();
         end % function
 
         function p = extract(o, varargin)
