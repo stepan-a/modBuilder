@@ -10,6 +10,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write        # push the coverage badge to the coverage-badge branch
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -51,9 +54,31 @@ jobs:
           name: test-results
           path: test-results.xml
 
-      - name: Upload to Codecov
-        if: always()
-        uses: codecov/codecov-action@v5
-        with:
-          file: coverage.xml
-          fail_ci_if_error: false
+      # Self-contained coverage badge: parse the Cobertura report, render an
+      # SVG locally (no external service) and report the figure in the run
+      # summary. Runs only when the tests above passed.
+      - name: Generate coverage badge and job summary
+        run: |
+          cov="$(python3 .github/scripts/coverage_badge.py coverage.xml badge.svg)"
+          printf '%s\n' "$cov" > cov.txt
+          { echo "## Coverage"; echo; echo "Line coverage: **$cov**"; } >> "$GITHUB_STEP_SUMMARY"
+
+      # Publish the badge to a dedicated orphan branch using the built-in
+      # token; the README badge points at this branch via raw.githubusercontent.
+      # Only on pushes to master (PRs from forks cannot push, and the badge
+      # should reflect the integrated branch).
+      - name: Publish coverage badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          tmp="$(mktemp -d)"
+          cp badge.svg "$tmp/badge.svg"
+          cd "$tmp"
+          git init -q
+          git checkout -q -b coverage-badge
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add badge.svg
+          git commit -q -m "coverage: $(cat "$GITHUB_WORKSPACE/cov.txt")"
+          git push -q --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" coverage-badge

@@ -2,7 +2,7 @@
 
 [![Pipeline Status](https://git.dynare.org/Dynare/modBuilder/badges/master/pipeline.svg)](https://git.dynare.org/Dynare/modBuilder/-/commits/master)
 [![MATLAB Tests](https://github.com/stepan-a/modBuilder/actions/workflows/tests.yml/badge.svg)](https://github.com/stepan-a/modBuilder/actions/workflows/tests.yml)
-[![codecov](https://codecov.io/gh/stepan-a/modBuilder/graph/badge.svg)](https://codecov.io/gh/stepan-a/modBuilder)
+[![coverage](https://raw.githubusercontent.com/stepan-a/modBuilder/coverage-badge/badge.svg)](https://github.com/stepan-a/modBuilder/actions/workflows/tests.yml)
 [![Documentation](https://img.shields.io/badge/slides-PDF-blue)](https://git.dynare.org/Dynare/modBuilder/-/jobs/artifacts/master/raw/doc/slides.pdf?job=doc)
 
 A MATLAB class for programmatically creating and manipulating Dynare `.mod` files.
