@@ -392,37 +392,18 @@ classdef modBuilder < handle
             % Compute Cartesian product of index values
             mIndex = table2cell(combinations(index_args{:}));
 
-            % Prepare template for sprintf (replace $1, $2, etc. with %u or %s)
-            tmp_name = symbol_name;
+            % Prepare sprintf templates (replace $1, $2, ... with %u or %s). long_name
+            % and texname need their backslashes escaped first (\ becomes \\ for sprintf);
+            % the symbol name never contains backslashes.
+            tokens = arrayfun(@(i) sprintf('$%u', i), 1:nindices, 'UniformOutput', false);
+            tmp_name = modBuilder.sprintf_template(symbol_name, tokens, allint);
             tmp_long_name = long_name;  % May be empty
             tmp_texname = texname;      % May be empty
-
-            % Escape backslashes for sprintf (\ becomes \\) in texname and long_name
             if ~isempty(long_name)
-                tmp_long_name = strrep(tmp_long_name, '\', '\\');
+                tmp_long_name = modBuilder.sprintf_template(strrep(long_name, '\', '\\'), tokens, allint);
             end
             if ~isempty(texname)
-                tmp_texname = strrep(tmp_texname, '\', '\\');
-            end
-
-            for i=nindices:-1:1
-                if allint(i)
-                    tmp_name = strrep(tmp_name, sprintf('$%u',i), '%u');
-                    if ~isempty(long_name)
-                        tmp_long_name = strrep(tmp_long_name, sprintf('$%u',i), '%u');
-                    end
-                    if ~isempty(texname)
-                        tmp_texname = strrep(tmp_texname, sprintf('$%u',i), '%u');
-                    end
-                else
-                    tmp_name = strrep(tmp_name, sprintf('$%u',i), '%s');
-                    if ~isempty(long_name)
-                        tmp_long_name = strrep(tmp_long_name, sprintf('$%u',i), '%s');
-                    end
-                    if ~isempty(texname)
-                        tmp_texname = strrep(tmp_texname, sprintf('$%u',i), '%s');
-                    end
-                end
+                tmp_texname = modBuilder.sprintf_template(strrep(texname, '\', '\\'), tokens, allint);
             end
 
             % Create symbols for all combinations
@@ -1577,6 +1558,30 @@ classdef modBuilder < handle
             names = unique(regexp(s, '\$\d+', 'match'));
         end % function
 
+        function tmpl = sprintf_template(s, tokens, is_int)
+        % Turn implicit-loop placeholders into an sprintf conversion template.
+        %
+        % INPUTS:
+        % - s        [char]      template string containing placeholder tokens
+        % - tokens   [cell]      1×k placeholder tokens to rewrite (e.g. {'$1', '$2'})
+        % - is_int   [logical]   1×k flags; tokens{j} becomes '%u' when true, '%s' otherwise
+        %
+        % OUTPUTS:
+        % - tmpl     [char]      s with every token replaced by its sprintf conversion
+        %
+        % REMARKS:
+        % - Tokens are rewritten longest-first so a shorter token ($1) cannot corrupt a longer one that shares its prefix ($10).
+            [~, order] = sort(cellfun(@strlength, tokens), 'descend');
+            tmpl = s;
+            for j = order(:)'
+                if is_int(j)
+                    tmpl = strrep(tmpl, tokens{j}, '%u');
+                else
+                    tmpl = strrep(tmpl, tokens{j}, '%s');
+                end
+            end
+        end % function
+
         function static = staticise_equation_string(eq_str)
         % Strip time subscripts from an equation string: x(-1), y(+2), z(0) → x, y, z.
         %
@@ -1683,15 +1688,9 @@ classdef modBuilder < handle
             index_map = dictionary(string(all_indices(:)), index_values(:));
 
             % Build sprintf templates from expr1/expr2 (replace each placeholder with %u or %s).
-            tmp_expr1 = expr1;
-            tmp_expr2 = expr2;
-            for k = numel(inames_expr1):-1:1
-                is_int = allint(strcmp(all_indices, inames_expr1{k}));
-                fmt = '%s';
-                if is_int, fmt = '%u'; end
-                tmp_expr1 = strrep(tmp_expr1, inames_expr1{k}, fmt);
-                tmp_expr2 = strrep(tmp_expr2, inames_expr1{k}, fmt);
-            end
+            isint_expr1 = cellfun(@(t) allint(strcmp(all_indices, t)), inames_expr1);
+            tmp_expr1 = modBuilder.sprintf_template(expr1, inames_expr1, isint_expr1);
+            tmp_expr2 = modBuilder.sprintf_template(expr2, inames_expr1, isint_expr1);
 
             % Expression-side Cartesian product (degenerate single iteration if expr1 has no placeholders).
             if isempty(inames_expr1)
@@ -1721,13 +1720,8 @@ classdef modBuilder < handle
             else
                 % eqname has its own (possibly disjoint) placeholders.
                 eq_values = cellfun(@(x) index_map{x}, inames_eq, 'UniformOutput', false);
-                tmp_eqname = eqname;
-                for k = numel(inames_eq):-1:1
-                    is_int = allint(strcmp(all_indices, inames_eq{k}));
-                    fmt = '%s';
-                    if is_int, fmt = '%u'; end
-                    tmp_eqname = strrep(tmp_eqname, inames_eq{k}, fmt);
-                end
+                isint_eq = cellfun(@(t) allint(strcmp(all_indices, t)), inames_eq);
+                tmp_eqname = modBuilder.sprintf_template(eqname, inames_eq, isint_eq);
                 mIndex_eq = table2cell(combinations(eq_values{:}));
                 for j = 1:size(mIndex_eq, 1)
                     current_eqname = sprintf(tmp_eqname, mIndex_eq{j,:});
@@ -4913,19 +4907,9 @@ classdef modBuilder < handle
                 mIndex = table2cell(combinations(varargin{:}));
 
                 % Prepare templates for sprintf
-                tmp_varname = varname;
-                tmp_varexoname = varexoname;
-
-                for i=nindices:-1:1
-
-                    if allint(i)
-                        tmp_varname = strrep(tmp_varname, sprintf('$%u',i), '%u');
-                        tmp_varexoname = strrep(tmp_varexoname, sprintf('$%u',i), '%u');
-                    else
-                        tmp_varname = strrep(tmp_varname, sprintf('$%u',i), '%s');
-                        tmp_varexoname = strrep(tmp_varexoname, sprintf('$%u',i), '%s');
-                    end
-                end
+                tokens = arrayfun(@(i) sprintf('$%u', i), 1:nindices, 'UniformOutput', false);
+                tmp_varname = modBuilder.sprintf_template(varname, tokens, allint);
+                tmp_varexoname = modBuilder.sprintf_template(varexoname, tokens, allint);
 
                 % Flip all matching pairs using recursion
 
@@ -5147,18 +5131,9 @@ classdef modBuilder < handle
                 mIndex = table2cell(combinations(varargin{:}));
 
                 % Prepare templates for sprintf
-                tmp_eqname = eqname;
-                tmp_newexo = newexo;
-
-                for i = nindices:-1:1
-                    if allint(i)
-                        tmp_eqname = strrep(tmp_eqname, sprintf('$%u', i), '%u');
-                        tmp_newexo = strrep(tmp_newexo, sprintf('$%u', i), '%u');
-                    else
-                        tmp_eqname = strrep(tmp_eqname, sprintf('$%u', i), '%s');
-                        tmp_newexo = strrep(tmp_newexo, sprintf('$%u', i), '%s');
-                    end
-                end
+                tokens = arrayfun(@(i) sprintf('$%u', i), 1:nindices, 'UniformOutput', false);
+                tmp_eqname = modBuilder.sprintf_template(eqname, tokens, allint);
+                tmp_newexo = modBuilder.sprintf_template(newexo, tokens, allint);
 
                 % Recurse for each combination
                 for i = 1:size(mIndex, 1)
