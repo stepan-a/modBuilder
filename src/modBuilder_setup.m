@@ -11,9 +11,13 @@ function modBuilder_setup()
 %   2. src/missing/math/ unconditionally. It supplies Dynare-style
 %      aliases (ln, ...) that MATLAB does not provide in any toolbox.
 %
-%   3. src/missing/stats/ only when the Statistics Toolbox is unavailable.
-%      It holds polyfills (normcdf, normpdf) used by some models; on a
-%      licensed install the canonical toolbox implementations are kept.
+%   3. src/missing/stats/ only when normcdf / normpdf are not already
+%      resolvable. It holds polyfills used by some models; when the
+%      Statistics Toolbox is installed the canonical implementations are
+%      kept. Availability is probed with which() rather than license(),
+%      because a license may be grantable for a toolbox that is not
+%      actually installed (e.g. on CI runners), in which case license()
+%      reports the toolbox as present while the functions remain undefined.
 %
 % USAGE:
 %
@@ -30,7 +34,7 @@ function modBuilder_setup()
     addpath(here);
     addpath(fullfile(here, 'missing', 'math'));
 
-    if ~license('test', 'statistics_toolbox')
+    if isempty(which('normcdf')) || isempty(which('normpdf'))
         addpath(fullfile(here, 'missing', 'stats'));
     end
 end
