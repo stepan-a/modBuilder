@@ -20,6 +20,5 @@ model.parameter('beta', 0.99);
 model.parameter('delta', 0.025);
 model.parameter('psi', 0);
 model.parameter('theta', 2.95);
-model.parameter('phi', 0.1);
 
 model.add('a', 'a = rho*a(-1) + e'); % Should throw an error because symbol a is already defined as an endogenous variable.
