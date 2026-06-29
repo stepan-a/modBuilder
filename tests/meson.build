@@ -277,6 +277,7 @@ listoftests = [
   'metadata/t01.m',
   'metadata/t02.m',
   'metadata/t03.m',
+  'metadata/t04.m',
   'display/t01.m',
   'display/t02.m',
   'display/t03.m',

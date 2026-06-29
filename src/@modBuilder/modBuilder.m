@@ -133,6 +133,18 @@ classdef modBuilder < handle
         ALL_RESERVED_NAMES = modBuilder.compute_all_reserved_names()
     end
 
+    properties (Constant)
+        % On-disk schema version stamped into the struct returned by saveobj
+        % and checked by loadobj. Bump this whenever the persisted field set
+        % changes, and add the corresponding migration branch to
+        % migrate_saved_struct(). Files written before versioning carry no
+        % 'version' field and are treated as version 0. Public so external
+        % tooling can check the format a given modBuilder understands.
+        %   1  current: params, varexo, var, tags, symbols, equations,
+        %      steady_state, T, date, calibration_swaps
+        SCHEMA_VERSION = 1
+    end
+
     properties (Access = private)
         % Symbol lookup map for O(1) type checking: symbol_name -> struct(type, idx)
         % Updated automatically by update_symbol_map() after structural changes
@@ -2460,39 +2472,89 @@ classdef modBuilder < handle
 
 
         function o = loadobj(s)
-        % Deserialize a modBuilder object reprsented by structure s.
+        % Deserialize a modBuilder object represented by structure s.
         %
         % INPUTS:
         % s    [struct]
         %
         % OUTPUTS:
         % - o  [modBuilder]
+        %
+        % REMARKS:
+        % - The struct carries a 'version' schema tag (see saveobj and
+        %   modBuilder.SCHEMA_VERSION). Older files written before versioning
+        %   lack the tag; they are treated as version 0 and brought forward by
+        %   migrate_saved_struct(). A file written by a newer modBuilder than
+        %   this class understands is rejected rather than silently mis-read.
 
-            if isstruct(s)
-
-                if isfield(s, 'params') && isfield(s, 'varexo') && isfield(s, 'var') ...
-                        && isfield(s, 'symbols') && isfield(s, 'equations') && isfield(s, 'T') ...
-                        && isfield(s, 'date')
-                    o = modBuilder(s.date);
-                    o.T = s.T;
-                    o.var = s.var;
-                    o.params = s.params;
-                    o.varexo = s.varexo;
-                    o.tags = s.tags;
-                    o.symbols = s.symbols;
-                    o.equations = s.equations;
-                    if isfield(s, 'steady_state')
-                        o.steady_state = s.steady_state;
-                    end
-                    if isfield(s, 'calibration_swaps')
-                        o.calibration_swaps = s.calibration_swaps;
-                    end
-                else
-                    error('modBuilder:loadobj:invalidObject', 'Cannot instantiate a modBuilder object (missing fields).')
-                end
-            else
+            if ~isstruct(s)
+                % MATLAB hands loadobj the already-built object on a normal
+                % (non-struct) load; pass it through untouched.
                 o = s;
+                return
             end
+
+            % Core fields present in every schema version.
+            core = {'params', 'varexo', 'var', 'symbols', 'equations', 'T', 'date'};
+            if ~all(isfield(s, core))
+                error('modBuilder:loadobj:invalidObject', 'Cannot instantiate a modBuilder object (missing fields).')
+            end
+
+            if isfield(s, 'version')
+                v = s.version;
+            else
+                v = 0;   % unversioned legacy file
+            end
+            if v > modBuilder.SCHEMA_VERSION
+                error('modBuilder:loadobj:futureVersion', ...
+                      'This file uses modBuilder schema version %d, but this class only understands up to version %d. Please update modBuilder.', ...
+                      v, modBuilder.SCHEMA_VERSION)
+            end
+
+            s = modBuilder.migrate_saved_struct(s, v);
+
+            o = modBuilder(s.date);
+            o.T = s.T;
+            o.var = s.var;
+            o.params = s.params;
+            o.varexo = s.varexo;
+            o.tags = s.tags;
+            o.symbols = s.symbols;
+            o.equations = s.equations;
+            o.steady_state = s.steady_state;
+            o.calibration_swaps = s.calibration_swaps;
+        end % function
+
+        function s = migrate_saved_struct(s, v)
+        % Bring a saved struct from schema version v up to SCHEMA_VERSION.
+        %
+        % INPUTS:
+        % - s   [struct]    saved struct as returned by saveobj (or an older one)
+        % - v   [integer]   the struct's schema version (0 for legacy files)
+        %
+        % OUTPUTS:
+        % - s   [struct]    struct with every current field present and the
+        %                   'version' tag set to SCHEMA_VERSION
+        %
+        % REMARKS:
+        % - One branch per legacy version, filling fields introduced later with
+        %   their current defaults. Add a new branch (and bump SCHEMA_VERSION)
+        %   whenever the persisted field set grows.
+            if v < 1
+                % Version 0 (unversioned): tags has always been present, but
+                % steady_state and calibration_swaps were added incrementally
+                % and may be absent. Fill any missing field with its default.
+                if ~isfield(s, 'tags')
+                    s.tags = struct();
+                end
+                if ~isfield(s, 'steady_state')
+                    s.steady_state = cell(0, 2);
+                end
+                if ~isfield(s, 'calibration_swaps')
+                    s.calibration_swaps = cell(0, 3);
+                end
+            end
+            s.version = modBuilder.SCHEMA_VERSION;
         end % function
 
     end % methods
@@ -4346,7 +4408,10 @@ classdef modBuilder < handle
         % - o      [modBuilder]
         %
         % OUTPUTS:
-        % - s      [struct]        One field for each member of the modBuilder class.
+        % - s      [struct]        One field for each member of the modBuilder
+        %                          class, plus a 'version' schema tag (see
+        %                          modBuilder.SCHEMA_VERSION and loadobj).
+            s.version = modBuilder.SCHEMA_VERSION;
             s.params = o.params;
             s.varexo = o.varexo;
             s.var = o.var;
