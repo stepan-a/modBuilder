@@ -280,6 +280,7 @@ listoftests = [
   'display/t01.m',
   'display/t02.m',
   'display/t03.m',
+  'display/t04.m',
   'evaluate/t01.m',
   'evaluate/t02.m',
   'precision/t01.m',

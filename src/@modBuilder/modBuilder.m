@@ -4726,6 +4726,47 @@ classdef modBuilder < handle
         end % function
 
 
+        function disp(o)
+        % Compact one-line description of the model.
+        %
+        % INPUTS:
+        % - o      [modBuilder]
+        %
+        % REMARKS:
+        % - Overrides MATLAB's default property dump. Called automatically at
+        %   the prompt when an expression returning a modBuilder object is not
+        %   terminated by a semicolon (through the default display), and by an
+        %   explicit disp(m). Use summary() for the fuller multi-line report,
+        %   and table() / lookfor() / equationmap() to inspect contents.
+        % - The status flag reports whether the symbol tables (o.T) are current.
+        %   A "stale" model is not an error: the tables are rebuilt lazily on the
+        %   next query that needs them.
+        % - A handle object array (e.g. [m1 m2]) is dispatched to the built-in
+        %   disp, which lists the elements one per line.
+            if ~isscalar(o)
+                builtin('disp', o);
+                return
+            end
+            n_params = o.size('parameters');
+            if n_params > 0
+                n_calibrated = sum(~cellfun(@isnan, o.params(:, modBuilder.COL_VALUE)));
+                paramstr = sprintf('%d parameters (%d calibrated)', n_params, n_calibrated);
+            else
+                paramstr = '0 parameters';
+            end
+            if o.tables_dirty
+                status = 'symbol tables stale';
+            else
+                status = 'symbol tables up to date';
+            end
+            fprintf('  modBuilder: %d endogenous, %d exogenous, %s, %d equations [%s]\n', ...
+                    o.size('endogenous'), o.size('exogenous'), paramstr, o.size('equations'), status);
+            if ~isempty(o.symbols)
+                fprintf('  warning: %d untyped symbol(s): %s\n', numel(o.symbols), strjoin(o.symbols, ', '));
+            end
+        end % function
+
+
         function tbl = table(o, type)
         % Convert params/varexo/var to MATLAB table for easier viewing
         %
