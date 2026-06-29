@@ -8,13 +8,13 @@ function [x, fval, iter, flag] = newton(f, x0, tol, maxit)
 % - maxit  [integer]    scalar, maximum number of iterations (default 100)
 %
 % OUTPUTS:
-% - x      [double]     scalar, approximate solution
+% - x      [double]     scalar, approximate solution (best iterate reached)
 % - fval   [double]     scalar, f(x)
 % - iter   [integer]    scalar, number of outer iterations executed
 % - flag   [integer]    scalar, exit status:
 %                         0 = converged
 %                         1 = max iterations exceeded
-%                         2 = singular / non-finite Jacobian
+%                         2 = singular / non-finite Jacobian or residual
 %                         3 = backtracking line-search failed
 %
 % REMARKS:
@@ -26,6 +26,13 @@ function [x, fval, iter, flag] = newton(f, x0, tol, maxit)
 % residual already satisfies |f(x)| < tol; this avoids re-running the
 % line search at machine-epsilon residual where Armijo's relative test
 % has no headroom below eps.
+%
+% This solver does NOT throw on a numerical failure: every outcome is
+% reported through flag, and (x, fval) hold the best iterate reached so the
+% caller can diagnose the failure. Only malformed inputs (caught by the
+% arguments block below) raise an error. Callers that need a solution must
+% check flag ~= 0 — see modBuilder.solve, which turns a non-zero flag into a
+% contextual modBuilder:solve:noConvergence error.
     arguments
         f      (1,1) function_handle
         x0     (1,1) double {mustBeFinite, mustBeReal}
@@ -43,10 +50,9 @@ function [x, fval, iter, flag] = newton(f, x0, tol, maxit)
 
     for iter = 1:maxit
         if ~isfinite(r.x) || ~isfinite(r.dx)
+            % Residual or derivative blew up (e.g. f(x) = 1/x at x = 0).
             flag = 2;
-            error('modBuilder:newton:nonFinite', ...
-                  'Residual or derivative not finite at x = %g (iter %d).', ...
-                  x_ad.x, iter);
+            break
         end
 
         % Residual-based convergence test. Done first, so an iterate that
@@ -59,9 +65,9 @@ function [x, fval, iter, flag] = newton(f, x0, tol, maxit)
         end
 
         if abs(r.dx) < eps*max(1, abs(r.x))
+            % Derivative ~0: the Newton step is undefined (singular Jacobian).
             flag = 2;
-            error('modBuilder:newton:singularJacobian', ...
-                  'Derivative ~0 at x = %g (residual = %g).', x_ad.x, r.x);
+            break
         end
 
         dx_step = -r.x / r.dx;
@@ -83,9 +89,10 @@ function [x, fval, iter, flag] = newton(f, x0, tol, maxit)
             end
         end
         if ~accepted
+            % No sufficient-decrease step found: the step is not a descent
+            % direction (e.g. wrong-sign derivative) or the floor underflowed.
             flag = 3;
-            error('modBuilder:newton:lineSearchFailed', ...
-                  'Backtracking failed at x = %g (iter %d).', x_ad.x, iter);
+            break
         end
 
         x_ad = x_ad + alpha*dx_step;

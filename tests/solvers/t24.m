@@ -6,7 +6,7 @@
 %   2. Smooth-side convergence to the negative root.
 %   3. Iterate launched exactly on the kink: derivative is the sub-gradient
 %      0, Newton's singular-Jacobian check fires cleanly (no NaN
-%      propagation, no opaque max-iter exit).
+%      propagation, no opaque max-iter exit), reported through flag=2.
 
 residual = @(x) abs(x) - 0.5;     % roots at x = ±0.5; kink at x = 0
 
@@ -23,16 +23,8 @@ assert(abs(x  - -0.5)  < 1e-10,   'negative-side root should be -0.5, got %g', x
 assert(abs(fval)       < 1e-10,   'residual at negative root should be ~0');
 
 % (3) Start exactly at the kink: derivative is the sub-gradient 0.
-% Pre-autoDiff1-patch this would have produced derivative = NaN, which the
-% patched Newton catches as :nonFinite. Post-autoDiff1-patch the sub-
-% gradient is 0, and the singular-Jacobian guard catches it cleanly with
-% a more accurate diagnostic.
-threw = false;
-try
-    solvers.newton(residual, 0, 1e-10, 50);
-catch e
-    threw = true;
-    assert(strcmp(e.identifier, 'modBuilder:newton:singularJacobian'), ...
-           'Expected modBuilder:newton:singularJacobian, got %s', e.identifier);
-end
-assert(threw, 'newton at the kink should report singular Jacobian');
+% Pre-autoDiff1-patch this would have produced derivative = NaN; post-patch
+% the sub-gradient is 0, and the singular-Jacobian guard catches it cleanly,
+% reported through flag=2 rather than a thrown error.
+[x, fval, iter, flag] = solvers.newton(residual, 0, 1e-10, 50);
+assert(flag == 2, 'newton at the kink should report flag=2 (singular Jacobian), got %d', flag);

@@ -9,13 +9,13 @@ function [x, fval, iter, flag] = newton_system(residual_fn, jacobian_fn, x0, tol
 % - maxit        [integer]    scalar, maximum number of iterations (default 100)
 %
 % OUTPUTS:
-% - x            [double]     n×1 approximate solution
-% - fval         [double]     n×1 residual at solution
+% - x            [double]     n×1 approximate solution (best iterate reached)
+% - fval         [double]     n×1 residual at x
 % - iter         [integer]    scalar, number of outer iterations executed
 % - flag         [integer]    scalar, exit status:
 %                               0 = converged
 %                               1 = max iterations exceeded
-%                               2 = singular / non-finite Jacobian
+%                               2 = singular / non-finite Jacobian or residual
 %                               3 = backtracking line-search failed
 %                               5 = dimension mismatch
 %
@@ -28,6 +28,13 @@ function [x, fval, iter, flag] = newton_system(residual_fn, jacobian_fn, x0, tol
 % outer iteration. Because a step is accepted only when it strictly reduces
 % ||f(x)||_inf, the residual is monotone across iterations and no separate
 % divergence test is needed.
+%
+% This solver does NOT throw on a numerical or dimension failure: every
+% outcome is reported through flag, and (x, fval) hold the best iterate
+% reached so the caller can diagnose the failure. Only malformed inputs
+% (caught by the arguments block below) raise an error. Callers that need a
+% solution must check flag ~= 0 — see modBuilder.solve_system, which turns a
+% non-zero flag into a contextual modBuilder:solve_system:noConvergence error.
     arguments
         residual_fn (1,1) function_handle
         jacobian_fn (1,1) function_handle
@@ -43,19 +50,19 @@ function [x, fval, iter, flag] = newton_system(residual_fn, jacobian_fn, x0, tol
     n        = numel(x0);
     x        = x0;
     flag     = 1;
+    iter     = 0;
     fx       = residual_fn(x);
 
     if ~isequal(size(fx), [n 1])
         flag = 5;
-        error('modBuilder:newtonSystem:dimMismatch', ...
-              'residual_fn returned size %s, expected [%d 1].', mat2str(size(fx)), n);
+        fval = fx;
+        return
     end
 
     for iter = 1:maxit
         if ~all(isfinite(fx))
             flag = 2;
-            error('modBuilder:newtonSystem:nonFiniteResidual', ...
-                  'Residual contains non-finite values at iter %d.', iter);
+            break
         end
 
         % Residual-based convergence test. Done first, so an iterate that
@@ -69,14 +76,11 @@ function [x, fval, iter, flag] = newton_system(residual_fn, jacobian_fn, x0, tol
         J = jacobian_fn(x);
         if ~isequal(size(J), [n n])
             flag = 5;
-            error('modBuilder:newtonSystem:dimMismatch', ...
-                  'jacobian_fn returned size %s, expected [%d %d].', ...
-                  mat2str(size(J)), n, n);
+            break
         end
         if ~all(isfinite(J(:)))
             flag = 2;
-            error('modBuilder:newtonSystem:nonFiniteJacobian', ...
-                  'Jacobian contains non-finite values at iter %d.', iter);
+            break
         end
 
         % Solve J*dx = -fx. Detect singularity by checking finiteness of
@@ -90,9 +94,9 @@ function [x, fval, iter, flag] = newton_system(residual_fn, jacobian_fn, x0, tol
         clear cleanupWS;
 
         if ~all(isfinite(dx))
+            % Jacobian singular or ill-conditioned: the Newton step is undefined.
             flag = 2;
-            error('modBuilder:newtonSystem:singularJacobian', ...
-                  'Jacobian singular or ill-conditioned at iter %d.', iter);
+            break
         end
 
         % Backtracking line search with Armijo condition (inf norm).
@@ -115,9 +119,10 @@ function [x, fval, iter, flag] = newton_system(residual_fn, jacobian_fn, x0, tol
             end
         end
         if ~accepted
+            % No sufficient-decrease step found: the step is not a descent
+            % direction or the floor underflowed.
             flag = 3;
-            error('modBuilder:newtonSystem:lineSearchFailed', ...
-                  'Backtracking failed at iter %d.', iter);
+            break
         end
 
         x  = x_try;

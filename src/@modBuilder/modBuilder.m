@@ -6826,7 +6826,12 @@ classdef modBuilder < handle
             % Set initial guess for the unknown symbol (tol and maxit have
             % their defaults handled by the arguments block above).
             %
-            [x, ~, ~] = solvers.newton(f, sinit, tol, maxit);
+            [x, fval, ~, flag] = solvers.newton(f, sinit, tol, maxit);
+            if flag ~= 0
+                error('modBuilder:solve:noConvergence', ...
+                      'Newton solver failed to solve equation "%s" for symbol "%s" (flag=%d, residual=%g). No value was assigned.', ...
+                      eqname, sname, flag, fval);
+            end
             o.set_value(sname, x);
         end % function
 
@@ -6928,7 +6933,12 @@ classdef modBuilder < handle
                     jacobian_fn = o.analytical_jacobian_fn(eqnames, snames, incidence, fhandles, options.Method);
             end
 
-            [xsol, ~, ~] = solvers.newton_system(residual_fn, jacobian_fn, x0, options.tol, options.maxit);
+            [xsol, fval, ~, flag] = solvers.newton_system(residual_fn, jacobian_fn, x0, options.tol, options.maxit);
+            if flag ~= 0
+                error('modBuilder:solve_system:noConvergence', ...
+                      'Newton solver failed to solve the system for symbols {%s} (flag=%d, max|residual|=%g). No values were assigned.', ...
+                      strjoin(snames, ', '), flag, max(abs(fval)));
+            end
 
             % Write solution back
             for j = 1:n
