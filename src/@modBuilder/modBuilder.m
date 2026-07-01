@@ -6382,7 +6382,7 @@ classdef modBuilder < handle
             end
         end % function
 
-        function blocks = steady_plan(o)
+        function blocks = steady_plan(o, options)
         % Compute the structural steady-state plan: SCC decomposition of the dependency graph
         % induced by the variable↔equation pairing.
         %
@@ -6416,6 +6416,19 @@ classdef modBuilder < handle
         %   to derive a closed form. For simultaneous blocks of size 2..4, ast.linearise_system attempts
         %   to extract a coefficient matrix; if the system is jointly linear and the matrix is non-singular,
         %   ast.solve_linear_system returns the closed forms via Cramer's rule.
+        % - options.Match [logical, default false]: when true, the equation<->variable
+        %   pairing is recomputed by bipartite matching (matchequations) on the
+        %   SIMPLIFIED static residuals, and the dependency graph is built from those
+        %   same residuals, instead of using the declaration pairing. This exposes the
+        %   recursive steady-state structure that an arbitrary declaration pairing hides:
+        %   a large simultaneous block frequently decomposes into singletons plus a few
+        %   tiny blocks. Equations that no residual can pin (e.g. shock identities, whose
+        %   variable is an anchor) stay on their declaration key. Not supported together
+        %   with calibration swaps.
+            arguments
+                o
+                options.Match (1,1) logical = false
+            end
 
             o.refresh_tables();
 
@@ -6425,28 +6438,69 @@ classdef modBuilder < handle
                 return
             end
 
-            % Default pairing: equation i is pinned to its LHS endogenous (the name
-            % stored in o.equations(:, EQ_COL_NAME)). Calibration role swaps re-pair
-            % the anchor equation of each calibrated endogenous to its swapped parameter.
-            var_names = o.equations(:, modBuilder.EQ_COL_NAME);
+            % Equation<->variable pairing. Default: equation i is pinned to its
+            % declaration key (o.equations(:, EQ_COL_NAME)); calibration role swaps
+            % re-pair the anchor equation of each calibrated endogenous to its swapped
+            % parameter. With Match=true, the pairing comes from bipartite matching on
+            % the simplified static residuals (eqasts_s, reused for the dependency graph).
+            eqasts_s = {};
             calibrated_endos = {};
-            if ~isempty(o.calibration_swaps)
-                calibrated_endos = o.calibration_swaps(:, 1)';
-                for s = 1:size(o.calibration_swaps, 1)
-                    endo = o.calibration_swaps{s, 1};
-                    param = o.calibration_swaps{s, 3};
-                    eq_idx = find(strcmp(endo, var_names));
-                    if isempty(eq_idx)
-                        error('modBuilder:steady_plan', ...
-                              'Calibrated endogenous "%s" is not paired with any equation.', endo);
+            if options.Match
+                if ~isempty(o.calibration_swaps)
+                    error('modBuilder:steady_plan:matchWithSwaps', ...
+                          'steady_plan(Match=true) is not supported together with calibration swaps.');
+                end
+                keys = o.equations(:, modBuilder.EQ_COL_NAME);
+                eqasts_s = cell(n, 1);
+                eqlhs_s = cell(n, 1);
+                for i = 1:n
+                    parts = strsplit(o.equations{i, modBuilder.EQ_COL_EXPR}, '=');
+                    if numel(parts) == 2
+                        resstr = sprintf('(%s) - (%s)', strtrim(parts{1}), strtrim(parts{2}));
+                        eqlhs_s{i} = ast(strtrim(parts{1})).symbol_names();
+                    else
+                        resstr = strtrim(parts{1});
+                        eqlhs_s{i} = ast(resstr).symbol_names();
                     end
-                    if ~ismember(param, o.T.equations.(endo))
-                        error('modBuilder:steady_plan', ...
-                              ['Parameter "%s" does not appear in the equation paired with "%s"; ' ...
-                               'a non-local role swap would require re-running matchequations on the ' ...
-                               'swapped unknown set, which is not currently supported.'], param, endo);
+                    eqasts_s{i} = ast(resstr).staticise().simplify();
+                end
+                [eq2var, umeqs, umvars] = modBuilder.matchequations(eqasts_s, eqlhs_s, keys);
+                var_names = eq2var(:);
+                % Complete the pairing for unmatched equations (no perfect matching
+                % exists, e.g. when some variables cancel out of every static residual):
+                % keep each on its declaration key when still free, else a variable that
+                % at least appears in the residual, else any remaining one.
+                remaining = umvars(:);
+                for t = 1:numel(umeqs)
+                    i = umeqs(t);
+                    pos = find(strcmp(keys{i}, remaining), 1);
+                    if isempty(pos)
+                        pos = find(ismember(remaining, eqasts_s{i}.symbol_names()), 1);
                     end
-                    var_names{eq_idx} = param;
+                    if isempty(pos), pos = 1; end
+                    var_names{i} = remaining{pos};
+                    remaining(pos) = [];
+                end
+            else
+                var_names = o.equations(:, modBuilder.EQ_COL_NAME);
+                if ~isempty(o.calibration_swaps)
+                    calibrated_endos = o.calibration_swaps(:, 1)';
+                    for s = 1:size(o.calibration_swaps, 1)
+                        endo = o.calibration_swaps{s, 1};
+                        param = o.calibration_swaps{s, 3};
+                        eq_idx = find(strcmp(endo, var_names));
+                        if isempty(eq_idx)
+                            error('modBuilder:steady_plan', ...
+                                  'Calibrated endogenous "%s" is not paired with any equation.', endo);
+                        end
+                        if ~ismember(param, o.T.equations.(endo))
+                            error('modBuilder:steady_plan', ...
+                                  ['Parameter "%s" does not appear in the equation paired with "%s"; ' ...
+                                   'a non-local role swap would require re-running matchequations on the ' ...
+                                   'swapped unknown set, which is not currently supported.'], param, endo);
+                        end
+                        var_names{eq_idx} = param;
+                    end
                 end
             end
             var_idx = dictionary(string(var_names(:)), (1:n)');
@@ -6459,22 +6513,41 @@ classdef modBuilder < handle
             ext_deps = cell(n, 1);
             for i = 1:n
                 eqname_i = var_names{i};
-                eq_str = o.equations{i, modBuilder.EQ_COL_EXPR};
-                LHSRHS = strsplit(eq_str, '=');
-                names = {};
-                if isscalar(LHSRHS)
-                    names = ast(strtrim(LHSRHS{1})).symbol_names();
-                elseif length(LHSRHS) == 2
-                    lhs_tree = ast(strtrim(LHSRHS{1}));
-                    rhs_tree = ast(strtrim(LHSRHS{2}));
-                    if strcmp(lhs_tree.type, 'sym') && strcmp(lhs_tree.value, eqname_i)
-                        % "y = expr" form: skip the bare LHS use of y.
-                        names = rhs_tree.symbol_names();
-                    else
-                        names = unique([lhs_tree.symbol_names(), rhs_tree.symbol_names()], 'stable');
+                if options.Match
+                    % Dependencies from the simplified static residual; the paired
+                    % (target) variable is not a dependency of its own equation. Keep
+                    % only symbols that genuinely determine the steady state through
+                    % this equation -- they appear AND do not cancel as a common factor
+                    % -- matching the admission rule used by matchequations. This drops
+                    % spurious edges from variables that cancel at the steady state
+                    % (e.g. consumption in an Euler equation c = beta*R*c(+1)).
+                    cand = eqasts_s{i}.symbol_names();
+                    cand = cand(~strcmp(cand, eqname_i));
+                    names = {};
+                    for kk = 1:numel(cand)
+                        [has_kk, canc_kk] = eqasts_s{i}.check_factor(cand{kk});
+                        if has_kk && ~canc_kk
+                            names{end+1} = cand{kk}; %#ok<AGROW>
+                        end
                     end
+                else
+                    eq_str = o.equations{i, modBuilder.EQ_COL_EXPR};
+                    LHSRHS = strsplit(eq_str, '=');
+                    names = {};
+                    if isscalar(LHSRHS)
+                        names = ast(strtrim(LHSRHS{1})).symbol_names();
+                    elseif length(LHSRHS) == 2
+                        lhs_tree = ast(strtrim(LHSRHS{1}));
+                        rhs_tree = ast(strtrim(LHSRHS{2}));
+                        if strcmp(lhs_tree.type, 'sym') && strcmp(lhs_tree.value, eqname_i)
+                            % "y = expr" form: skip the bare LHS use of y.
+                            names = rhs_tree.symbol_names();
+                        else
+                            names = unique([lhs_tree.symbol_names(), rhs_tree.symbol_names()], 'stable');
+                        end
+                    end
+                    names = unique(names, 'stable');
                 end
-                names = unique(names, 'stable');
                 en = {}; ex = {};
                 for k = 1:numel(names)
                     s = names{k};
@@ -6583,6 +6656,7 @@ classdef modBuilder < handle
                         residuals{jj} = modBuilder.static_residual(o, members(jj));
                     end
                     if all(~cellfun(@isempty, residuals))
+                      try
                         % First attempt: jointly linear → Bareiss + back-substitution.
                         [ok_lin, A_mat, b_vec] = ast.linearise_system(residuals, vars_block);
                         if ok_lin
@@ -6626,6 +6700,12 @@ classdef modBuilder < handle
                                 cf(end).expr = elim_cf(jj).expr.string();
                             end
                         end
+                      catch
+                        % A block whose closed form cannot be derived (e.g. an AST shape
+                        % the linear / elimination recognisers do not support) stays
+                        % reported as simultaneous with no closed form, for a numerical solve.
+                        cf = struct('var', {}, 'expr', {});
+                      end
                     end
                 end
 
