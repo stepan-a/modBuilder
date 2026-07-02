@@ -24,7 +24,7 @@ m.exogenous('e2', 0);
 m.exogenous('e_w', 0);
 
 b = m.steady_plan(Match=true);
-kindof = containers.Map();
+kindof = dictionary();
 for k = 1:numel(b)
     kindof(b(k).vars{1}) = b(k).kind;
 end
