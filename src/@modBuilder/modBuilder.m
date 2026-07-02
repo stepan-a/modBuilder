@@ -7061,6 +7061,128 @@ classdef modBuilder < handle
             end
         end % function
 
+        function symmetries = scaling_symmetries(o, options)
+        % Detect the scale symmetries of the steady-state system: assignments of an
+        % exponent s_v to each endogenous variable such that scaling v -> lambda^{s_v}·v
+        % leaves every static equation homogeneous. Each independent symmetry is a scale
+        % freedom of the steady state; its invariant monomials are the "useful ratios"
+        % (K/L, C/Y, ...) that make the system scale-free and can decouple the otherwise
+        % large simultaneous core.
+        %
+        % Method: each static residual is expanded to a sum of monomials; homogeneity
+        % requires the monomials of an equation to share a scaling degree (linear in the
+        % s_v) and every nonlinear-call argument to have degree 0 (ast.scaling_degree).
+        % Stacking these linear constraints gives a matrix C; null(C) is the space of
+        % scale symmetries.
+        %
+        % OUTPUT:
+        % - symmetries [struct array] one entry per independent scale symmetry (a basis
+        %     vector of null(C)), each describing a CO-SCALING GROUP -- the variables
+        %     that move together under that scale freedom:
+        %       .vars       [cell]    symbols with a non-zero scaling exponent
+        %       .exponents  [double]  their scaling exponents (normalised so first = +1)
+        %   The scale-free (intensive) variables are the within-group ratios, e.g. two
+        %   members v_i, v_j with equal exponent give the invariant ratio v_i / v_j.
+        %   Called with no output, prints a readable summary of the co-scaling groups.
+        %
+        % REMARKS:
+        % - Diagnostic only: it reports the ratios, it does not rewrite the model.
+        % - Exponents that are parameters (x^alpha) are evaluated with the current
+        %   calibration; an equation with a variable exponent or an unanalysable shape
+        %   contributes no constraint and is counted as skipped in the summary.
+        % - options.IncludeParameters [logical, default false]: also treat parameters
+        %   as scaling variables. Explicit level parameters (a normalisation such as
+        %   household_labour_supply_ss) PIN the scale, so on the pinned model no
+        %   symmetry remains; letting the parameters scale reveals the LATENT scaling
+        %   structure -- the invariant monomials then expose the useful ratios and the
+        %   level parameters that fix the scale.
+            arguments
+                o
+                options.IncludeParameters (1,1) logical = false
+            end
+            o.refresh_tables();
+            scalable = o.var(:, modBuilder.COL_NAME);
+            if options.IncludeParameters && ~isempty(o.params)
+                scalable = [scalable; o.params(:, modBuilder.COL_NAME)];
+            end
+            nvar = numel(scalable);
+            symmetries = struct('vars', {}, 'exponents', {});
+            if nvar == 0
+                return
+            end
+            var_index = dictionary(string(scalable(:)), (1:nvar)');
+
+            % Symbol -> numeric value map for evaluating exponents.
+            values = struct();
+            for i = 1:size(o.params, 1)
+                val = o.params{i, modBuilder.COL_VALUE};
+                if isnumeric(val) && isscalar(val) && isfinite(val)
+                    values.(o.params{i, modBuilder.COL_NAME}) = val;
+                end
+            end
+
+            neq = size(o.equations, 1);
+            C = zeros(0, nvar);
+            n_skipped = 0;
+            for i = 1:neq
+                f = modBuilder.static_residual(o, i);
+                if isempty(f)
+                    n_skipped = n_skipped + 1;
+                    continue
+                end
+                [~, cons, ok] = f.expand().scaling_degree(var_index, nvar, values);
+                if ~ok
+                    n_skipped = n_skipped + 1;
+                    continue
+                end
+                for k = 1:numel(cons)
+                    C(end+1, :) = cons{k}; %#ok<AGROW>
+                end
+            end
+
+            % Scale symmetries = null space of the stacked constraints.
+            if isempty(C)
+                N = eye(nvar);
+            else
+                N = null(C, 'r');
+            end
+
+            tol = 1e-9;
+            n_degenerate = 0;
+            for j = 1:size(N, 2)
+                s = N(:, j);
+                nz = find(abs(s) > tol);
+                if isempty(nz)
+                    continue
+                end
+                s = s / s(nz(1));           % normalise: first non-zero exponent = 1
+                s(abs(s) < tol) = 0;
+                nz = find(abs(s) > tol);
+                if numel(nz) < 2
+                    % A single-symbol freedom is a symbol unconstrained by the steady
+                    % state, not an invariant ratio; count it but do not report it.
+                    n_degenerate = n_degenerate + 1;
+                    continue
+                end
+                symmetries(end+1).vars = scalable(nz)'; %#ok<AGROW>
+                symmetries(end).exponents = s(nz)';
+            end
+
+            if nargout == 0
+                modBuilder.dprintf('Scale symmetries: %d invariant ratio(s), %d degenerate freedom(s) (%d equations, %d skipped)', ...
+                    numel(symmetries), n_degenerate, neq, n_skipped);
+                for j = 1:numel(symmetries)
+                    vs = symmetries(j).vars; es = symmetries(j).exponents;
+                    parts = cell(1, numel(vs));
+                    for t = 1:numel(vs)
+                        parts{t} = sprintf('%s^%g', vs{t}, es(t));
+                    end
+                    modBuilder.dprintf('  co-scaling group %d: %s', j, strjoin(parts, ' * '));
+                end
+                clear symmetries
+            end
+        end % function
+
         function o = apply_steady_plan(o, blocks)
         % Write the closed-form assignments produced by steady_plan into o.steady_state.
         %

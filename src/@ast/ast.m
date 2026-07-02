@@ -1076,6 +1076,85 @@ classdef ast
             end
         end % function
 
+        function [deg, cons, ok] = scaling_degree(o, var_index, nvar, values)
+        % Scaling-degree analysis for homogeneity / scale-symmetry detection.
+        %
+        % Treats o as built from products, powers and sums of "scaling variables"
+        % (the keys of var_index) and scale-invariant constants (parameters,
+        % exogenous, numbers). Assigns each scaling variable an unknown exponent
+        % s_v and returns the total scaling degree of o as a linear form in the s_v.
+        %
+        % INPUTS:
+        % - o          [ast]          expression (best pre-processed with expand()).
+        % - var_index  [dictionary]   maps each scaling-variable name to its column.
+        % - nvar       [double]       number of scaling variables (columns).
+        % - values     [struct]       symbol->value map used to evaluate numeric
+        %                             exponents (e.g. x^alpha with alpha a parameter).
+        %
+        % OUTPUTS:
+        % - deg   [1×nvar]  scaling exponents of o (Σ exponent·s_v), meaningful when
+        %                   o is a single scaling-monomial or a homogeneous sum.
+        % - cons  [cell]    extra 1×nvar constraint rows that must vanish for o to be
+        %                   scale-homogeneous: equal-degree across the terms of every
+        %                   sum, and degree-0 of every nonlinear-call argument.
+        % - ok    [logical] false when o cannot be analysed (e.g. an exponent that is
+        %                   not a scale-invariant constant).
+            deg = zeros(1, nvar);
+            cons = {};
+            ok = true;
+            switch o.type
+                case 'num'
+                    % scale-invariant constant: degree 0
+                case {'sym', 'ss'}
+                    if isKey(var_index, o.value)
+                        deg(var_index(o.value)) = 1;
+                    end
+                case 'tsym'
+                    if isKey(var_index, o.value{1})
+                        deg(var_index(o.value{1})) = 1;
+                    end
+                case 'uminus'
+                    [deg, cons, ok] = o.children{1}.scaling_degree(var_index, nvar, values);
+                case 'binop'
+                    [d1, c1, o1] = o.children{1}.scaling_degree(var_index, nvar, values);
+                    switch o.value
+                        case '*'
+                            [d2, c2, o2] = o.children{2}.scaling_degree(var_index, nvar, values);
+                            deg = d1 + d2; cons = [c1, c2]; ok = o1 && o2;
+                        case '/'
+                            [d2, c2, o2] = o.children{2}.scaling_degree(var_index, nvar, values);
+                            deg = d1 - d2; cons = [c1, c2]; ok = o1 && o2;
+                        case {'+', '-'}
+                            % A sum is scale-homogeneous iff all summands share a
+                            % degree; that common degree is the sum's degree.
+                            [d2, c2, o2] = o.children{2}.scaling_degree(var_index, nvar, values);
+                            deg = d1; cons = [c1, c2, {d1 - d2}]; ok = o1 && o2;
+                        case '^'
+                            [base, expo] = ast.power_components(o);
+                            [db, cb, ob] = base.scaling_degree(var_index, nvar, values);
+                            e = NaN;
+                            try, e = expo.eval(values); catch, e = NaN; end
+                            if ~isscalar(e) || ~isfinite(e)
+                                ok = false; return
+                            end
+                            deg = e * db; cons = cb; ok = ob;
+                        otherwise
+                            ok = false;
+                    end
+                case 'call'
+                    % A nonlinear function (exp, log, ...) is scale-invariant only if
+                    % each argument is scale-invariant: the call has degree 0 and every
+                    % argument's degree is constrained to vanish.
+                    for i = 1:numel(o.children)
+                        [da, ca, oa] = o.children{i}.scaling_degree(var_index, nvar, values);
+                        cons = [cons, ca, {da}]; %#ok<AGROW>
+                        ok = ok && oa;
+                    end
+                otherwise
+                    ok = false;
+            end
+        end % function
+
         function o = canonicalise(o)
         % Return a canonical form of the tree.
         %
