@@ -2308,6 +2308,35 @@ classdef modBuilder < handle
             end
         end % function
 
+        function f = substitute_known(f, blockvars, known_names, known_asts, param_names)
+        % Inline the known steady-state values (known_names -> known_asts) into the
+        % residual f, then simplify. Variables of the current block (blockvars) are
+        % never substituted -- they are the unknowns being solved for. Several passes
+        % resolve chains where one known value references another. Used by steady_plan's
+        % PropagateKnown option to collapse steady-state-constant factors before the
+        % closed-form recognisers run.
+            if isempty(f) || isempty(known_names)
+                return
+            end
+            % Only inline LEAF values (a number or a single symbol): a normalisation = 1
+            % or = 0, a shock = 1, or a symbol alias (InflationFactor = InflationTarget).
+            % These collapse steady-state-constant factors (x/1 -> x, (a/a)^E -> 1,
+            % log(1) -> 0) without bloating the residual, which inlining a compound
+            % expression (a full rental-rate formula) would do and defeat the recognisers.
+            for pass = 1:3
+                for i = 1:numel(known_names)
+                    if ismember(known_names{i}, blockvars)
+                        continue
+                    end
+                    if ~any(strcmp(known_asts{i}.type, {'num','sym','tsym','ss'}))
+                        continue
+                    end
+                    f = f.substitute(known_names{i}, known_asts{i}, param_names);
+                end
+                f = f.simplify();
+            end
+        end % function
+
         function f = dynamic_residual(o, eq_idx)
         % Build the dynamic (NON-staticised) residual AST for the equation at row eq_idx of
         % o.equations: "LHS - RHS" (or "LHS" if there is no '=' symbol), with all leads/lags
@@ -6509,6 +6538,7 @@ classdef modBuilder < handle
                 o
                 options.Match (1,1) logical = false
                 options.Anchors (1,:) cell = {}
+                options.PropagateKnown (1,1) logical = false
             end
 
             if ~isempty(options.Anchors) && ~options.Match
@@ -6766,6 +6796,25 @@ classdef modBuilder < handle
                 ord = toposort(Gc);
             end
 
+            % Known-value propagation (option PropagateKnown): substitute the
+            % steady-state values already known -- user-declared anchors in
+            % o.steady_state, plus the closed forms derived by earlier blocks that
+            % resolve to a constant -- into each block's residual before the
+            % recognisers run. Collapsing factors that are constant at the steady state
+            % (a symmetric normalisation = 1 makes x/1 -> x and (.)^E -> 1; a shock = 1
+            % makes log(shock) -> 0) turns many residuals into linear / invertible forms.
+            propagate = options.PropagateKnown;
+            param_names = {};
+            if ~isempty(o.params), param_names = o.params(:, modBuilder.COL_NAME)'; end
+            endo_names_all = o.var(:, modBuilder.COL_NAME)';
+            known_names = {}; known_asts = {};
+            if propagate && ~isempty(o.steady_state)
+                for i = 1:size(o.steady_state, 1)
+                    known_names{end+1} = o.steady_state{i, modBuilder.SS_COL_NAME}; %#ok<AGROW>
+                    known_asts{end+1} = ast(o.steady_state{i, modBuilder.SS_COL_EXPR}).staticise(); %#ok<AGROW>
+                end
+            end
+
             % Group equation indices by SCC, in topological order.
             for k = 1:numel(ord)
                 members = find(bins == ord(k));
@@ -6814,6 +6863,7 @@ classdef modBuilder < handle
                 cf = struct('var', {}, 'expr', {});
                 if numel(members) == 1 && ~is_norm_anchor(members(1))
                     f = modBuilder.static_residual(o, members(1));
+                    f = modBuilder.substitute_known(f, vars_block, known_names, known_asts, param_names);
                     if ~isempty(f)
                         rhs_tree = f.isolate(vars_block{1});
                         if ~isempty(rhs_tree)
@@ -6827,7 +6877,8 @@ classdef modBuilder < handle
                     % polynomial intermediate entries.
                     residuals = cell(1, numel(members));
                     for jj = 1:numel(members)
-                        residuals{jj} = modBuilder.static_residual(o, members(jj));
+                        rj = modBuilder.static_residual(o, members(jj));
+                        residuals{jj} = modBuilder.substitute_known(rj, vars_block, known_names, known_asts, param_names);
                     end
                     if all(~cellfun(@isempty, residuals))
                       try
@@ -6880,6 +6931,19 @@ classdef modBuilder < handle
                         % reported as simultaneous with no closed form, for a numerical solve.
                         cf = struct('var', {}, 'expr', {});
                       end
+                    end
+                end
+
+                % Propagate: a closed form that resolves to a constant (no endogenous
+                % symbol once the known values are inlined) becomes known for the
+                % downstream blocks -- e.g. InflationFactor = InflationTarget collapses
+                % to a parameter, which then linearises the price recursion block.
+                if propagate
+                    for jj = 1:numel(cf)
+                        ca = modBuilder.substitute_known(ast(cf(jj).expr).staticise(), {}, known_names, known_asts, param_names);
+                        if ~any(ismember(ca.symbol_names(), endo_names_all))
+                            known_names{end+1} = cf(jj).var; known_asts{end+1} = ca; %#ok<AGROW>
+                        end
                     end
                 end
 

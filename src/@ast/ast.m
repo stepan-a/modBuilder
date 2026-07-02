@@ -2620,7 +2620,17 @@ classdef ast
                                (strcmp(base.type, 'tsym') && strcmp(base.value{1}, x))
                                 ok = true; coef = ast('num', 1, {}); d = exp_node;
                             else
-                                ok = false; coef = []; d = [];
+                                % Base is a compound carrying x once (e.g. a/x): if it is
+                                % itself monomial in x, base = cb·x^db, so
+                                % base^exp = cb^exp · x^(db·exp).
+                                [ok_b, cb, db] = ast.extract_monomial(base, x);
+                                if ok_b
+                                    coef = ast('binop', '^', {cb, exp_node});
+                                    d = ast('binop', '*', {db, exp_node});
+                                    ok = true;
+                                else
+                                    ok = false; coef = []; d = [];
+                                end
                             end
                         otherwise
                             ok = false; coef = []; d = [];
