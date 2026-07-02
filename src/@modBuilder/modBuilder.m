@@ -3459,11 +3459,14 @@ classdef modBuilder < handle
                 end
             end
             o.refresh_tables();
-            if ~isfield(o.T.equations, endo_name) || ~ismember(param_name, o.T.equations.(endo_name))
+            % The freed parameter must appear in at least one equation (otherwise
+            % nothing can pin it). Locality (the parameter appearing in the equation
+            % paired with endo_name) is required only by the declaration-pairing path
+            % and is re-checked there by steady_plan; steady_plan(Match=true) resolves
+            % non-local swaps by re-running matchequations on the swapped unknown set.
+            if ~isfield(o.T.params, param_name) || isempty(o.T.params.(param_name))
                 error('modBuilder:calibrate', ...
-                      ['Parameter "%s" does not appear in the equation paired with "%s"; ' ...
-                       'a non-local role swap would require re-running matchequations on the ' ...
-                       'swapped unknown set, which is not currently supported.'], param_name, endo_name);
+                      'Parameter "%s" does not appear in any equation, so it cannot be solved for.', param_name);
             end
 
             n = size(o.calibration_swaps, 1);
@@ -6492,9 +6495,25 @@ classdef modBuilder < handle
         %   tiny blocks. Economically exogenous variables (AR/ARMA/VAR driving processes,
         %   detected structurally) are treated as anchors and excluded from the matching.
         %   Not supported together with calibration swaps.
+        % - options.Anchors [cell of char, default {}]: additional endogenous variables
+        %   to treat as user-declared normalisation anchors (e.g. a labour-supply scale),
+        %   on top of the auto-detected exogenous processes. Requires Match=true. Each
+        %   anchor variable is removed from the matching candidates and becomes an
+        %   'anchor' source (its steady-state value is user-supplied). Fixing K anchors
+        %   leaves K equations unmatched -- the consistency conditions that the anchor
+        %   values must satisfy; each is reported as the equation of its 'anchor' block.
+        %   A homogeneous (scale) normalisation is well-posed as is; if instead the
+        %   surplus equation genuinely pins something, a calibration swap (freeing a
+        %   parameter) is required rather than a plain anchor.
             arguments
                 o
                 options.Match (1,1) logical = false
+                options.Anchors (1,:) cell = {}
+            end
+
+            if ~isempty(options.Anchors) && ~options.Match
+                error('modBuilder:steady_plan:anchorsNeedMatch', ...
+                      'The Anchors option requires Match=true.');
             end
 
             o.refresh_tables();
@@ -6513,11 +6532,13 @@ classdef modBuilder < handle
             eqasts_s = {};
             calibrated_endos = {};
             is_anchor = false(n, 1);
+            % is_norm_anchor(i): equation i is a consistency condition rendered
+            % redundant by a user-declared normalisation anchor (Anchors), and its
+            % paired variable is that anchor (a source with a user-supplied value).
+            % Distinguished from exogenous anchors so no closed form is derived from
+            % the now-redundant equation.
+            is_norm_anchor = false(n, 1);
             if options.Match
-                if ~isempty(o.calibration_swaps)
-                    error('modBuilder:steady_plan:matchWithSwaps', ...
-                          'steady_plan(Match=true) is not supported together with calibration swaps.');
-                end
                 keys = o.equations(:, modBuilder.EQ_COL_NAME);
                 eqasts_s = cell(n, 1);
                 eqlhs_s = cell(n, 1);
@@ -6545,15 +6566,61 @@ classdef modBuilder < handle
                 % for the steady-state matching, excluded from it so the matcher cannot
                 % steal a shock variable to pin a real equation.
                 is_anchor = modBuilder.exogenous_processes(keys, rawsyms, @(nm) o.isexogenous(nm));
+
+                % User-declared normalisation anchors: endogenous variables whose
+                % steady-state level is fixed by the user (a scale normalisation).
+                % They are removed from the matching candidates; fixing K of them
+                % leaves the (square) real system over-determined by K, so the matcher
+                % leaves K equations unmatched -- the consistency conditions. Each such
+                % equation is paired to an anchor (marked anchor: a source) so the
+                % downstream graph stays a bijection.
+                anchor_vars = options.Anchors;
+                for a = 1:numel(anchor_vars)
+                    nm = anchor_vars{a};
+                    ai = find(strcmp(keys, nm), 1);
+                    if isempty(ai) || ~o.isendogenous(nm)
+                        error('modBuilder:steady_plan:badAnchor', ...
+                              'Anchor "%s" is not an endogenous variable of the model.', nm);
+                    end
+                    if is_anchor(ai)
+                        error('modBuilder:steady_plan:redundantAnchor', ...
+                              ['Anchor "%s" is already an auto-detected exogenous process; ' ...
+                               'it need not be declared.'], nm);
+                    end
+                end
+
+                % Calibration swaps: each fixes an endogenous (a known constant,
+                % removed from the candidates) and frees its paired parameter (an
+                % unknown added to the candidates). A swap is count-neutral (-1 endo,
+                % +1 param), so the matcher stays square; it assigns the freed
+                % parameter to whichever equation it settles.
+                freed_params = {};
+                if ~isempty(o.calibration_swaps)
+                    calibrated_endos = o.calibration_swaps(:, 1)';
+                    freed_params = o.calibration_swaps(:, 3)';
+                end
+
                 real_idx = find(~is_anchor);
                 var_names = keys;   % anchor equations keep their own (anchor) variable
                 if ~isempty(real_idx)
+                    cand = keys(real_idx);
+                    drop = [anchor_vars, calibrated_endos];
+                    if ~isempty(drop)
+                        cand = cand(~ismember(cand, drop));
+                    end
+                    if ~isempty(freed_params)
+                        cand = [cand; freed_params(:)];
+                    end
                     [eq2var_r, ~, umvars_r] = ...
-                        modBuilder.matchequations(eqasts_s(real_idx), eqlhs_s(real_idx), keys(real_idx));
-                    % Complete a deficient real matching (some variable cancels out of
-                    % every residual): keep the declaration key if free, else a variable
-                    % appearing in the residual, else any remaining one.
+                        modBuilder.matchequations(eqasts_s(real_idx), eqlhs_s(real_idx), cand);
+                    % Complete the matching. First fill genuinely deficient equations
+                    % (a variable cancels out of every residual) from leftover
+                    % candidates; then absorb the anchor-induced surplus: each still
+                    % unmatched equation is a consistency condition, paired to a
+                    % remaining anchor variable (a source), else fall back to any
+                    % leftover candidate / the declaration key.
                     remaining = umvars_r(:);
+                    anchor_queue = anchor_vars(:);
                     for t = 1:numel(real_idx)
                         i = real_idx(t);
                         v = eq2var_r{t};
@@ -6562,10 +6629,17 @@ classdef modBuilder < handle
                             if isempty(pos)
                                 pos = find(ismember(remaining, eqasts_s{i}.symbol_names()), 1);
                             end
-                            if isempty(pos) && ~isempty(remaining), pos = 1; end
                             if ~isempty(pos)
                                 v = remaining{pos};
                                 remaining(pos) = [];
+                            elseif ~isempty(anchor_queue)
+                                v = anchor_queue{1};
+                                anchor_queue(1) = [];
+                                is_anchor(i) = true;
+                                is_norm_anchor(i) = true;
+                            elseif ~isempty(remaining)
+                                v = remaining{1};
+                                remaining(1) = [];
                             else
                                 v = keys{i};
                             end
@@ -6738,7 +6812,7 @@ classdef modBuilder < handle
                 % already-solved x_j (j > i) by name so the generated assignments stay
                 % compact in the steady_state_model block.
                 cf = struct('var', {}, 'expr', {});
-                if numel(members) == 1
+                if numel(members) == 1 && ~is_norm_anchor(members(1))
                     f = modBuilder.static_residual(o, members(1));
                     if ~isempty(f)
                         rhs_tree = f.isolate(vars_block{1});
