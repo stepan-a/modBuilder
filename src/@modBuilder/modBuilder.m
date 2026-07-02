@@ -1962,6 +1962,69 @@ classdef modBuilder < handle
             tokens = unique(tokens);
         end % function
 
+        function is_exo = exogenous_processes(keys, rawsyms, isexo_fn)
+        % Identify variables that belong to an exogenous driving process (AR/ARMA/VAR).
+        %
+        % INPUTS:
+        % - keys      [cell]   n×1 variable name keyed to each equation (equation i pins keys{i})
+        % - rawsyms   [cell]   n×1, each a cell of the symbol names referenced by equation i
+        %                      (endogenous, exogenous and parameter names; STEADY_STATE(y)
+        %                      counts as a reference to y)
+        % - isexo_fn  [handle] predicate isexo_fn(name) -> true iff name is an exogenous variable
+        %
+        % OUTPUTS:
+        % - is_exo    [logical] n×1; is_exo(i) true iff keys{i} is economically exogenous
+        %
+        % METHOD:
+        % Build the dependency graph over variables (edge x -> y iff the equation keyed to
+        % x references endogenous y). A variable is exogenous iff its strongly-connected
+        % block is a sink (its equations reference no endogenous variable outside the
+        % block: an AR/ARMA references only its own lags, a VAR only its block members)
+        % AND the block is driven by at least one exogenous innovation. Sink blocks with
+        % no innovation are ordinary constants/definitions, not exogenous processes.
+            n = numel(keys);
+            is_exo = false(n, 1);
+            if n == 0
+                return
+            end
+            keypos = dictionary(string(keys(:)), (1:n)');
+            endorefs = cell(n, 1);
+            has_exo = false(n, 1);
+            src = []; tgt = [];
+            for i = 1:n
+                er = {};
+                for c = 1:numel(rawsyms{i})
+                    nm = rawsyms{i}{c};
+                    if isKey(keypos, nm)
+                        if ~strcmp(nm, keys{i})
+                            er{end+1} = nm; %#ok<AGROW>
+                        end
+                    elseif isexo_fn(nm)
+                        has_exo(i) = true;
+                    end
+                end
+                endorefs{i} = er;
+                for c = 1:numel(er)
+                    src(end+1) = i; %#ok<AGROW>
+                    tgt(end+1) = keypos(er{c}); %#ok<AGROW>
+                end
+            end
+            scc = conncomp(digraph(src, tgt, [], n), 'Type', 'strong');
+            is_sink = true(1, max(scc));
+            blk_exo = false(1, max(scc));
+            for i = 1:n
+                blk_exo(scc(i)) = blk_exo(scc(i)) || has_exo(i);
+                for c = 1:numel(endorefs{i})
+                    if scc(keypos(endorefs{i}{c})) ~= scc(i)
+                        is_sink(scc(i)) = false;
+                    end
+                end
+            end
+            for i = 1:n
+                is_exo(i) = is_sink(scc(i)) && blk_exo(scc(i));
+            end
+        end % function
+
         function b = isequalcell(cA, cB)
         % Return true iff n×2 cell arrays are identical (without taking care the ordering of the rowscA and cB are interpreted as sets of rows).
         %
@@ -6390,7 +6453,7 @@ classdef modBuilder < handle
         % - blocks    [struct array]   one entry per SCC, in topological order:
         %               .vars         [cell]    endogenous variable names in the block
         %               .eqs          [cell]    equation names paired to those vars (= .vars in this codebase)
-        %               .kind         [char]    'trivial' | 'self-recursive' | 'simultaneous'
+        %               .kind         [char]    'trivial' | 'self-recursive' | 'simultaneous' | 'anchor'
         %               .deps         [cell]    already-solved endogenous names referenced from this block
         %               .extdeps      [cell]    parameter / exogenous names referenced from this block
         %               .closed_form  [struct array]  one entry per resolved variable, each with
@@ -6409,6 +6472,10 @@ classdef modBuilder < handle
         %                      via a lag, so the equation staticises to an equation in the variable itself).
         % - 'simultaneous':    SCC of size > 1; the variables are jointly determined by the equations and
         %                      require either further symbolic reduction or a numerical solver.
+        % - 'anchor':          (Match=true only) an economically exogenous variable -- one belonging to an
+        %                      AR/ARMA/VAR driving process (a sink block of the dependency graph fed by an
+        %                      exogenous innovation), whose steady-state value is a free anchor supplied by
+        %                      the user rather than pinned by the rest of the model.
         % - The dependency analysis collects symbol names from each equation via the AST, regardless of
         %   lag. The static dependency graph and its SCC structure are identical to what one obtains by
         %   first staticising every equation, since name equality is unchanged by staticise.
@@ -6422,9 +6489,9 @@ classdef modBuilder < handle
         %   same residuals, instead of using the declaration pairing. This exposes the
         %   recursive steady-state structure that an arbitrary declaration pairing hides:
         %   a large simultaneous block frequently decomposes into singletons plus a few
-        %   tiny blocks. Equations that no residual can pin (e.g. shock identities, whose
-        %   variable is an anchor) stay on their declaration key. Not supported together
-        %   with calibration swaps.
+        %   tiny blocks. Economically exogenous variables (AR/ARMA/VAR driving processes,
+        %   detected structurally) are treated as anchors and excluded from the matching.
+        %   Not supported together with calibration swaps.
             arguments
                 o
                 options.Match (1,1) logical = false
@@ -6445,6 +6512,7 @@ classdef modBuilder < handle
             % the simplified static residuals (eqasts_s, reused for the dependency graph).
             eqasts_s = {};
             calibrated_endos = {};
+            is_anchor = false(n, 1);
             if options.Match
                 if ~isempty(o.calibration_swaps)
                     error('modBuilder:steady_plan:matchWithSwaps', ...
@@ -6453,6 +6521,7 @@ classdef modBuilder < handle
                 keys = o.equations(:, modBuilder.EQ_COL_NAME);
                 eqasts_s = cell(n, 1);
                 eqlhs_s = cell(n, 1);
+                rawsyms = cell(n, 1);
                 for i = 1:n
                     parts = strsplit(o.equations{i, modBuilder.EQ_COL_EXPR}, '=');
                     if numel(parts) == 2
@@ -6462,24 +6531,47 @@ classdef modBuilder < handle
                         resstr = strtrim(parts{1});
                         eqlhs_s{i} = ast(resstr).symbol_names();
                     end
-                    eqasts_s{i} = ast(resstr).staticise().simplify();
+                    raw = ast(resstr);
+                    rawsyms{i} = raw.symbol_names();
+                    eqasts_s{i} = raw.staticise().simplify();
                 end
-                [eq2var, umeqs, umvars] = modBuilder.matchequations(eqasts_s, eqlhs_s, keys);
-                var_names = eq2var(:);
-                % Complete the pairing for unmatched equations (no perfect matching
-                % exists, e.g. when some variables cancel out of every static residual):
-                % keep each on its declaration key when still free, else a variable that
-                % at least appears in the residual, else any remaining one.
-                remaining = umvars(:);
-                for t = 1:numel(umeqs)
-                    i = umeqs(t);
-                    pos = find(strcmp(keys{i}, remaining), 1);
-                    if isempty(pos)
-                        pos = find(ismember(remaining, eqasts_s{i}.symbol_names()), 1);
+                % Structurally identify economically exogenous variables (AR/ARMA/VAR
+                % driving processes): a variable belongs to an exogenous block iff its
+                % equation references, among endogenous symbols, only variables of that
+                % same block (its own lags for an AR/ARMA, the block members for a VAR),
+                % and the block is driven by at least one exogenous innovation. Such a
+                % block is a sink of the declaration-paired dependency graph -- nothing in
+                % the rest of the model determines it -- so its variables are free anchors
+                % for the steady-state matching, excluded from it so the matcher cannot
+                % steal a shock variable to pin a real equation.
+                is_anchor = modBuilder.exogenous_processes(keys, rawsyms, @(nm) o.isexogenous(nm));
+                real_idx = find(~is_anchor);
+                var_names = keys;   % anchor equations keep their own (anchor) variable
+                if ~isempty(real_idx)
+                    [eq2var_r, ~, umvars_r] = ...
+                        modBuilder.matchequations(eqasts_s(real_idx), eqlhs_s(real_idx), keys(real_idx));
+                    % Complete a deficient real matching (some variable cancels out of
+                    % every residual): keep the declaration key if free, else a variable
+                    % appearing in the residual, else any remaining one.
+                    remaining = umvars_r(:);
+                    for t = 1:numel(real_idx)
+                        i = real_idx(t);
+                        v = eq2var_r{t};
+                        if isempty(v)
+                            pos = find(strcmp(keys{i}, remaining), 1);
+                            if isempty(pos)
+                                pos = find(ismember(remaining, eqasts_s{i}.symbol_names()), 1);
+                            end
+                            if isempty(pos) && ~isempty(remaining), pos = 1; end
+                            if ~isempty(pos)
+                                v = remaining{pos};
+                                remaining(pos) = [];
+                            else
+                                v = keys{i};
+                            end
+                        end
+                        var_names{i} = v;
                     end
-                    if isempty(pos), pos = 1; end
-                    var_names{i} = remaining{pos};
-                    remaining(pos) = [];
                 end
             else
                 var_names = o.equations(:, modBuilder.EQ_COL_NAME);
@@ -6514,20 +6606,26 @@ classdef modBuilder < handle
             for i = 1:n
                 eqname_i = var_names{i};
                 if options.Match
-                    % Dependencies from the simplified static residual; the paired
-                    % (target) variable is not a dependency of its own equation. Keep
-                    % only symbols that genuinely determine the steady state through
-                    % this equation -- they appear AND do not cancel as a common factor
-                    % -- matching the admission rule used by matchequations. This drops
-                    % spurious edges from variables that cancel at the steady state
-                    % (e.g. consumption in an Euler equation c = beta*R*c(+1)).
-                    cand = eqasts_s{i}.symbol_names();
-                    cand = cand(~strcmp(cand, eqname_i));
-                    names = {};
-                    for kk = 1:numel(cand)
-                        [has_kk, canc_kk] = eqasts_s{i}.check_factor(cand{kk});
-                        if has_kk && ~canc_kk
-                            names{end+1} = cand{kk}; %#ok<AGROW>
+                    if is_anchor(i)
+                        % An anchor equation is an identity at the steady state: it pins
+                        % nothing, so its variable depends on nothing and is a pure source.
+                        names = {};
+                    else
+                        % Dependencies from the simplified static residual; the paired
+                        % (target) variable is not a dependency of its own equation. Keep
+                        % only symbols that genuinely determine the steady state through
+                        % this equation -- they appear AND do not cancel as a common factor
+                        % -- matching the admission rule used by matchequations. This drops
+                        % spurious edges from variables that cancel at the steady state
+                        % (e.g. consumption in an Euler equation c = beta*R*c(+1)).
+                        cand = eqasts_s{i}.symbol_names();
+                        cand = cand(~strcmp(cand, eqname_i));
+                        names = {};
+                        for kk = 1:numel(cand)
+                            [has_kk, canc_kk] = eqasts_s{i}.check_factor(cand{kk});
+                            if has_kk && ~canc_kk
+                                names{end+1} = cand{kk}; %#ok<AGROW>
+                            end
                         end
                     end
                 else
@@ -6608,7 +6706,9 @@ classdef modBuilder < handle
                     kind = 'simultaneous';
                 else
                     i = members(1);
-                    if ismember(var_names{i}, endo_deps{i})
+                    if is_anchor(i)
+                        kind = 'anchor';
+                    elseif ismember(var_names{i}, endo_deps{i})
                         kind = 'self-recursive';
                     else
                         kind = 'trivial';
