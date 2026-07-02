@@ -901,6 +901,49 @@ classdef ast
             b = ast.sum_of(b_terms).simplify();
         end % function
 
+        function [ok, cp, p, cq, q] = split_binomial_power(o, x)
+        % Recognise o = cp·x^p + cq·x^q with p, q distinct exponents independent of x
+        % and NO x-free term (same-exponent terms are grouped). Returns ok=false
+        % otherwise. The closed form for o = 0 is x = (-cq/cp)^(1/(p-q)).
+        %
+        % REMARKS:
+        % - This is a strictly stronger recogniser than the monomial one (which needs a
+        %   single exponent): closing x = c·x^gamma (indexation) or base^p vs base^q
+        %   (household FOC after elimination). Because it can make an otherwise-stuck
+        %   variable solvable, it is used as a LAST RESORT by iterated_elimination and
+        %   by isolate only when allow_binomial is set, so it does not skew the greedy
+        %   elimination order towards a high-gain-but-unhelpful variable.
+            ok = false; cp = []; p = []; cq = []; q = [];
+            o = o.canonicalise().simplify();
+            terms = ast.flatten(o, '+');
+            exps = {}; coefs = {};
+            for i = 1:numel(terms)
+                t = terms{i};
+                if ast.count_occurrences(t, x) == 0
+                    return   % an x-free term: not a pure binomial power
+                end
+                [okm, c, d] = ast.extract_monomial(t, x);
+                if ~okm
+                    return
+                end
+                pos = 0;
+                for j = 1:numel(exps)
+                    if ast.ast_equal(exps{j}, d), pos = j; break; end
+                end
+                if pos == 0
+                    exps{end+1} = d; coefs{end+1} = c; %#ok<AGROW>
+                else
+                    coefs{pos} = ast('binop', '+', {coefs{pos}, c});
+                end
+            end
+            if numel(exps) ~= 2
+                return
+            end
+            cp = coefs{1}.simplify(); p = exps{1};
+            cq = coefs{2}.simplify(); q = exps{2};
+            ok = true;
+        end % function
+
         function tf = is_invertible_call_in(o, x)
         % Test whether the tree has the form coef · f(P(x)) + rest with f ∈ {exp, log},
         % P(x) linear or monomial in x, and x not appearing elsewhere.
@@ -955,12 +998,17 @@ classdef ast
             rest = ast.sum_of(rest_terms).simplify();
         end % function
 
-        function rhs = isolate(o, x)
+        function rhs = isolate(o, x, allow_binomial)
         % Try to isolate x from the equation o = 0, returning an AST tree for x or [].
         %
         % INPUTS:
-        % - o   [ast]    tree representing the static residual; the equation is o = 0
-        % - x   [char]   symbol name of the variable to isolate
+        % - o              [ast]     tree representing the static residual; equation is o = 0
+        % - x              [char]    symbol name of the variable to isolate
+        % - allow_binomial [logical] (optional, default true) enable the binomial-power
+        %                            recogniser (cp·x^p + cq·x^q). iterated_elimination
+        %                            passes false first, so a variable solvable only by
+        %                            that stronger rule is deferred to a last resort and
+        %                            does not skew the greedy elimination order.
         %
         % OUTPUTS:
         % - rhs [ast]    AST such that x = rhs is structurally equivalent, or [] if no
@@ -968,11 +1016,12 @@ classdef ast
         %
         % REMARKS:
         % - Tries the invertible-call recogniser first; if it succeeds, recurses on the
-        %   inverted equation. Then the linear recogniser, then the monomial one. The
-        %   order matters: unwrapping a call often exposes a linear or monomial pattern
-        %   that the next recogniser then handles.
+        %   inverted equation. Then the linear recogniser, then the monomial one, then
+        %   (when allow_binomial) the binomial-power one. The order matters: unwrapping a
+        %   call often exposes a linear or monomial pattern that the next recogniser handles.
         % - Returns [] when the variable's coefficient folds to 0 (the equation does not
         %   actually pin x) or when none of the recognisers apply.
+            if nargin < 3, allow_binomial = true; end
             o = o.canonicalise().simplify();
 
             % Invertible-call recogniser
@@ -1008,6 +1057,20 @@ classdef ast
                     base = ast.neg_div(b, a);
                     inv_d = ast('binop', '/', {ast('num', 1, {}), d});
                     rhs = ast('binop', '^', {base, inv_d}).simplify();
+                    return
+                end
+            end
+
+            % Binomial-power recogniser (last resort): cp·x^p + cq·x^q = 0 → x^(p-q) =
+            % -cq/cp → x = (-cq/cp)^(1/(p-q)). Gated so it never pre-empts a cheaper
+            % isolate elsewhere in a greedy elimination (see iterated_elimination).
+            if allow_binomial
+                [okb, cp, p, cq, q] = o.split_binomial_power(x);
+                if okb && ~(strcmp(cp.type, 'num') && cp.value == 0)
+                    base = ast.neg_div(cq, cp);
+                    dexp = ast('binop', '-', {p, q});
+                    inv_dexp = ast('binop', '/', {ast('num', 1, {}), dexp});
+                    rhs = ast('binop', '^', {base, inv_dexp}).simplify();
                     return
                 end
             end
@@ -2485,32 +2548,41 @@ classdef ast
 
             while any(active)
                 active_idx = find(active);
-                best_score = -inf;
                 best_pos = -1;
                 best_rhs = [];
-                for ii = 1:numel(active_idx)
-                    pos = active_idx(ii);
-                    v = vars{pos};
-                    f = residuals{pos};
-                    if ast.count_occurrences(f, v) == 0
-                        continue
-                    end
-                    rhs = f.isolate(v);
-                    if isempty(rhs)
-                        continue
-                    end
-                    gain = 0;
-                    for jj = 1:numel(active_idx)
-                        other = active_idx(jj);
-                        if other ~= pos && ast.count_occurrences(residuals{other}, v) > 0
-                            gain = gain + 1;
+                % Cheap recognisers first (allow_binomial = false); only if NO variable
+                % is solvable that way do we allow the stronger binomial-power rule. This
+                % keeps a high-gain variable that is solvable only as a binomial from being
+                % eliminated early and stranding the variables it substitutes into.
+                for allow_binomial = [false, true]
+                    best_score = -inf;
+                    for ii = 1:numel(active_idx)
+                        pos = active_idx(ii);
+                        v = vars{pos};
+                        f = residuals{pos};
+                        if ast.count_occurrences(f, v) == 0
+                            continue
+                        end
+                        rhs = f.isolate(v, allow_binomial);
+                        if isempty(rhs)
+                            continue
+                        end
+                        gain = 0;
+                        for jj = 1:numel(active_idx)
+                            other = active_idx(jj);
+                            if other ~= pos && ast.count_occurrences(residuals{other}, v) > 0
+                                gain = gain + 1;
+                            end
+                        end
+                        score = gain * 1e6 - length(rhs.string());
+                        if score > best_score
+                            best_score = score;
+                            best_pos = pos;
+                            best_rhs = rhs;
                         end
                     end
-                    score = gain * 1e6 - length(rhs.string());
-                    if score > best_score
-                        best_score = score;
-                        best_pos = pos;
-                        best_rhs = rhs;
+                    if best_pos ~= -1
+                        break
                     end
                 end
 
@@ -2613,17 +2685,22 @@ classdef ast
                         case '^'
                             base = t.children{1};
                             exp_node = t.children{2};
-                            if ast.count_occurrences(exp_node, x) > 0 || ast.count_occurrences(base, x) ~= 1
+                            if ast.count_occurrences(exp_node, x) > 0 || ast.count_occurrences(base, x) == 0
                                 ok = false; coef = []; d = []; return
                             end
                             if (strcmp(base.type, 'sym') && strcmp(base.value, x)) || ...
                                (strcmp(base.type, 'tsym') && strcmp(base.value{1}, x))
                                 ok = true; coef = ast('num', 1, {}); d = exp_node;
                             else
-                                % Base is a compound carrying x once (e.g. a/x): if it is
-                                % itself monomial in x, base = cb·x^db, so
-                                % base^exp = cb^exp · x^(db·exp).
+                                % Base is a compound carrying x (e.g. a/x, or a sum
+                                % a·x - b·x that is homogeneous of degree 1 in x): if the
+                                % base is itself monomial in x with NO x-free term,
+                                % base = cb·x^db, so base^exp = cb^exp · x^(db·exp).
                                 [ok_b, cb, db] = ast.extract_monomial(base, x);
+                                if ~ok_b && base.is_monomial_in(x)
+                                    [cb, db, bconst] = base.split_monomial(x);
+                                    ok_b = ast.is_zero(bconst.simplify());
+                                end
                                 if ok_b
                                     coef = ast('binop', '^', {cb, exp_node});
                                     d = ast('binop', '*', {db, exp_node});
@@ -3226,6 +3303,21 @@ classdef ast
         function o = simplify_node(o)
         % Apply simplification rules at a single node (children assumed already simplified).
             switch o.type
+                case 'call'
+                    % Constant folding: a reserved function of purely numeric arguments
+                    % (e.g. log(1) → 0, exp(0) → 1). Domain errors are swallowed.
+                    if ~isempty(o.children) && all(cellfun(@(c) strcmp(c.type, 'num'), o.children))
+                        try
+                            args = cellfun(@(c) c.value, o.children, 'UniformOutput', false);
+                            v = feval(o.value, args{:});
+                            if isscalar(v) && isfinite(v) && isreal(v)
+                                o = ast('num', v, {});
+                                return
+                            end
+                        catch
+                            % non-evaluable (domain error) — leave the call as-is
+                        end
+                    end
                 case 'uminus'
                     c = o.children{1};
                     if strcmp(c.type, 'num')
