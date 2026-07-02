@@ -2308,6 +2308,80 @@ classdef modBuilder < handle
             end
         end % function
 
+        function cf = ratio_reduce(residuals, vars_block, param_names)
+        % Close a block that is homogeneous in its variables by a RATIO change of
+        % variables. Some block equation involves the block variables only through
+        % their ratio (it is homogeneous of degree 0 -- e.g. a factor-demand ratio
+        % w*L/(r*K) = const); writing each variable as ratio*gauge makes the gauge
+        % cancel there, pinning the ratio, and reduces the block to a triangular system
+        % in {ratios, gauge}. This is the hand technique (solve the ratio, back out the
+        % level) that single-variable elimination -- which reports the block as an
+        % irreducible cycle -- cannot reach.
+        %
+        % Returns the closed forms for the ORIGINAL variables (gauge, then each other
+        % variable as ratio*gauge with the auxiliary ratio names inlined), or an empty
+        % struct if no gauge choice triangularises the block.
+            cf = struct('var', {}, 'expr', {});
+            nb = numel(vars_block);
+            if nb < 2
+                return
+            end
+            for g = 1:nb
+                gauge = vars_block{g};
+                others = vars_block([1:g-1, g+1:nb]);
+                rnames = cell(1, numel(others));
+                for i = 1:numel(others)
+                    rnames{i} = [others{i} '_ratio'];
+                end
+                subres = cell(size(residuals));
+                for e = 1:numel(residuals)
+                    r = residuals{e};
+                    for i = 1:numel(others)
+                        r = r.substitute(others{i}, ast(sprintf('%s*%s', rnames{i}, gauge)), param_names);
+                    end
+                    % expand so the gauge, now appearing in several factors, collects into
+                    % one power -- exposing the ratio (gauge cancels) and the level monomial.
+                    subres{e} = r.expand().simplify();
+                end
+                new_vars = [rnames, {gauge}];
+                % Align the transformed residuals to the new variables.
+                lhs = cell(size(subres));
+                [e2v, ~, ~] = modBuilder.matchequations(subres, lhs, new_vars);
+                aligned = cell(1, numel(new_vars));
+                ok = true;
+                for vi = 1:numel(new_vars)
+                    pos = find(strcmp(e2v, new_vars{vi}), 1);
+                    if isempty(pos), ok = false; break; end
+                    aligned{vi} = subres{pos};
+                end
+                if ~ok, continue; end
+                elim = ast.iterated_elimination(aligned, new_vars, param_names);
+                if numel(elim) ~= nb, continue; end
+                % Translate back: inline the auxiliary ratio names, emit the gauge, then
+                % each original variable as ratio*gauge.
+                names = {elim.var}; exprs = {elim.expr};
+                for pass = 1:nb
+                    for a = 1:numel(exprs)
+                        for i = 1:numel(rnames)
+                            ri = find(strcmp(names, rnames{i}), 1);
+                            if ~isempty(ri)
+                                exprs{a} = exprs{a}.substitute(rnames{i}, exprs{ri}, param_names);
+                            end
+                        end
+                    end
+                end
+                gi = find(strcmp(names, gauge), 1);
+                cf(1).var = gauge; cf(1).expr = exprs{gi}.simplify().string();
+                for i = 1:numel(others)
+                    ri = find(strcmp(names, rnames{i}), 1);
+                    cf(end+1).var = others{i}; %#ok<AGROW>
+                    cf(end).expr = sprintf('(%s)*%s', exprs{ri}.simplify().string(), gauge);
+                end
+                return
+            end
+            cf = struct('var', {}, 'expr', {});
+        end % function
+
         function f = substitute_known(f, blockvars, known_names, known_asts, param_names)
         % Inline the known steady-state values (known_names -> known_asts) into the
         % residual f, then simplify. Variables of the current block (blockvars) are
@@ -6923,6 +6997,16 @@ classdef modBuilder < handle
                             for jj = 1:numel(elim_cf)
                                 cf(end+1).var = elim_cf(jj).var; %#ok<AGROW>
                                 cf(end).expr = elim_cf(jj).expr.string();
+                            end
+                        end
+                        % Last resort for a block single-variable elimination leaves
+                        % (fully or partly) open: a ratio change of variables closes a
+                        % block that is homogeneous in its variables (elimination sees it
+                        % as an irreducible cycle). Keep whichever result closes more.
+                        if numel(cf) < numel(vars_block)
+                            cf_ratio = modBuilder.ratio_reduce(residuals, vars_block, param_names);
+                            if numel(cf_ratio) > numel(cf)
+                                cf = cf_ratio;
                             end
                         end
                       catch

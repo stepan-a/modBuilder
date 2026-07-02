@@ -93,6 +93,7 @@ listoftests = [
   'ast/t29',
   'ast/t30',
   'ast/t31',
+  'ast/t32',
   'eliminate/t01',
   'foc/t01',
   'foc/t02',
@@ -333,6 +334,7 @@ listoftests = [
   'steady-plan/t26.m',
   'steady-plan/t27.m',
   'steady-plan/t28.m',
+  'steady-plan/t29.m',
   'scaling/t01.m',
   'examples/steady.m',
 ]

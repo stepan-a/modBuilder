@@ -1357,6 +1357,19 @@ classdef ast
             if strcmp(o.type, 'binop') && strcmp(o.value, '^')
                 base = o.children{1};
                 exponent = o.children{2};
+                % Distribute a power over a product: (a·b·...)^e → a^e·b^e·... for ANY
+                % exponent. Combined with the power-collection in canonicalise, this lets
+                % a variable appearing in several factors merge into one power
+                % (x^a·(x·b)^c → x^(a+c)·b^c), exposing an otherwise-hidden monomial.
+                if strcmp(base.type, 'binop') && strcmp(base.value, '*')
+                    factors = ast.flatten(base, '*');
+                    powered = cell(1, numel(factors));
+                    for i = 1:numel(factors)
+                        powered{i} = ast('binop', '^', {factors{i}, exponent}).expand();
+                    end
+                    o = ast.product_of(powered).canonicalise();
+                    return
+                end
                 if strcmp(exponent.type, 'num') && exponent.value >= 2 && rem(exponent.value, 1) == 0 && strcmp(base.type, 'binop') && strcmp(base.value, '+')
                     n = exponent.value;
                     summands = ast.flatten(base, '+');
