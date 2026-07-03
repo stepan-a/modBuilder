@@ -2281,6 +2281,27 @@ classdef modBuilder < handle
             end
         end % function
 
+        function [nres, open] = anchor_residual(o, anchors, dropvalues, propagate)
+        % Run steady_plan(Match, Anchors) on a copy of o with the steady-state values
+        % of dropvalues removed, and count the open variables. The value removal
+        % matters: a dropped candidate must not keep feeding the known-value
+        % propagation, otherwise the trial would understate its contribution. Used by
+        % suggest_anchors to score candidate drops.
+            oc = o.copy();
+            if ~isempty(dropvalues) && ~isempty(oc.steady_state)
+                oc.steady_state = oc.steady_state(~ismember(oc.steady_state(:, modBuilder.SS_COL_NAME), dropvalues), :);
+            end
+            blocks = oc.steady_plan(Match=true, Anchors=anchors, PropagateKnown=propagate);
+            open = {};
+            for k = 1:numel(blocks)
+                if strcmp(blocks(k).kind, 'anchor'), continue, end
+                solved = {};
+                if ~isempty(blocks(k).closed_form), solved = {blocks(k).closed_form.var}; end
+                open = [open, setdiff(blocks(k).vars, solved)]; %#ok<AGROW>
+            end
+            nres = numel(open);
+        end % function
+
         function f = static_residual(o, eq_idx)
         % Build the static residual AST for the equation at row eq_idx of o.equations.
         %
@@ -7448,6 +7469,138 @@ classdef modBuilder < handle
             if ~isempty(suggestions)
                 [~, order] = sort([suggestions.residual]);
                 suggestions = suggestions(order);
+            end
+        end % function
+
+        function out = suggest_anchors(o, options)
+        % Reduce a pool of candidate steady-state anchors to an irreducible subset.
+        %
+        % INPUTS:
+        % - o                       [modBuilder]
+        % - options.Candidates      [cell]     candidate anchor names. Default: the endogenous
+        %                                      variables with a value declared through m.steady,
+        %                                      excluding auto-detected exogenous processes. The
+        %                                      candidates are the modeller's economically known
+        %                                      values (symmetric normalisations = 1, calibration
+        %                                      targets, textbook steady-state constants); this
+        %                                      method never invents a value, it only reports
+        %                                      which of the declared knowns the structural plan
+        %                                      actually needs.
+        % - options.Keep            [cell]     anchors always kept, never tested (default {}).
+        % - options.PropagateKnown  [logical]  passed to steady_plan (default true).
+        %
+        % OUTPUTS:
+        % - out  [struct] with fields:
+        %     .anchors   [cell]  the irreducible anchor subset (Keep members included)
+        %     .dropped   [cell]  candidates found deducible: the plan closes as well
+        %                        without them (anchor status AND declared value removed)
+        %     .residual  [int]   number of open variables under the returned set
+        %     .open      [cell]  their names (empty on full closure)
+        %
+        % REMARKS:
+        % - Greedy leave-one-out, swept to a fixed point: candidates are tested in the
+        %   given order; each trial removes the candidate's anchor status AND its
+        %   declared steady-state value (so the value cannot leak into the known-value
+        %   propagation), re-runs steady_plan(Match=true), and accepts the drop when
+        %   the residual count does not deteriorate. Sweeps repeat until none is
+        %   accepted: an OVER-anchored pool can start with a positive residual (too
+        %   many freed equations disorient the matching), and drops rejected early can
+        %   strictly improve once the pool has shrunk.
+        % - The result is AN irreducible set for the given order, not a provable global
+        %   minimum: candidates can be individually deducible yet jointly necessary,
+        %   because the declared values feed the propagation that closes other blocks.
+        % - The values of the anchors kept must be primitive from the modeller's
+        %   standpoint (parameters and other anchors only): a kept anchor whose value
+        %   references a variable the plan now derives creates a circular
+        %   steady_state_model (rejected by checksteady at write time).
+        % - Cost: one steady_plan re-run per candidate and per sweep (typically two
+        %   sweeps), the same trade-off as suggest_calibrations.
+        % - Called with no output, prints a readable summary.
+        %
+        % EXAMPLE:
+        % m.steady('OptimalRelativePrice', '1');           % symmetric normalisation
+        % m.steady('HouseholdLabourSupply', 'hours_ss');   % calibration target
+        % out = m.suggest_anchors();
+        % b = m.steady_plan(Match=true, Anchors=out.anchors, PropagateKnown=true);
+            arguments
+                o
+                options.Candidates (1,:) cell = {}
+                options.Keep (1,:) cell = {}
+                options.PropagateKnown (1,1) logical = true
+            end
+            o.refresh_tables();
+            candidates = options.Candidates;
+            if isempty(candidates)
+                if isempty(o.steady_state)
+                    error('modBuilder:suggest_anchors:noCandidates', ...
+                          'No candidates: declare the known steady-state values with m.steady, or pass Candidates.');
+                end
+                declared_names = o.steady_state(:, modBuilder.SS_COL_NAME)';
+                keys = o.equations(:, modBuilder.EQ_COL_NAME);
+                n = size(o.equations, 1);
+                rawsyms = cell(n, 1);
+                for i = 1:n
+                    parts = strsplit(o.equations{i, modBuilder.EQ_COL_EXPR}, '=');
+                    if numel(parts) == 2
+                        resstr = sprintf('(%s) - (%s)', strtrim(parts{1}), strtrim(parts{2}));
+                    else
+                        resstr = strtrim(parts{1});
+                    end
+                    rawsyms{i} = ast(resstr).symbol_names();
+                end
+                is_exo = modBuilder.exogenous_processes(keys, rawsyms, @(nm) o.isexogenous(nm));
+                exo_vars = keys(is_exo)';
+                sel = cellfun(@(nm) o.isendogenous(nm) && ~ismember(nm, exo_vars), declared_names);
+                candidates = declared_names(sel);
+            end
+            candidates = candidates(~ismember(candidates, options.Keep));
+
+            [baseline, ~] = modBuilder.anchor_residual(o, [options.Keep, candidates], {}, options.PropagateKnown);
+            % Greedy sweeps to a fixed point. A drop is accepted when the residual
+            % does not deteriorate; the current residual is re-based after each
+            % accepted drop. Repeated sweeps matter because an OVER-anchored pool can
+            % start with a positive baseline (too many freed equations disorient the
+            % matching): early drops shrink the pool, after which further drops --
+            % rejected in the first sweep -- can strictly reduce the residual.
+            current = baseline;
+            dropped = {};
+            progress = true;
+            while progress
+                progress = false;
+                remaining = candidates(~ismember(candidates, dropped));
+                for ci = 1:numel(remaining)
+                    trial_drop = [dropped, remaining(ci)];
+                    anchors = [options.Keep, candidates(~ismember(candidates, trial_drop))];
+                    try
+                        [nres, ~] = modBuilder.anchor_residual(o, anchors, trial_drop, options.PropagateKnown);
+                    catch
+                        continue
+                    end
+                    if nres <= current
+                        dropped = trial_drop;
+                        current = nres;
+                        progress = true;
+                    end
+                end
+            end
+            kept = candidates(~ismember(candidates, dropped));
+            [nres, open] = modBuilder.anchor_residual(o, [options.Keep, kept], dropped, options.PropagateKnown);
+
+            out = struct();
+            out.anchors = [options.Keep, kept];
+            out.dropped = dropped;
+            out.residual = nres;
+            out.open = open;
+
+            if nargout == 0
+                modBuilder.dprintf('suggest_anchors: %d of %d candidates needed, residual %d (baseline %d)', ...
+                    numel(kept), numel(candidates), nres, baseline);
+                modBuilder.dprintf('  anchors : %s', strjoin(out.anchors, ', '));
+                modBuilder.dprintf('  dropped : %s', strjoin(out.dropped, ', '));
+                if nres > 0
+                    modBuilder.dprintf('  open    : %s', strjoin(out.open, ', '));
+                end
+                clear out
             end
         end % function
 
