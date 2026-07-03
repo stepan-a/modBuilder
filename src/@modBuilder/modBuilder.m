@@ -2382,6 +2382,142 @@ classdef modBuilder < handle
             cf = struct('var', {}, 'expr', {});
         end % function
 
+        function cf = ratio_parametrise(residuals, vars_block, param_names, gauge, values)
+        % Parametrise a scale-free block in a gauge variable: solve the RATIOS var/gauge
+        % in closed form and return each non-gauge variable as (ratio)*gauge, the gauge
+        % itself staying free. The partial counterpart of ratio_reduce, for blocks whose
+        % scale is pinned OUTSIDE the block: when every block equation is homogeneous in
+        % the block variables (a normalisation anchor freed a degree-0 equation into the
+        % block), the equations determine the ratios but not the level, so ratio_reduce
+        % -- which requires the gauge to close internally -- returns empty. The gauge
+        % backout in steady_plan then recovers the level from a consistency equation.
+        %
+        % After the substitution v -> ratio_v*gauge each residual must be HOMOGENEOUS in
+        % the gauge (checked with ast.scaling_degree; values supplies the calibration for
+        % numeric exponents): r(ratios, gauge) = gauge^d * r(ratios, 1), so solving on
+        % the unit-gauge slice gauge := 1 pins the ratios exactly. A residual that is not
+        % homogeneous in the gauge invalidates this gauge choice (empty result).
+        %
+        % Returns one closed form per non-gauge variable, in evaluation order. Each is
+        % the product (ratio)*gauge simplified as an AST; an auxiliary ratio referenced
+        % by a later one is rewritten as var/gauge, so the emitted expressions reference
+        % the already-assigned block variables instead of inlining the whole chain
+        % (Z3 = c*Z2 rather than the c*(chain for Z2) monomial). Empty struct if some
+        % ratio cannot be closed or the gauge does not cancel from the ratio chain.
+            cf = struct('var', {}, 'expr', {});
+            others = vars_block(~strcmp(vars_block, gauge));
+            if isempty(others) || numel(others) + 1 ~= numel(vars_block)
+                return
+            end
+            rnames = cell(1, numel(others));
+            for i = 1:numel(others)
+                rnames{i} = [others{i} '_ratio'];
+            end
+            gdict = dictionary(string(gauge), 1);
+            subres = cell(size(residuals));
+            for e = 1:numel(residuals)
+                r = residuals{e};
+                for i = 1:numel(others)
+                    r = r.substitute(others{i}, ast(sprintf('%s*%s', rnames{i}, gauge)), param_names);
+                end
+                % expand so the gauge, spread over several factors, collects into one
+                % power per monomial; then check homogeneity in the gauge and restrict
+                % to the unit-gauge slice.
+                r = r.expand();
+                [~, cons, okh] = r.scaling_degree(gdict, 1, values);
+                if ~okh
+                    return
+                end
+                for k = 1:numel(cons)
+                    if abs(cons{k}) > 1e-9
+                        return
+                    end
+                end
+                subres{e} = r.substitute(gauge, ast('1'), param_names).simplify();
+            end
+            % Align the transformed residuals to the ratio unknowns; the surplus
+            % equation (redundant within a scale-free block) stays unmatched.
+            lhs = cell(size(subres));
+            [e2v, ~, ~] = modBuilder.matchequations(subres, lhs, rnames);
+            aligned = cell(1, numel(rnames));
+            for vi = 1:numel(rnames)
+                pos = find(strcmp(e2v, rnames{vi}), 1);
+                if isempty(pos)
+                    return
+                end
+                aligned{vi} = subres{pos};
+            end
+            elim = ast.iterated_elimination(aligned, rnames, param_names);
+            if numel(elim) ~= numel(rnames)
+                return
+            end
+            names = {elim.var}; exprs = {elim.expr};
+            % Validation on the fully inlined chain: every ratio must close and be
+            % free of the gauge (otherwise the block is not scale-free in this gauge).
+            inlined = exprs;
+            for pass = 1:numel(rnames)
+                for a = 1:numel(inlined)
+                    for i = 1:numel(rnames)
+                        ri = find(strcmp(names, rnames{i}), 1);
+                        if ~isempty(ri)
+                            inlined{a} = inlined{a}.substitute(rnames{i}, inlined{ri}, param_names);
+                        end
+                    end
+                end
+            end
+            for i = 1:numel(others)
+                ri = find(strcmp(names, rnames{i}), 1);
+                if isempty(ri) || ismember(gauge, inlined{ri}.simplify().symbol_names())
+                    cf = struct('var', {}, 'expr', {});
+                    return
+                end
+            end
+            % Emission in elimination order: an auxiliary ratio referenced by a later
+            % one is rewritten as its block variable over the gauge, and the product
+            % with the gauge is simplified as an AST (var/gauge*gauge collapses).
+            gauge_ref = ast(gauge);
+            for a = 1:numel(names)
+                oi = find(strcmp(rnames, names{a}), 1);
+                e = exprs{a};
+                for i = 1:numel(rnames)
+                    e = e.substitute(rnames{i}, ast(sprintf('%s/%s', others{i}, gauge)), param_names);
+                end
+                full = ast('binop', '*', {e, gauge_ref}).simplify();
+                cf(end+1).var = others{oi}; %#ok<AGROW>
+                cf(end).expr = full.string();
+            end
+        end % function
+
+        function tf = block_scale_freedom(residuals, vars_block, values)
+        % True when the block equations are jointly HOMOGENEOUS in the block variables:
+        % assigning each variable v an exponent s_v, every residual scales consistently
+        % (all monomials of an equation share a degree, nonlinear-call arguments have
+        % degree 0, per ast.scaling_degree) for some non-zero choice of the s_v. Such a
+        % block pins the ratios of its variables only: the solution set contains a scale
+        % ray -- including the all-zero point -- so single-variable elimination must not
+        % be trusted for the level (it "closes" the block on the trivial ray). An
+        % unanalysable residual makes the test return false (treated as pinned), which
+        % preserves the ordinary elimination path.
+            tf = false;
+            nb = numel(vars_block);
+            vi = dictionary(string(vars_block(:)), (1:nb)');
+            C = zeros(0, nb);
+            for e = 1:numel(residuals)
+                [~, cons, ok] = residuals{e}.expand().scaling_degree(vi, nb, values);
+                if ~ok
+                    return
+                end
+                for k = 1:numel(cons)
+                    C(end+1, :) = cons{k}; %#ok<AGROW>
+                end
+            end
+            if isempty(C)
+                tf = true;
+                return
+            end
+            tf = size(null(C, 'r'), 2) > 0;
+        end % function
+
         function f = substitute_known(f, blockvars, known_names, known_asts, param_names)
         % Inline the known steady-state values (known_names -> known_asts) into the
         % residual f, then simplify. Variables of the current block (blockvars) are
@@ -6570,6 +6706,10 @@ classdef modBuilder < handle
         %                                             by Bareiss + back-substitution. Entries are in
         %                                             evaluation order; later assignments may
         %                                             reference earlier-assigned variables by name.
+        %               .backout      [struct]  non-empty when the block scale was recovered by the
+        %                                       gauge backout, with fields .gauge (the variable whose
+        %                                       level the consistency equation pins) and .eq (the
+        %                                       original name of that consistency equation).
         %
         % REMARKS:
         % - 'trivial':         single equation, the paired variable does not appear in its own equation
@@ -6608,6 +6748,17 @@ classdef modBuilder < handle
         %   A homogeneous (scale) normalisation is well-posed as is; if instead the
         %   surplus equation genuinely pins something, a calibration swap (freeing a
         %   parameter) is required rather than a plain anchor.
+        % - Gauge backout: re-matching a freed anchor equation inside a block can leave
+        %   that block HOMOGENEOUS in its variables (e.g. the Calvo recursions once the
+        %   optimal-price equation, degree 0, replaces the level equation): its equations
+        %   pin the ratios but not the level, and the scale-pinning equation (aggregate
+        %   production, market clearing) sits among the consistency conditions absorbed
+        %   by the anchors. When a simultaneous block is left with a single open variable,
+        %   the block is re-parametrised in that gauge (ratio_parametrise), the parametric
+        %   forms are substituted into each unused consistency equation, and the gauge is
+        %   isolated from the first one that pins it -- the hand technique of solving in
+        %   ratios and backing the level out of a discarded equation. Runs to a fixed
+        %   point, since one backout can unlock another block downstream.
             arguments
                 o
                 options.Match (1,1) logical = false
@@ -6623,7 +6774,7 @@ classdef modBuilder < handle
             o.refresh_tables();
 
             n = size(o.equations, 1);
-            blocks = struct('vars', {}, 'eqs', {}, 'kind', {}, 'deps', {}, 'extdeps', {}, 'closed_form', {});
+            blocks = struct('vars', {}, 'eqs', {}, 'kind', {}, 'deps', {}, 'extdeps', {}, 'closed_form', {}, 'backout', {});
             if n == 0
                 return
             end
@@ -6880,12 +7031,35 @@ classdef modBuilder < handle
             propagate = options.PropagateKnown;
             param_names = {};
             if ~isempty(o.params), param_names = o.params(:, modBuilder.COL_NAME)'; end
+            % Calibration map for evaluating numeric exponents (x^alpha) in the
+            % block homogeneity test (block_scale_freedom).
+            expo_values = struct();
+            for i = 1:size(o.params, 1)
+                val = o.params{i, modBuilder.COL_VALUE};
+                if isnumeric(val) && isscalar(val) && isfinite(val)
+                    expo_values.(o.params{i, modBuilder.COL_NAME}) = val;
+                end
+            end
             endo_names_all = o.var(:, modBuilder.COL_NAME)';
             known_names = {}; known_asts = {};
             if propagate && ~isempty(o.steady_state)
                 for i = 1:size(o.steady_state, 1)
                     known_names{end+1} = o.steady_state{i, modBuilder.SS_COL_NAME}; %#ok<AGROW>
                     known_asts{end+1} = ast(o.steady_state{i, modBuilder.SS_COL_EXPR}).staticise(); %#ok<AGROW>
+                end
+            end
+            if propagate && ~isempty(o.varexo)
+                % Exogenous variables sit at their calibrated values in the steady
+                % state (innovations at 0): inlining them folds the shock-anchor
+                % closed forms to leaves (exp(0*sigma) -> 1), which unlocks the
+                % alias chain (InflationFactor = InflationTarget = target parameter)
+                % that collapses the indexation powers downstream.
+                for i = 1:size(o.varexo, 1)
+                    v = o.varexo{i, modBuilder.COL_VALUE};
+                    if isnumeric(v) && isscalar(v) && isfinite(v)
+                        known_names{end+1} = o.varexo{i, modBuilder.COL_NAME}; %#ok<AGROW>
+                        known_asts{end+1} = ast('num', v, {}); %#ok<AGROW>
+                    end
                 end
             end
 
@@ -6987,16 +7161,28 @@ classdef modBuilder < handle
                         % Fallback: iterated symbolic elimination via the per-equation
                         % recognisers. Substitution between equations may turn a
                         % non-linear residual into a linear / monomial / call-wrapped
-                        % one that the recognisers then handle.
+                        % one that the recognisers then handle. A block that is
+                        % HOMOGENEOUS in its variables is excluded: its solution set is
+                        % a scale ray through zero, so elimination would "close" it on
+                        % the trivial all-zero point. Such a block is parametrised in a
+                        % gauge instead (ratios in closed form, level left open for the
+                        % gauge backout below or for the user).
                         if isempty(cf)
-                            param_names = {};
-                            if ~isempty(o.params)
-                                param_names = o.params(:, modBuilder.COL_NAME)';
-                            end
-                            elim_cf = ast.iterated_elimination(residuals, vars_block, param_names);
-                            for jj = 1:numel(elim_cf)
-                                cf(end+1).var = elim_cf(jj).var; %#ok<AGROW>
-                                cf(end).expr = elim_cf(jj).expr.string();
+                            scale_free = modBuilder.block_scale_freedom(residuals, vars_block, expo_values);
+                            if scale_free
+                                for gi = 1:numel(vars_block)
+                                    cf_gauge = modBuilder.ratio_parametrise(residuals, vars_block, param_names, vars_block{gi}, expo_values);
+                                    if numel(cf_gauge) == numel(vars_block) - 1
+                                        cf = cf_gauge;
+                                        break
+                                    end
+                                end
+                            else
+                                elim_cf = ast.iterated_elimination(residuals, vars_block, param_names);
+                                for jj = 1:numel(elim_cf)
+                                    cf(end+1).var = elim_cf(jj).var; %#ok<AGROW>
+                                    cf(end).expr = elim_cf(jj).expr.string();
+                                end
                             end
                         end
                         % Last resort for a block single-variable elimination leaves
@@ -7037,6 +7223,138 @@ classdef modBuilder < handle
                 blocks(end).deps = already_solved;
                 blocks(end).extdeps = consts;
                 blocks(end).closed_form = cf;
+            end
+
+            % Gauge backout: recover the level of a scale-free block from a consistency
+            % equation absorbed by a normalisation anchor (see REMARKS). Iterated to a
+            % fixed point because a backout can unlock another open block whose
+            % consistency equation references the first block's parametric chain.
+            if options.Match && any(is_norm_anchor)
+                cons_idx = find(is_norm_anchor(:)');
+                cons_used = false(size(cons_idx));
+                progress = true;
+                while progress
+                    progress = false;
+                    % Emitted closed forms and still-open variables, for reachability.
+                    cf_names = {}; cf_exprs = {}; open_names = {};
+                    for kb = 1:numel(blocks)
+                        solved = {};
+                        if ~isempty(blocks(kb).closed_form), solved = {blocks(kb).closed_form.var}; end
+                        for jj = 1:numel(blocks(kb).closed_form)
+                            cf_names{end+1} = blocks(kb).closed_form(jj).var; %#ok<AGROW>
+                            cf_exprs{end+1} = blocks(kb).closed_form(jj).expr; %#ok<AGROW>
+                        end
+                        if ~strcmp(blocks(kb).kind, 'anchor')
+                            op = setdiff(blocks(kb).vars, solved);
+                            open_names = [open_names, op(:)']; %#ok<AGROW>
+                        end
+                    end
+                    syms_cf = cell(1, numel(cf_names));
+                    for jj = 1:numel(cf_names)
+                        syms_cf{jj} = ast(cf_exprs{jj}).staticise().symbol_names();
+                    end
+                    for kb = 1:numel(blocks)
+                        if ~strcmp(blocks(kb).kind, 'simultaneous'), continue, end
+                        solved = {};
+                        if ~isempty(blocks(kb).closed_form), solved = {blocks(kb).closed_form.var}; end
+                        open_vars = setdiff(blocks(kb).vars, solved);
+                        if numel(open_vars) ~= 1, continue, end
+                        g = open_vars{1};
+                        vars_block = blocks(kb).vars;
+                        % Rebuild the block residuals for the ratio parametrisation.
+                        residuals = cell(1, numel(vars_block)); okres = true;
+                        for jj = 1:numel(vars_block)
+                            rj = modBuilder.static_residual(o, var_idx(vars_block{jj}));
+                            if isempty(rj), okres = false; break, end
+                            residuals{jj} = modBuilder.substitute_known(rj, vars_block, known_names, known_asts, param_names);
+                        end
+                        if ~okres, continue, end
+                        try
+                            cf_ratio = modBuilder.ratio_parametrise(residuals, vars_block, param_names, g, expo_values);
+                        catch
+                            cf_ratio = struct('var', {}, 'expr', {});
+                        end
+                        used_ratio = numel(cf_ratio) == numel(vars_block) - 1;
+                        if used_ratio
+                            mate_names = {cf_ratio.var}; mate_exprs = {cf_ratio.expr};
+                        elseif numel(solved) == numel(vars_block) - 1
+                            % fall back on the elimination chains already emitted
+                            mate_names = solved;
+                            mate_exprs = cell(size(solved));
+                            for jj = 1:numel(blocks(kb).closed_form)
+                                mate_exprs{strcmp(mate_names, blocks(kb).closed_form(jj).var)} = blocks(kb).closed_form(jj).expr;
+                            end
+                        else
+                            continue
+                        end
+                        % Reachability over the emitted closed forms: a variable whose
+                        % expression transitively references the gauge must be inlined
+                        % (referencing it by name from the gauge expression would create
+                        % a cycle); one that reaches ANOTHER open variable defers this
+                        % backout to a later round.
+                        other_open = setdiff(open_names, {g});
+                        reach_g = false(1, numel(cf_names));
+                        reach_op = false(1, numel(cf_names));
+                        changed = true;
+                        while changed
+                            changed = false;
+                            for jj = 1:numel(cf_names)
+                                if ~reach_g(jj) && (ismember(g, syms_cf{jj}) || any(reach_g(ismember(cf_names, syms_cf{jj}))))
+                                    reach_g(jj) = true; changed = true;
+                                end
+                                if ~reach_op(jj) && (any(ismember(other_open, syms_cf{jj})) || any(reach_op(ismember(cf_names, syms_cf{jj}))))
+                                    reach_op(jj) = true; changed = true;
+                                end
+                            end
+                        end
+                        inline_names = cf_names(reach_g);
+                        for cpos = 1:numel(cons_idx)
+                            if cons_used(cpos), continue, end
+                            ci = cons_idx(cpos);
+                            r = modBuilder.substitute_known(eqasts_s{ci}, {g}, known_names, known_asts, param_names);
+                            if ~any(ismember(r.symbol_names(), [inline_names, mate_names, {g}])), continue, end
+                            ok = true;
+                            for pass = 1:32
+                                syms_r = r.symbol_names();
+                                if any(ismember(syms_r, other_open)) || any(ismember(syms_r, cf_names(reach_op)))
+                                    ok = false; break
+                                end
+                                todo = syms_r(ismember(syms_r, [inline_names, mate_names]));
+                                if isempty(todo), break, end
+                                if pass == 32, ok = false; break, end
+                                for tt = 1:numel(todo)
+                                    s = todo{tt};
+                                    mi = find(strcmp(mate_names, s), 1);
+                                    if ~isempty(mi)
+                                        sub_expr = mate_exprs{mi};
+                                    else
+                                        sub_expr = cf_exprs{find(strcmp(cf_names, s), 1)};
+                                    end
+                                    r = r.substitute(s, ast(sub_expr).staticise(), param_names);
+                                end
+                                r = r.simplify();
+                            end
+                            if ~ok || ~ismember(g, r.symbol_names()), continue, end
+                            try
+                                rhs_g = r.isolate(g);
+                            catch
+                                rhs_g = [];
+                            end
+                            if isempty(rhs_g), continue, end
+                            gauge_cf = struct('var', g, 'expr', rhs_g.simplify().string());
+                            if used_ratio
+                                blocks(kb).closed_form = [gauge_cf, cf_ratio];
+                            else
+                                blocks(kb).closed_form = [gauge_cf, blocks(kb).closed_form];
+                            end
+                            blocks(kb).backout = struct('gauge', g, 'eq', keys{ci});
+                            cons_used(cpos) = true;
+                            progress = true;
+                            break
+                        end
+                        if progress, break, end
+                    end
+                end
             end
         end % function
 
