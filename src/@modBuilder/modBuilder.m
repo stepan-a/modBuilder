@@ -2456,6 +2456,14 @@ classdef modBuilder < handle
                 end
                 subres{e} = r.substitute(gauge, ast('1'), param_names).simplify();
             end
+            % The unit-gauge slice must pin the ratios uniquely: if the ratio system
+            % is itself scale-free, the block carries MORE than one scale and a single
+            % gauge cannot parametrise it (elimination on the slice would close the
+            % leftover freedom on the trivial zero ray). The multi-gauge backout
+            % handles that case instead.
+            if modBuilder.block_scale_freedom(subres, rnames, values)
+                return
+            end
             % Align the transformed residuals to the ratio unknowns; the surplus
             % equation (redundant within a scale-free block) stays unmatched.
             lhs = cell(size(subres));
@@ -2537,6 +2545,80 @@ classdef modBuilder < handle
                 return
             end
             tf = size(null(C, 'r'), 2) > 0;
+        end % function
+
+        function [cf, closed_all] = rematch_eliminate(residuals, unknowns, param_names)
+        % Iterated re-matching + elimination to a fixed point: pair the equations to
+        % the unknowns by bipartite matching, run the paired iterated_elimination,
+        % substitute whatever closed into ALL the equations (a consumed equation then
+        % reduces to 0 = 0 and drops out of the next matching), and re-match the
+        % shrunken unknown set. The re-match is the point: the pairing a large system
+        % forces on a subset can be unsolvable -- the wage recursions orient the net
+        % wage as f(gross wage), a shape no recogniser inverts -- while the pairing
+        % chosen on the subset alone is linear (the labour FOC pins the net wage once
+        % consumption is known). Used by the multi-gauge backout.
+        %
+        % Returns the closed forms in evaluation order and closed_all = true when
+        % every unknown was resolved (cf may be partial otherwise).
+            cf = struct('var', {}, 'expr', {});
+            closed_all = false;
+            remaining = unknowns;
+            for round = 1:numel(unknowns)
+                lhs = cell(size(residuals));
+                [e2v, ~, ~] = modBuilder.matchequations(residuals, lhs, remaining);
+                aligned = cell(1, numel(remaining));
+                for vi = 1:numel(remaining)
+                    pos = find(strcmp(e2v, remaining{vi}), 1);
+                    if isempty(pos), return, end
+                    aligned{vi} = residuals{pos};
+                end
+                elim = ast.iterated_elimination(aligned, remaining, param_names);
+                if isempty(elim), return, end
+                for jj = 1:numel(elim)
+                    cf(end+1).var = elim(jj).var; %#ok<AGROW>
+                    cf(end).expr = elim(jj).expr.string();
+                end
+                remaining = remaining(~ismember(remaining, {elim.var}));
+                if isempty(remaining)
+                    closed_all = true;
+                    return
+                end
+                % inline the newly closed forms everywhere before the next round
+                for e = 1:numel(residuals)
+                    r = residuals{e};
+                    for pass = 1:numel(elim) + 1
+                        syms_r = r.symbol_names();
+                        hitany = false;
+                        for jj = 1:numel(elim)
+                            if ismember(elim(jj).var, syms_r)
+                                r = r.substitute(elim(jj).var, elim(jj).expr, param_names);
+                                hitany = true;
+                            end
+                        end
+                        if ~hitany, break, end
+                    end
+                    residuals{e} = r.simplify();
+                end
+            end
+        end % function
+
+        function tf = homogeneous_in(r, vars, values)
+        % True when r is a homogeneous function of vars with a non-zero degree: its
+        % zero set is then a scale ray through the origin, so a zero root extracted
+        % from it is the trivial-ray artefact, not a level. Used by the gauge backout
+        % to reject spurious zero solutions.
+            vi = dictionary(string(vars(:)), (1:numel(vars))');
+            [deg, cons, ok] = r.expand().scaling_degree(vi, numel(vars), values);
+            tf = false;
+            if ~ok
+                return
+            end
+            for k = 1:numel(cons)
+                if any(abs(cons{k}) > 1e-9)
+                    return
+                end
+            end
+            tf = any(abs(deg) > 1e-9);
         end % function
 
         function f = substitute_known(f, blockvars, known_names, known_asts, param_names)
@@ -6730,7 +6812,9 @@ classdef modBuilder < handle
         %               .backout      [struct]  non-empty when the block scale was recovered by the
         %                                       gauge backout, with fields .gauge (the variable whose
         %                                       level the consistency equation pins) and .eq (the
-        %                                       original name of that consistency equation).
+        %                                       original name of that consistency equation). For a
+        %                                       multi-gauge block (several independent scales) both
+        %                                       fields are cell arrays, one entry per closed gauge.
         %
         % REMARKS:
         % - 'trivial':         single equation, the paired variable does not appear in its own equation
@@ -6769,6 +6853,10 @@ classdef modBuilder < handle
         %   A homogeneous (scale) normalisation is well-posed as is; if instead the
         %   surplus equation genuinely pins something, a calibration swap (freeing a
         %   parameter) is required rather than a plain anchor.
+        % - options.MaxBlockSize [integer, default 8]: largest simultaneous block the
+        %   symbolic machinery attempts to close (Bareiss keeps its own cap of 8).
+        %   Elimination cost grows quickly with block size -- raising the cap to reach
+        %   a large core (e.g. 13+ variables) can cost minutes.
         % - Gauge backout: re-matching a freed anchor equation inside a block can leave
         %   that block HOMOGENEOUS in its variables (e.g. the Calvo recursions once the
         %   optimal-price equation, degree 0, replaces the level equation): its equations
@@ -6785,6 +6873,7 @@ classdef modBuilder < handle
                 options.Match (1,1) logical = false
                 options.Anchors (1,:) cell = {}
                 options.PropagateKnown (1,1) logical = false
+                options.MaxBlockSize (1,1) double {mustBeInteger, mustBePositive} = 8
             end
 
             if ~isempty(options.Anchors) && ~options.Match
@@ -7140,10 +7229,13 @@ classdef modBuilder < handle
                             cf(1).expr = rhs_tree.string();
                         end
                     end
-                elseif numel(members) >= 2 && numel(members) <= 8
-                    % The size cap is set by the readability of the generated assignments,
-                    % not by an algorithmic limit: Bareiss runs in O(n^3) work and produces
-                    % polynomial intermediate entries.
+                elseif numel(members) >= 2 && numel(members) <= options.MaxBlockSize
+                    % The default cap trades closure ambition against the cost of
+                    % symbolic elimination, which grows quickly with block size; raise
+                    % MaxBlockSize to attempt larger cores (a 13-variable block takes
+                    % minutes). Bareiss keeps its own cap of 8 below: its O(n^3)
+                    % polynomial fill-in is prohibitive beyond that, and the generated
+                    % assignments would be unreadable anyway.
                     residuals = cell(1, numel(members));
                     for jj = 1:numel(members)
                         rj = modBuilder.static_residual(o, members(jj));
@@ -7152,7 +7244,10 @@ classdef modBuilder < handle
                     if all(~cellfun(@isempty, residuals))
                       try
                         % First attempt: jointly linear → Bareiss + back-substitution.
-                        [ok_lin, A_mat, b_vec] = ast.linearise_system(residuals, vars_block);
+                        ok_lin = false;
+                        if numel(members) <= 8
+                            [ok_lin, A_mat, b_vec] = ast.linearise_system(residuals, vars_block);
+                        end
                         if ok_lin
                             n_var = numel(vars_block);
                             M = [A_mat, cell(n_var, 1)];
@@ -7279,7 +7374,223 @@ classdef modBuilder < handle
                         solved = {};
                         if ~isempty(blocks(kb).closed_form), solved = {blocks(kb).closed_form.var}; end
                         open_vars = setdiff(blocks(kb).vars, solved);
-                        if numel(open_vars) ~= 1, continue, end
+                        if isempty(open_vars), continue, end
+                        if numel(open_vars) >= 2
+                            % Several open variables: the block carries several
+                            % independent scales (a multi-gauge structure). Close the
+                            % gauges sequentially: each unused consistency equation --
+                            % or leftover block equation -- reduced to the open gauges
+                            % (chains, earlier gauge forms and known values substituted)
+                            % pins one gauge, possibly parametrically in the others; a
+                            % block equation already consumed by the elimination chains
+                            % reduces to 0 = 0 and drops out. Loop until every gauge is
+                            % closed, then order the gauge assignments topologically.
+                            if numel(solved) ~= numel(blocks(kb).vars) - numel(open_vars), continue, end
+                            mate_names = solved;
+                            mate_exprs = cell(size(solved));
+                            for jj = 1:numel(blocks(kb).closed_form)
+                                mate_exprs{strcmp(mate_names, blocks(kb).closed_form(jj).var)} = blocks(kb).closed_form(jj).expr;
+                            end
+                            other_open = setdiff(open_names, open_vars);
+                            reach_g = false(1, numel(cf_names));
+                            reach_op = false(1, numel(cf_names));
+                            changed = true;
+                            while changed
+                                changed = false;
+                                for jj = 1:numel(cf_names)
+                                    if ~reach_g(jj) && (any(ismember(open_vars, syms_cf{jj})) || any(reach_g(ismember(cf_names, syms_cf{jj}))))
+                                        reach_g(jj) = true; changed = true;
+                                    end
+                                    if ~reach_op(jj) && (any(ismember(other_open, syms_cf{jj})) || any(reach_op(ismember(cf_names, syms_cf{jj}))))
+                                        reach_op(jj) = true; changed = true;
+                                    end
+                                end
+                            end
+                            inline_names = cf_names(reach_g);
+                            members_kb = zeros(1, numel(blocks(kb).vars));
+                            for jj = 1:numel(blocks(kb).vars)
+                                members_kb(jj) = var_idx(blocks(kb).vars{jj});
+                            end
+                            cand_rows = [cons_idx(~cons_used), members_kb];
+                            cand_done = false(size(cand_rows));
+                            gauges_left = open_vars;
+                            gauge_names = {}; gauge_exprs = {};
+                            used_cons = []; used_eq_names = {};
+                            progress_g = true;
+                            while progress_g && ~isempty(gauges_left)
+                                progress_g = false;
+                                for cc = 1:numel(cand_rows)
+                                    if cand_done(cc), continue, end
+                                    ci = cand_rows(cc);
+                                    r = modBuilder.substitute_known(eqasts_s{ci}, gauges_left, known_names, known_asts, param_names);
+                                    okr = true;
+                                    for pass = 1:32
+                                        syms_r = r.symbol_names();
+                                        if any(ismember(syms_r, other_open)) || any(ismember(syms_r, cf_names(reach_op)))
+                                            okr = false; break
+                                        end
+                                        todo = syms_r(ismember(syms_r, [inline_names, mate_names, gauge_names]));
+                                        if isempty(todo), break, end
+                                        if pass == 32, okr = false; break, end
+                                        for tt = 1:numel(todo)
+                                            s = todo{tt};
+                                            gi = find(strcmp(gauge_names, s), 1);
+                                            mi = find(strcmp(mate_names, s), 1);
+                                            if ~isempty(gi)
+                                                sub_expr = gauge_exprs{gi};
+                                            elseif ~isempty(mi)
+                                                sub_expr = mate_exprs{mi};
+                                            else
+                                                sub_expr = cf_exprs{find(strcmp(cf_names, s), 1)};
+                                            end
+                                            r = r.substitute(s, ast(sub_expr).staticise(), param_names);
+                                        end
+                                        r = r.simplify();
+                                    end
+                                    if ~okr, continue, end
+                                    hit = gauges_left(ismember(gauges_left, r.symbol_names()));
+                                    if isempty(hit), continue, end
+                                    for gg = 1:numel(hit)
+                                        gv = hit{gg};
+                                        try
+                                            rhs_g = r.isolate(gv);
+                                        catch
+                                            rhs_g = [];
+                                        end
+                                        if isempty(rhs_g), continue, end
+                                        rhs_g = rhs_g.simplify();
+                                        if ast.is_zero(rhs_g) && modBuilder.homogeneous_in(r, gauges_left, expo_values)
+                                            % zero root of a homogeneous equation: the
+                                            % trivial ray, not a level
+                                            continue
+                                        end
+                                        gauge_names{end+1} = gv; %#ok<AGROW>
+                                        gauge_exprs{end+1} = rhs_g.string(); %#ok<AGROW>
+                                        gauges_left = gauges_left(~strcmp(gauges_left, gv));
+                                        cand_done(cc) = true;
+                                        if any(cons_idx == ci) && ~cons_used(cons_idx == ci)
+                                            used_cons(end+1) = ci; %#ok<AGROW>
+                                        end
+                                        used_eq_names{end+1} = keys{ci}; %#ok<AGROW>
+                                        progress_g = true;
+                                        break
+                                    end
+                                end
+                            end
+                            if ~isempty(gauges_left)
+                                % Re-orientation fallback: the elimination chains baked
+                                % a pairing (wage = f(gross wage) through the wage
+                                % recursions) under which the leftover equations are
+                                % not solvable for the remaining gauges, while the
+                                % reverse orientation is linear (the labour FOC pins
+                                % the net wage once consumption is known). Re-match and
+                                % re-eliminate from the ORIGINAL block residuals,
+                                % augmented with the reduced consistency equations (the
+                                % level anchors) and with the gauge forms found so far
+                                % substituted in.
+                                unknowns2 = [gauges_left, mate_names];
+                                resid2 = {};
+                                for jj = 1:numel(members_kb)
+                                    rj = modBuilder.static_residual(o, members_kb(jj));
+                                    if isempty(rj), resid2 = {}; break, end
+                                    rj = modBuilder.substitute_known(rj, unknowns2, known_names, known_asts, param_names);
+                                    for gg2 = 1:numel(gauge_names)
+                                        rj = rj.substitute(gauge_names{gg2}, ast(gauge_exprs{gg2}).staticise(), param_names);
+                                    end
+                                    resid2{end+1} = rj.simplify(); %#ok<AGROW>
+                                end
+                                if isempty(resid2), continue, end
+                                inline2 = inline_names(~ismember(inline_names, mate_names));
+                                cons2 = {}; cons2_src = [];
+                                for cc = 1:numel(cand_rows)
+                                    if cand_done(cc) || ~any(cons_idx == cand_rows(cc)), continue, end
+                                    ci = cand_rows(cc);
+                                    r = modBuilder.substitute_known(eqasts_s{ci}, unknowns2, known_names, known_asts, param_names);
+                                    okr = true;
+                                    for pass = 1:32
+                                        syms_r = r.symbol_names();
+                                        if any(ismember(syms_r, other_open)) || any(ismember(syms_r, cf_names(reach_op)))
+                                            okr = false; break
+                                        end
+                                        todo = syms_r(ismember(syms_r, [inline2, gauge_names]));
+                                        if isempty(todo), break, end
+                                        if pass == 32, okr = false; break, end
+                                        for tt = 1:numel(todo)
+                                            s = todo{tt};
+                                            gi = find(strcmp(gauge_names, s), 1);
+                                            if ~isempty(gi)
+                                                sub_expr = gauge_exprs{gi};
+                                            else
+                                                sub_expr = cf_exprs{find(strcmp(cf_names, s), 1)};
+                                            end
+                                            r = r.substitute(s, ast(sub_expr).staticise(), param_names);
+                                        end
+                                        r = r.simplify();
+                                    end
+                                    if okr && any(ismember(r.symbol_names(), unknowns2))
+                                        cons2{end+1} = r; %#ok<AGROW>
+                                        cons2_src(end+1) = ci; %#ok<AGROW>
+                                    end
+                                end
+                                all_res = [resid2, cons2];
+                                try
+                                    [elim_cf, closed_all] = modBuilder.rematch_eliminate(all_res, unknowns2, param_names);
+                                catch
+                                    elim_cf = struct('var', {}, 'expr', {}); closed_all = false;
+                                end
+                                if ~closed_all, continue, end
+                                new_cf = elim_cf;
+                                for gg2 = 1:numel(gauge_names)
+                                    new_cf(end+1).var = gauge_names{gg2}; %#ok<AGROW>
+                                    new_cf(end).expr = gauge_exprs{gg2};
+                                end
+                                blocks(kb).closed_form = new_cf;
+                                % the consistency equations handed to the fallback are
+                                % consumed (an unused one is satisfied identically once
+                                % the block closes, so over-marking is harmless)
+                                for cc2 = 1:numel(cons2_src)
+                                    used_eq_names{end+1} = keys{cons2_src(cc2)}; %#ok<AGROW>
+                                    cons_used(cons_idx == cons2_src(cc2)) = true;
+                                end
+                                blocks(kb).backout = struct('gauge', {open_vars}, 'eq', {used_eq_names});
+                                for ci = used_cons
+                                    cons_used(cons_idx == ci) = true;
+                                end
+                                progress = true;
+                                break
+                            end
+                            % order the gauge assignments so a parametric one follows
+                            % the gauges it references
+                            remaining_g = 1:numel(gauge_names);
+                            order_g = [];
+                            while ~isempty(remaining_g)
+                                placed_any = false;
+                                for ii = remaining_g
+                                    refs = ast(gauge_exprs{ii}).staticise().symbol_names();
+                                    others_gn = gauge_names(remaining_g(remaining_g ~= ii));
+                                    if ~any(ismember(refs, others_gn))
+                                        order_g(end+1) = ii; %#ok<AGROW>
+                                        remaining_g = remaining_g(remaining_g ~= ii);
+                                        placed_any = true;
+                                        break
+                                    end
+                                end
+                                if ~placed_any, break, end
+                            end
+                            if numel(order_g) ~= numel(gauge_names), continue, end
+                            gcf = struct('var', {}, 'expr', {});
+                            for ii = order_g
+                                gcf(end+1).var = gauge_names{ii}; %#ok<AGROW>
+                                gcf(end).expr = gauge_exprs{ii};
+                            end
+                            blocks(kb).closed_form = [gcf, blocks(kb).closed_form];
+                            blocks(kb).backout = struct('gauge', {gauge_names}, 'eq', {used_eq_names});
+                            for ci = used_cons
+                                cons_used(cons_idx == ci) = true;
+                            end
+                            progress = true;
+                            break
+                        end
                         g = open_vars{1};
                         vars_block = blocks(kb).vars;
                         % Rebuild the block residuals for the ratio parametrisation.
@@ -7362,7 +7673,12 @@ classdef modBuilder < handle
                                 rhs_g = [];
                             end
                             if isempty(rhs_g), continue, end
-                            gauge_cf = struct('var', g, 'expr', rhs_g.simplify().string());
+                            rhs_g = rhs_g.simplify();
+                            if ast.is_zero(rhs_g) && modBuilder.homogeneous_in(r, {g}, expo_values)
+                                % zero root of a homogeneous equation: the trivial ray
+                                continue
+                            end
+                            gauge_cf = struct('var', g, 'expr', rhs_g.string());
                             if used_ratio
                                 blocks(kb).closed_form = [gauge_cf, cf_ratio];
                             else
