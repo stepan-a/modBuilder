@@ -1317,7 +1317,10 @@ classdef ast
         % - The output preserves canonical form (with 'uminus' for subtraction and
         %   '^(-1)' for division). The string() renderer prints those as '-' and '/'.
             previous_key = '';
-            while true
+            % The iteration cap bounds a hypothetical rule oscillation (two rewrite
+            % rules undoing each other would cycle the key forever); genuine
+            % simplifications converge in a handful of passes.
+            for iter = 1:64
                 o = o.canonicalise();
                 key = ast.sort_key(o);
                 if strcmp(key, previous_key)
@@ -2028,6 +2031,33 @@ classdef ast
             end
         end % function
 
+        function [sgn, core] = sign_split(o)
+        % Split o into (sign, core) where core is the sign-normalised form: a uminus
+        % wrapper is stripped, and a '+' chain whose (canonically first) leading term
+        % has a negative coefficient is negated term-wise and re-canonicalised. S and
+        % -S thus map to the same core, so power bases can be matched modulo sign
+        % ((1-B) against (-1+B), whose quotient is -1).
+            sgn = 1; core = o;
+            if strcmp(core.type, 'uminus')
+                sgn = -1;
+                core = core.children{1};
+            end
+            if strcmp(core.type, 'binop') && strcmp(core.value, '+')
+                terms = ast.flatten(core, '+');
+                if ast.decompose_term(terms{1}) < 0
+                    sgn = -sgn;
+                    for i = 1:numel(terms)
+                        if strcmp(terms{i}.type, 'num')
+                            terms{i} = ast('num', -terms{i}.value, {});
+                        else
+                            terms{i} = ast.negate(terms{i});
+                        end
+                    end
+                    core = ast.sum_of(terms).canonicalise();
+                end
+            end
+        end % function
+
         function [coef, monomial] = decompose_term(o)
         % Decompose o as coef · monomial, where coef is a numeric scalar pulled
         % out of any leading numeric factors (and any uminus contributes -1) and
@@ -2115,34 +2145,61 @@ classdef ast
         % Combine powers in a flattened '*' chain by grouping operands with a
         % structurally equal base and summing their exponents (treating a bare X
         % as X^1). Zero-total exponents drop the operand (X^0 = 1).
+        %
+        % Bases are matched MODULO SIGN when the exponent is an integer (sign_split):
+        % (1-B) and (-1+B)^(-1) share the core (1-B) and collapse to -1, the sign
+        % (-1)^exp of each negated member being accumulated into a numeric factor.
+        % Singleton groups keep their original operand untouched, so the canonical
+        % form only changes when a merge actually happens.
             n = numel(operands);
             if n < 2, return; end
             bases = cell(1, n);
             exps = cell(1, n);
+            sgns = ones(1, n);
+            cores = cell(1, n);
             for i = 1:n
                 [bases{i}, exps{i}] = ast.power_components(operands{i});
+                cores{i} = bases{i};
+                if strcmp(exps{i}.type, 'num') && exps{i}.value == round(exps{i}.value)
+                    [sgns(i), cores{i}] = ast.sign_split(bases{i});
+                end
             end
             used = false(1, n);
             new_operands = {};
+            neg = false;
             for i = 1:n
                 if used(i), continue; end
+                group = i;
                 total = exps{i};
                 for j = i+1:n
                     if used(j), continue; end
-                    if ast.ast_equal(bases{i}, bases{j})
+                    if ast.ast_equal(cores{i}, cores{j})
                         total = ast('binop', '+', {total, exps{j}});
                         used(j) = true;
+                        group(end+1) = j; %#ok<AGROW>
                     end
                 end
                 used(i) = true;
+                if isscalar(group)
+                    new_operands{end+1} = operands{i}; %#ok<AGROW>
+                    continue
+                end
+                for t = group
+                    if sgns(t) == -1 && mod(exps{t}.value, 2) == 1
+                        neg = ~neg;
+                    end
+                end
                 total_s = total.simplify();
                 if ast.is_zero(total_s)
                     continue
                 elseif ast.is_one(total_s)
-                    new_operands{end+1} = bases{i}; %#ok<AGROW>
+                    new_operands{end+1} = cores{i}; %#ok<AGROW>
                 else
-                    new_operands{end+1} = ast('binop', '^', {bases{i}, total_s}); %#ok<AGROW>
+                    new_operands{end+1} = ast('binop', '^', {cores{i}, total_s}); %#ok<AGROW>
                 end
+            end
+            if neg
+                new_operands{end+1} = ast('num', -1, {});
             end
             operands = new_operands;
         end % function
@@ -3422,6 +3479,30 @@ classdef ast
                             if ast.is_zero(R), o = ast('num', 1, {}); return; end
                             if ast.is_one(R), o = L; return; end
                             if ast.is_one(L), o = ast('num', 1, {}); return; end
+                            if strcmp(L.type, 'binop') && strcmp(L.value, '^')
+                                % (x^a)^b → x^(a·b) -- sound under the positive-base
+                                % convention used throughout the power algebra (expand
+                                % distributes powers over products for any exponent).
+                                % Excluded: a an even integer with a non-integer b,
+                                % where (x^a)^b = |x|^(a·b) genuinely differs.
+                                a = L.children{2};
+                                even_inner = strcmp(a.type, 'num') && a.value == round(a.value) && mod(a.value, 2) == 0;
+                                outer_int = strcmp(R.type, 'num') && R.value == round(R.value);
+                                if ~even_inner || outer_int
+                                    o = ast('binop', '^', {L.children{1}, ast('binop', '*', {a, R})});
+                                    return
+                                end
+                            end
+                            if strcmp(L.type, 'uminus') && strcmp(R.type, 'num') && R.value == round(R.value)
+                                % (-x)^n for integer n: pull the sign out so the base
+                                % matches its sign-normalised form in power collection.
+                                if mod(R.value, 2) == 0
+                                    o = ast('binop', '^', {L.children{1}, R});
+                                else
+                                    o = ast.negate(ast('binop', '^', {L.children{1}, R}));
+                                end
+                                return
+                            end
                     end
             end
         end % function
