@@ -2376,7 +2376,7 @@ classdef modBuilder < handle
                     aligned{vi} = subres{pos};
                 end
                 if ~ok, continue; end
-                elim = ast.iterated_elimination(aligned, new_vars, param_names);
+                elim = ast.iterated_elimination(aligned, new_vars, param_names, true);
                 if numel(elim) ~= nb, continue; end
                 % Translate back: inline the auxiliary ratio names, emit the gauge, then
                 % each original variable as ratio*gauge.
@@ -2476,7 +2476,7 @@ classdef modBuilder < handle
                 end
                 aligned{vi} = subres{pos};
             end
-            elim = ast.iterated_elimination(aligned, rnames, param_names);
+            elim = ast.iterated_elimination(aligned, rnames, param_names, true);
             if numel(elim) ~= numel(rnames)
                 return
             end
@@ -2560,10 +2560,47 @@ classdef modBuilder < handle
         %
         % Returns the closed forms in evaluation order and closed_all = true when
         % every unknown was resolved (cf may be partial otherwise).
+        %
+        % Each round starts with FORCED propagation: an equation whose unknown set
+        % has shrunk to a single variable pins that variable with no pairing choice,
+        % and closing it can make further equations single-unknown (eq(GDP) then
+        % eq(Z2|GDP known) then ...). Matching only arbitrates the genuinely
+        % simultaneous rest. Without this pass the matcher can pair a variable away
+        % from its dedicated equation (GDP to the production identity instead of its
+        % own consistency equation), and the greedy elimination then expresses the
+        % recursion levels parametrically in a variable it never closes.
             cf = struct('var', {}, 'expr', {});
             closed_all = false;
             remaining = unknowns;
             for round = 1:numel(unknowns)
+                % forced-singleton propagation to a fixed point
+                forced = true;
+                while forced && ~isempty(remaining)
+                    forced = false;
+                    for e = 1:numel(residuals)
+                        hit = remaining(ismember(remaining, residuals{e}.symbol_names()));
+                        if ~isscalar(hit), continue, end
+                        v = hit{1};
+                        rhs = residuals{e}.isolate(v);
+                        if isempty(rhs) || (strcmp(rhs.type, 'num') && rhs.value == 0)
+                            continue
+                        end
+                        cf(end+1).var = v; %#ok<AGROW>
+                        cf(end).expr = rhs.string();
+                        remaining = remaining(~strcmp(remaining, v));
+                        for e2 = 1:numel(residuals)
+                            if ast.count_occurrences(residuals{e2}, v) > 0
+                                residuals{e2} = residuals{e2}.substitute(v, rhs, param_names).simplify();
+                            end
+                        end
+                        forced = true;
+                        break
+                    end
+                end
+                if isempty(remaining)
+                    closed_all = true;
+                    return
+                end
                 lhs = cell(size(residuals));
                 [e2v, ~, ~] = modBuilder.matchequations(residuals, lhs, remaining);
                 aligned = cell(1, numel(remaining));
@@ -2572,7 +2609,7 @@ classdef modBuilder < handle
                     if isempty(pos), return, end
                     aligned{vi} = residuals{pos};
                 end
-                elim = ast.iterated_elimination(aligned, remaining, param_names);
+                elim = ast.iterated_elimination(aligned, remaining, param_names, true);
                 if isempty(elim), return, end
                 for jj = 1:numel(elim)
                     cf(end+1).var = elim(jj).var; %#ok<AGROW>
@@ -7243,10 +7280,39 @@ classdef modBuilder < handle
                     end
                     if all(~cellfun(@isempty, residuals))
                       try
+                        % A block that is HOMOGENEOUS in its variables never goes
+                        % through plain linear solving or elimination: its solution set
+                        % is a scale ray through zero, and both paths would "close" it
+                        % on the trivial all-zero point (the rational normalisation in
+                        % linearise_system makes ratio equations like z1/z2 = p
+                        % recognisably linear, so the Cramer path WOULD fire). Decide
+                        % scale freedom up front and route accordingly.
+                        scale_free = modBuilder.block_scale_freedom(residuals, vars_block, expo_values);
                         % First attempt: jointly linear → Bareiss + back-substitution.
                         ok_lin = false;
                         if numel(members) <= 8
                             [ok_lin, A_mat, b_vec] = ast.linearise_system(residuals, vars_block);
+                        end
+                        if ok_lin && scale_free
+                            % Homogeneous AND jointly linear: a scale ray exists only if
+                            % the system matrix is singular. When the determinant
+                            % evaluates to a non-zero number at the calibration, the
+                            % all-zero point is the UNIQUE solution — the steady state
+                            % of a zero-mean VAR block — so the linear path is correct.
+                            % A vanishing or non-evaluable determinant (it references an
+                            % anchored variable with no declared value, or the block is
+                            % genuinely scale-free) keeps the gauge machinery in charge.
+                            regular = false;
+                            try
+                                dv = ast.symbolic_det(A_mat).eval(expo_values);
+                                regular = isfinite(dv) && abs(dv) > 1e-9;
+                            catch
+                            end
+                            if regular
+                                scale_free = false;
+                            else
+                                ok_lin = false;
+                            end
                         end
                         if ok_lin
                             n_var = numel(vars_block);
@@ -7277,14 +7343,10 @@ classdef modBuilder < handle
                         % Fallback: iterated symbolic elimination via the per-equation
                         % recognisers. Substitution between equations may turn a
                         % non-linear residual into a linear / monomial / call-wrapped
-                        % one that the recognisers then handle. A block that is
-                        % HOMOGENEOUS in its variables is excluded: its solution set is
-                        % a scale ray through zero, so elimination would "close" it on
-                        % the trivial all-zero point. Such a block is parametrised in a
-                        % gauge instead (ratios in closed form, level left open for the
-                        % gauge backout below or for the user).
+                        % one that the recognisers then handle. A scale-free block is
+                        % parametrised in a gauge instead (ratios in closed form, level
+                        % left open for the gauge backout below or for the user).
                         if isempty(cf)
-                            scale_free = modBuilder.block_scale_freedom(residuals, vars_block, expo_values);
                             if scale_free
                                 for gi = 1:numel(vars_block)
                                     cf_gauge = modBuilder.ratio_parametrise(residuals, vars_block, param_names, vars_block{gi}, expo_values);
@@ -7294,7 +7356,17 @@ classdef modBuilder < handle
                                     end
                                 end
                             else
-                                elim_cf = ast.iterated_elimination(residuals, vars_block, param_names);
+                                % reject_zero: the block-level homogeneity test above
+                                % only sees a JOINT scale freedom, but a block can hide
+                                % a scale-free subsystem (the SW price-recursion chain
+                                % inside the consumption/wage core). Elimination then
+                                % consumes the ratios and reduces the level equation to
+                                % v·c = 0, whose zero root is the trivial ray. A block
+                                % reaching this path is never jointly linear (Bareiss
+                                % ran first), so a zero level here is the artefact, and
+                                % rejecting it leaves the variable open for the gauge
+                                % backout instead of poisoning the chain.
+                                elim_cf = ast.iterated_elimination(residuals, vars_block, param_names, true);
                                 for jj = 1:numel(elim_cf)
                                     cf(end+1).var = elim_cf(jj).var; %#ok<AGROW>
                                     cf(end).expr = elim_cf(jj).expr.string();
@@ -7446,10 +7518,22 @@ classdef modBuilder < handle
                                             r = r.substitute(s, ast(sub_expr).staticise(), param_names);
                                         end
                                         r = r.simplify();
+                                        if ast.node_count(r) > 8192
+                                            % inlining the chains is blowing the residual
+                                            % up; no recogniser will read anything off it
+                                            okr = false; break
+                                        end
                                     end
                                     if ~okr, continue, end
                                     hit = gauges_left(ismember(gauges_left, r.symbol_names()));
                                     if isempty(hit), continue, end
+                                    if ast.node_count(r) > 1024
+                                        % oversized candidate: isolate probes cost minutes
+                                        % here and their closed form would be unusable —
+                                        % fail fast and let the re-orientation fallback
+                                        % work from the compact original residuals
+                                        continue
+                                    end
                                     for gg = 1:numel(hit)
                                         gv = hit{gg};
                                         try
@@ -7665,8 +7749,17 @@ classdef modBuilder < handle
                                     r = r.substitute(s, ast(sub_expr).staticise(), param_names);
                                 end
                                 r = r.simplify();
+                                if ast.node_count(r) > 8192
+                                    % chain inlining is blowing the residual up
+                                    ok = false; break
+                                end
                             end
                             if ~ok || ~ismember(g, r.symbol_names()), continue, end
+                            if ast.node_count(r) > 1024
+                                % oversized candidate: no recogniser reads anything off
+                                % it and the probe alone costs minutes
+                                continue
+                            end
                             try
                                 rhs_g = r.isolate(g);
                             catch

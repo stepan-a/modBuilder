@@ -794,6 +794,56 @@ classdef ast
             a = ast('binop', '-', {expr_at_one, b}).simplify();
         end % function
 
+        function tf = numerically_affine_in(o, xs)
+        % Numeric probe: true when o is (almost surely) jointly affine in the symbols
+        % xs. All other symbols are pinned to deterministic positive values and o is
+        % evaluated at three points along a segment in the xs coordinates; equality of
+        % the two slopes decides. Structural identities hold numerically, so the probe
+        % answers for the EXPANDED form without paying for expand(): it gates the
+        % expensive expand-and-retry step of the rational-normalisation fallback in
+        % isolate / linearise_system. A vanishing nonlinear coefficient at the probe
+        % values can produce a false positive (measure zero, and the cost is only a
+        % wasted expansion); an evaluation failure (Inf/NaN/complex) is retried once
+        % with a second assignment before giving up.
+            names = o.symbol_names();
+            others = setdiff(names, xs);
+            tf = false;
+            for trial = 1:2
+                v = struct();
+                for i = 1:numel(others)
+                    v.(others{i}) = 0.53 + mod(0.137*(i + 3*trial), 1);
+                end
+                base = zeros(1, numel(xs));
+                dir = zeros(1, numel(xs));
+                for j = 1:numel(xs)
+                    base(j) = 0.61 + mod(0.171*(j + trial), 1);
+                    dir(j) = 0.35 + mod(0.119*(j + 2*trial), 0.8);
+                end
+                ts = [0, 0.7, 1.6];
+                f = zeros(1, 3);
+                okeval = true;
+                for k = 1:3
+                    for j = 1:numel(xs)
+                        v.(xs{j}) = base(j) + ts(k)*dir(j);
+                    end
+                    y = o.eval(v);
+                    if ~isfinite(y) || ~isreal(y)
+                        okeval = false;
+                        break
+                    end
+                    f(k) = y;
+                end
+                if ~okeval
+                    continue
+                end
+                s1 = (f(2) - f(1))/(ts(2) - ts(1));
+                s2 = (f(3) - f(2))/(ts(3) - ts(2));
+                scale = max([abs(s1), abs(s2), abs(f), 1]);
+                tf = abs(s1 - s2) <= 1e-7*scale;
+                return
+            end
+        end % function
+
         function tf = is_linear_in_set(o, vars)
         % Test whether the tree is jointly linear in the set of variable names vars.
         %
@@ -998,7 +1048,7 @@ classdef ast
             rest = ast.sum_of(rest_terms).simplify();
         end % function
 
-        function rhs = isolate(o, x, allow_binomial)
+        function rhs = isolate(o, x, allow_binomial, allow_clear)
         % Try to isolate x from the equation o = 0, returning an AST tree for x or [].
         %
         % INPUTS:
@@ -1009,6 +1059,11 @@ classdef ast
         %                            passes false first, so a variable solvable only by
         %                            that stronger rule is deferred to a last resort and
         %                            does not skew the greedy elimination order.
+        % - allow_clear    [logical] (optional, default true) when every recogniser
+        %                            fails, clear the denominators (multiply the
+        %                            residual through by them; equivalent under the
+        %                            non-zero steady-state convention) and retry once.
+        %                            The recursive retry passes false to terminate.
         %
         % OUTPUTS:
         % - rhs [ast]    AST such that x = rhs is structurally equivalent, or [] if no
@@ -1022,6 +1077,7 @@ classdef ast
         % - Returns [] when the variable's coefficient folds to 0 (the equation does not
         %   actually pin x) or when none of the recognisers apply.
             if nargin < 3, allow_binomial = true; end
+            if nargin < 4, allow_clear = true; end
             o = o.canonicalise().simplify();
 
             % Invertible-call recogniser
@@ -1037,7 +1093,7 @@ classdef ast
                         rhs = []; return
                 end
                 residual = ast('binop', '-', {P, inv_target});
-                rhs = residual.isolate(x);
+                rhs = residual.isolate(x, true, allow_clear);
                 return
             end
 
@@ -1072,6 +1128,28 @@ classdef ast
                     inv_dexp = ast('binop', '/', {ast('num', 1, {}), dexp});
                     rhs = ast('binop', '^', {base, inv_dexp}).simplify();
                     return
+                end
+            end
+
+            % Rational normalisation (last resort): closed forms inlined into rational
+            % chains bury x under nested (a+b·x)/(c+d·x) quotients. Multiplying the
+            % denominators out preserves the roots (non-zero convention) and often
+            % re-exposes a shape the recognisers above handle — directly, or after the
+            % expansion cancels the degree-2 cross terms the clearing created. Cost
+            % gates: elimination probes isolate hot, so oversized residuals skip the
+            % fallback (their closed forms would be unusable anyway), and the
+            % expand-and-retry step — seconds on symbolic-power products — runs only
+            % when a numeric probe certifies the cleared residual IS affine in x, so
+            % the expansion is guaranteed to be worth it.
+            if allow_clear && ast.node_count(o) <= 4096 && ast.has_denominator_in(o, x)
+                cleared = o.clear_denominators();
+                if ~ast.ast_equal(cleared, o)
+                    rhs = cleared.isolate(x, allow_binomial, false);
+                    if ~isempty(rhs), return, end
+                    if cleared.numerically_affine_in({x})
+                        rhs = cleared.expand().simplify().isolate(x, allow_binomial, false);
+                        if ~isempty(rhs), return, end
+                    end
                 end
             end
 
@@ -1510,6 +1588,41 @@ classdef ast
                 factor_node = ast.product_of(common_factors).simplify();
                 o = ast('binop', '*', {factor_node, residual_sum}).simplify();
             end
+        end % function
+
+        function o = clear_denominators(o)
+        % Rewrite the residual o as the numerator of its single-fraction form: o ≡ N/D
+        % with D the product of the denominators encountered, and return N. The
+        % equations o = 0 and N = 0 have the same roots wherever D ≠ 0, which is the
+        % standing steady-state convention (levels and denominator factors are
+        % non-zero). Used as a fallback by isolate and linearise_system: closed forms
+        % inlined into rational chains bury a linear structure under nested
+        % (a+b·x)/(c+d·x) quotients that no recogniser sees through, and multiplying
+        % the denominators out makes that structure reappear.
+        %
+        % REMARKS:
+        % - '+' chains are put over a COMMON denominator (multiset lcm of the factor
+        %   lists), so denominators shared across terms are not squared:
+        %   a/(c+d·x) + b/(c+d·x) − e clears to a + b − e·(c+d·x), linear in x.
+        % - (p/q)^E with a symbolic exponent E is split as p^E / q^E, valid for the
+        %   positive levels assumed throughout the steady-state machinery.
+        % - 'call' arguments are left untouched: exp(a/b) is atomic.
+        % - When o has no denominator the tree is returned unchanged (up to
+        %   canonicalisation), so callers can detect a no-op with ast.ast_equal.
+        % - Clearing a deeply nested quotient tower cross-multiplies subtrees and can
+        %   blow the numerator up by an order of magnitude; simplifying such a tree
+        %   costs minutes and its closed form would be unusable anyway. When the raw
+        %   numerator exceeds a size cap the call degrades to a no-op.
+            o = o.canonicalise();
+            [nfac, dfac] = ast.rational_split(o);
+            if isempty(dfac)
+                return
+            end
+            num = ast.product_of(nfac);
+            if ast.node_count(num) > 8192
+                return
+            end
+            o = num.simplify();
         end % function
 
     end % methods
@@ -2268,6 +2381,129 @@ classdef ast
             end
         end % function
 
+        function [nfac, dfac] = rational_split(o)
+        % Decompose o as product(nfac) / product(dfac), both factor lists (cell arrays
+        % of ASTs); an empty dfac means denominator 1. Recursive engine behind
+        % ast.clear_denominators; expects a canonicalised tree ('/' already rewritten
+        % as ·^(−1) and '−' as + uminus).
+        %
+        % REMARKS:
+        % - '+' chains whose terms carry denominators are combined over the multiset
+        %   lcm of the per-term denominator lists (shared factors counted once).
+        % - Factors common to nfac and dfac cancel structurally (non-zero convention).
+        % - Small integer powers are expanded into repeated factors (see
+        %   ast.split_integer_powers) so that S and S^2 denominators of the same base
+        %   match in the lcm.
+            switch o.type
+                case 'uminus'
+                    [nfac, dfac] = ast.rational_split(o.children{1});
+                    nfac = [{ast('num', -1, {})}, nfac];
+                case 'binop'
+                    switch o.value
+                        case '+'
+                            terms = ast.flatten(o, '+');
+                            nn = cell(1, numel(terms));
+                            dd = cell(1, numel(terms));
+                            anyden = false;
+                            for i = 1:numel(terms)
+                                [nn{i}, dd{i}] = ast.rational_split(terms{i});
+                                dd{i} = ast.split_integer_powers(dd{i});
+                                anyden = anyden || ~isempty(dd{i});
+                            end
+                            if ~anyden
+                                nfac = {o}; dfac = {};
+                                return
+                            end
+                            dfac = {};
+                            for i = 1:numel(terms)
+                                dfac = [dfac, ast.multiset_difference(dd{i}, dfac)]; %#ok<AGROW>
+                            end
+                            newterms = cell(1, numel(terms));
+                            for i = 1:numel(terms)
+                                extra = ast.multiset_difference(dfac, dd{i});
+                                newterms{i} = ast.product_of([nn{i}, extra]);
+                            end
+                            nfac = {ast.sum_of(newterms)};
+                        case '*'
+                            factors = ast.flatten(o, '*');
+                            nfac = {}; dfac = {};
+                            for i = 1:numel(factors)
+                                [nf, df] = ast.rational_split(factors{i});
+                                nfac = [nfac, nf]; %#ok<AGROW>
+                                dfac = [dfac, df]; %#ok<AGROW>
+                            end
+                            common = ast.multiset_intersect(nfac, dfac);
+                            if ~isempty(common)
+                                nfac = ast.multiset_difference(nfac, common);
+                                dfac = ast.multiset_difference(dfac, common);
+                            end
+                        case '^'
+                            [nb, db] = ast.rational_split(o.children{1});
+                            E = o.children{2};
+                            if isempty(db) && ~(strcmp(E.type, 'num') && E.value < 0)
+                                % plain power of a denominator-free base: atomic
+                                nfac = {o}; dfac = {};
+                                return
+                            end
+                            if strcmp(E.type, 'num') && E.value == round(E.value)
+                                k = E.value;
+                                if k >= 0
+                                    nfac = ast.pow_factors(nb, k);
+                                    dfac = ast.pow_factors(db, k);
+                                else
+                                    nfac = ast.pow_factors(db, -k);
+                                    dfac = ast.pow_factors(nb, -k);
+                                end
+                            else
+                                % symbolic (or non-integer) exponent: (p/q)^E → p^E / q^E,
+                                % valid under the positive-level convention
+                                nfac = {ast('binop', '^', {ast.product_of(nb), E})};
+                                dfac = {ast('binop', '^', {ast.product_of(db), E})};
+                            end
+                        otherwise
+                            nfac = {o}; dfac = {};
+                    end
+                otherwise
+                    nfac = {o}; dfac = {};
+            end
+        end % function
+
+        function fl = pow_factors(fl, k)
+        % Raise a factor list to the non-negative integer power k. Small k replicates
+        % the factors (keeps the multiset granularity the lcm matching relies on);
+        % large k builds a single power node to avoid tree blow-up.
+            if k == 0 || isempty(fl)
+                fl = {};
+                return
+            end
+            if k == 1
+                return
+            end
+            if k <= 8
+                fl = repmat(fl, 1, k);
+            else
+                fl = {ast('binop', '^', {ast.product_of(fl), ast('num', k, {})})};
+            end
+        end % function
+
+        function out = split_integer_powers(factors)
+        % Expand factors of the form B^k (numeric integer 2 ≤ k ≤ 8) into k copies of
+        % B, so that a denominator merged into S^2 by collect_powers still matches a
+        % plain S denominator in the multiset-lcm pass of rational_split.
+            out = {};
+            for i = 1:numel(factors)
+                f = factors{i};
+                if strcmp(f.type, 'binop') && strcmp(f.value, '^') ...
+                        && strcmp(f.children{2}.type, 'num') ...
+                        && f.children{2}.value == round(f.children{2}.value) ...
+                        && f.children{2}.value >= 2 && f.children{2}.value <= 8
+                    out = [out, repmat({f.children{1}}, 1, f.children{2}.value)]; %#ok<AGROW>
+                else
+                    out{end+1} = f; %#ok<AGROW>
+                end
+            end
+        end % function
+
         function [ok, n] = linear_walk(o, x)
         % Recursive walker used by ast.is_linear_in. Returns (ok, n):
         %   ok is true if the subtree is acceptable in a linear-in-x context.
@@ -2409,6 +2645,10 @@ classdef ast
         % REMARKS:
         % - System must be square: numel(residuals) must equal numel(vars).
         % - On failure (any residual not jointly linear), returns ok = false and A, b = {}.
+        % - A residual that fails the joint-linearity test is retried with its
+        %   denominators cleared (ast.clear_denominators, then expanded): rescaling an
+        %   equation by its non-zero denominators leaves the solution set unchanged
+        %   and re-exposes linearity buried in rational chains.
             n = numel(residuals);
             if n ~= numel(vars)
                 error('ast:linearise_system', 'System must be square: %d residuals, %d variables.', ...
@@ -2418,7 +2658,24 @@ classdef ast
             b = cell(n, 1);
             for i = 1:n
                 if ~residuals{i}.is_linear_in_set(vars)
-                    ok = false; A = {}; b = {}; return
+                    % clearing can only help when some var sits under a denominator
+                    if ~any(cellfun(@(v) ast.has_denominator_in(residuals{i}, v), vars))
+                        ok = false; A = {}; b = {}; return
+                    end
+                    cleared = residuals{i}.clear_denominators();
+                    % numeric gate before the expensive expansion: if the cleared
+                    % residual is not jointly affine in vars, no expansion will make
+                    % the structural test pass
+                    if ~cleared.numerically_affine_in(vars)
+                        ok = false; A = {}; b = {}; return
+                    end
+                    % expand() unconditionally: split_linear_set peels bare-symbol
+                    % factors only, so a·(1+y) must be distributed before extraction
+                    cleared = cleared.expand().simplify();
+                    if ~cleared.is_linear_in_set(vars)
+                        ok = false; A = {}; b = {}; return
+                    end
+                    residuals{i} = cleared;
                 end
                 [coefs, const] = ast.split_linear_set(residuals{i}, vars);
                 for j = 1:n
@@ -2568,7 +2825,7 @@ classdef ast
             end
         end % function
 
-        function cf_list = iterated_elimination(residuals, vars, parameter_names)
+        function cf_list = iterated_elimination(residuals, vars, parameter_names, reject_zero)
         % Iterated symbolic elimination on a simultaneous block: try to isolate one
         % variable at a time via the linear / monomial / invertible-call recognisers
         % (ast.isolate), substitute the closed form into every other equation,
@@ -2582,6 +2839,15 @@ classdef ast
         % - vars             [cell]   1×n cell of variable name strings
         % - parameter_names  [cell]   (optional) names treated as time-invariant
         %                             during substitution; defaults to {}
+        % - reject_zero      [logical] (optional, default false) skip any (var, eq)
+        %                             probe whose closed form is exactly 0. In a
+        %                             gauge-parametrised subsystem (rematch_eliminate,
+        %                             gauge backout) an equation reduced to v·c = 0 is
+        %                             the trivial-ray artefact of scale freedom, not a
+        %                             level: accepting v = 0 silently poisons the
+        %                             whole chain (0/0 downstream). Callers solving
+        %                             general blocks keep the default, where a zero
+        %                             closed form can be legitimate.
         %
         % OUTPUTS:
         % - cf_list  [struct array]   .var (char), .expr (ast) for each variable that
@@ -2606,6 +2872,7 @@ classdef ast
                 residuals
                 vars
                 parameter_names = {}
+                reject_zero = false
             end
             n = numel(residuals);
             cf_list = struct('var', {}, 'expr', {});
@@ -2624,7 +2891,13 @@ classdef ast
                 % is solvable that way do we allow the stronger binomial-power rule. This
                 % keeps a high-gain variable that is solvable only as a binomial from being
                 % eliminated early and stranding the variables it substitutes into.
-                for allow_binomial = [false, true]
+                % The rational-normalisation fallback of isolate is confined to a THIRD,
+                % stuck-only tier: clearing denominators costs seconds per probe on the
+                % inlined residuals of a large block, so it must never run inside the
+                % productive rounds — only when the elimination would otherwise stop.
+                for tier = [false, true, true; false, false, true]
+                    allow_binomial = tier(1);
+                    allow_clear = tier(2);
                     best_score = -inf;
                     for ii = 1:numel(active_idx)
                         pos = active_idx(ii);
@@ -2633,8 +2906,11 @@ classdef ast
                         if ast.count_occurrences(f, v) == 0
                             continue
                         end
-                        rhs = f.isolate(v, allow_binomial);
+                        rhs = f.isolate(v, allow_binomial, allow_clear);
                         if isempty(rhs)
+                            continue
+                        end
+                        if reject_zero && strcmp(rhs.type, 'num') && rhs.value == 0
                             continue
                         end
                         gain = 0;
@@ -2678,6 +2954,49 @@ classdef ast
             end
         end % function
 
+
+        function tf = has_denominator_in(o, x)
+        % True when x occurs inside a denominator: under a '^' whose exponent is a
+        % negative number or a uminus tree, or in the divisor of a raw '/' node.
+        % Cheap pre-gate for the rational-normalisation fallback — when x never sits
+        % under a denominator, the recognisers failed for a reason clearing cannot
+        % cure (x inside a call, x^E with symbolic E, bilinear products).
+            tf = false;
+            switch o.type
+                case {'num', 'sym', 'tsym', 'ss'}
+                    return
+                case 'binop'
+                    if strcmp(o.value, '^')
+                        E = o.children{2};
+                        negexp = (strcmp(E.type, 'num') && E.value < 0) || strcmp(E.type, 'uminus');
+                        if negexp && ast.count_occurrences(o.children{1}, x) > 0
+                            tf = true;
+                            return
+                        end
+                    elseif strcmp(o.value, '/')
+                        if ast.count_occurrences(o.children{2}, x) > 0
+                            tf = true;
+                            return
+                        end
+                    end
+            end
+            for i = 1:numel(o.children)
+                if ast.has_denominator_in(o.children{i}, x)
+                    tf = true;
+                    return
+                end
+            end
+        end % function
+
+        function n = node_count(o)
+        % Total number of nodes in the tree. Cheap size proxy used to gate the
+        % rational-normalisation fallback: clearing and expanding a huge residual is
+        % symbolically explosive and cannot yield a usable closed form anyway.
+            n = 1;
+            for i = 1:numel(o.children)
+                n = n + ast.node_count(o.children{i});
+            end
+        end % function
 
         function n = count_occurrences(o, x)
         % Count occurrences of name x as a 'sym' or 'tsym' leaf in the tree.
