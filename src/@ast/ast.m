@@ -41,6 +41,23 @@ classdef ast
         type = ''
         value = []
         children = {}
+        % Memoised ast.sort_key of the node, filled at construction from the
+        % children's cached keys; '' means "not cached" (empty node, key longer
+        % than the cache cap, or children mutated in place since construction).
+        % The profiler showed sort_key recomputation dominating steady_plan
+        % (176M calls on the SW core block); the cache makes it a property read.
+        % INVARIANT: any code that mutates children in place MUST reset skey.
+        skey = ''
+        % True iff the node is a fixed point of canonicalise (itself and every
+        % descendant already in canonical form). Lets canonicalise short-circuit
+        % the recursive descent into unchanged subtrees, which the profiler
+        % identified as the real cost (40M canonicalise calls, most re-walking
+        % subtrees unchanged since the previous simplify iteration).
+        % INVARIANT: set true ONLY by canonicalise (at its exits) and by
+        % simplify_pass when it leaves a subtree byte-for-byte unchanged; reset
+        % false by every code path that mutates children in place. canon=true
+        % must imply genuinely canonical — a stale true returns a wrong form.
+        canon = false
     end
 
     properties (Constant)
@@ -99,6 +116,7 @@ classdef ast
                 o.type = varargin{1};
                 o.value = varargin{2};
                 o.children = varargin{3};
+                o.skey = ast.build_key(o);
                 return
             end
             error('ast:constructor', 'Wrong number of arguments.');
@@ -236,6 +254,7 @@ classdef ast
                 for i = 1:numel(o.children)
                     o.children{i} = o.children{i}.staticise();
                 end
+                if ~isempty(o.children), o.skey = ast.build_key(o); o.canon = false; end
             end
         end % function
 
@@ -297,6 +316,7 @@ classdef ast
                     for i = 1:numel(o.children)
                         o.children{i} = o.children{i}.substitute(target_name, replacement, parameter_names);
                     end
+                    if ~isempty(o.children), o.skey = ast.build_key(o); o.canon = false; end
             end
         end % function
 
@@ -353,6 +373,7 @@ classdef ast
                     for i = 1:numel(o.children)
                         o.children{i} = o.children{i}.shift_lag(k, parameter_names);
                     end
+                    if ~isempty(o.children), o.skey = ast.build_key(o); o.canon = false; end
             end
         end % function
 
@@ -533,6 +554,7 @@ classdef ast
                     for i = 1:numel(o.children)
                         o.children{i} = o.children{i}.rename(oldname, newname);
                     end
+                    if ~isempty(o.children), o.skey = ast.build_key(o); o.canon = false; end
             end
         end % function
 
@@ -564,6 +586,7 @@ classdef ast
                     for i = 1:numel(o.children)
                         o.children{i} = o.children{i}.at_steady_state(names);
                     end
+                    if ~isempty(o.children), o.skey = ast.build_key(o); o.canon = false; end
             end
         end % function
 
@@ -1319,9 +1342,15 @@ classdef ast
         %   string() renderer detects those patterns and pretty-prints them as '-' and
         %   '/' so the rendered output stays readable.
         % - Pure transformation; idempotent on inputs already in canonical form.
+        % - Short-circuits on canon=true: a node already at the fixed point is
+        %   returned untouched, pruning the recursive descent into its subtree.
+            if o.canon
+                return
+            end
             for i = 1:numel(o.children)
                 o.children{i} = o.children{i}.canonicalise();
             end
+            if ~isempty(o.children), o.skey = ast.build_key(o); o.canon = false; end
             if strcmp(o.type, 'uminus') && strcmp(o.children{1}.type, 'uminus')
                 % --x → x
                 o = o.children{1}.children{1};
@@ -1352,10 +1381,12 @@ classdef ast
                     else
                         o = ast('num', 1, {});
                     end
+                    o.canon = true;
                     return
                 end
                 if isscalar(operands)
                     o = operands{1};
+                    o.canon = true;
                     return
                 end
                 keys = cellfun(@ast.sort_key, operands, 'UniformOutput', false);
@@ -1367,6 +1398,7 @@ classdef ast
                 end
                 o = result;
             end
+            o.canon = true;
         end % function
 
         function o = simplify(o)
@@ -1430,6 +1462,7 @@ classdef ast
             for i = 1:numel(o.children)
                 o.children{i} = o.children{i}.expand();
             end
+            if ~isempty(o.children), o.skey = ast.build_key(o); o.canon = false; end
             % Expand a power of a sum directly via the multinomial theorem
             %   (a₁ + ... + a_k)^n = Σ (n choose m₁, ..., m_k) · a₁^m₁ · ... · a_k^m_k
             % over all non-negative integer multi-indices summing to n. Only the
@@ -1538,6 +1571,7 @@ classdef ast
             for i = 1:numel(o.children)
                 o.children{i} = o.children{i}.factor();
             end
+            if ~isempty(o.children), o.skey = ast.build_key(o); o.canon = false; end
             if strcmp(o.type, 'binop') && strcmp(o.value, '+')
                 operands = ast.flatten(o, '+');
                 if numel(operands) < 2
@@ -2001,6 +2035,7 @@ classdef ast
             for i = 1:numel(o.children)
                 o.children{i} = ast.replace_subtree_helper(o.children{i}, target, replacement);
             end
+            if ~isempty(o.children), o.skey = ast.build_key(o); o.canon = false; end
         end % function
 
         function operands = flatten(o, op)
@@ -3262,6 +3297,15 @@ classdef ast
         % - k   [char]   1×n string. Lexicographic order on these keys gives the canonical
         %                operand order: numbers first, then symbols, then steady-state, then
         %                negations, then function calls, then compound binops.
+        %
+        % REMARKS:
+        % - Served from the skey cache when available (filled at construction, see
+        %   ast.build_key); the fallback recomputes one level and recurses, so even an
+        %   invalidated node only pays the levels above its still-cached children.
+            if ~isempty(o.skey)
+                k = o.skey;
+                return
+            end
             switch o.type
                 case 'num'
                     k = sprintf('0_num_%.17g', o.value);
@@ -3283,6 +3327,61 @@ classdef ast
                     k = sprintf('5_binop_%s_%s_%s', o.value, ast.sort_key(o.children{1}), ast.sort_key(o.children{2}));
                 otherwise
                     k = '9_unknown';
+            end
+        end % function
+
+        function k = build_key(o)
+        % Assemble the sort key of a freshly constructed node from its children's
+        % CACHED keys, or '' when the node is not cacheable. Must produce exactly
+        % the same string as ast.sort_key (the canonical operand order depends on
+        % it). Two reasons not to cache:
+        % - a child carries no cached key (mutated in place, empty node, or itself
+        %   over the cap): recomputing through sort_key stays correct;
+        % - the key would exceed the length cap. Canonicalise left-associates
+        %   chains, so spine nodes of a k-term chain would store O(k^2) characters
+        %   overall; those spine nodes are never compared during operand sorting
+        %   (flatten dissolves them first), so skipping them costs nothing hot.
+            switch o.type
+                case 'num'
+                    k = sprintf('0_num_%.17g', o.value);
+                case 'sym'
+                    k = ['1_sym_' o.value];
+                case 'tsym'
+                    k = sprintf('1_sym_%s_%d', o.value{1}, o.value{2});
+                case 'ss'
+                    k = ['2_ss_' o.value];
+                case 'uminus'
+                    ck = o.children{1}.skey;
+                    if isempty(ck) || numel(ck) > 512
+                        k = '';
+                        return
+                    end
+                    k = ['3_neg_' ck];
+                case 'call'
+                    parts = '';
+                    for i = 1:numel(o.children)
+                        ck = o.children{i}.skey;
+                        if isempty(ck)
+                            k = '';
+                            return
+                        end
+                        parts = [parts '_' ck]; %#ok<AGROW>
+                    end
+                    if numel(parts) > 512
+                        k = '';
+                        return
+                    end
+                    k = ['4_call_' o.value parts];
+                case 'binop'
+                    c1 = o.children{1}.skey;
+                    c2 = o.children{2}.skey;
+                    if isempty(c1) || isempty(c2) || numel(c1) + numel(c2) > 512
+                        k = '';
+                        return
+                    end
+                    k = ['5_binop_' o.value '_' c1 '_' c2];
+                otherwise
+                    k = '';
             end
         end % function
 
@@ -3683,10 +3782,20 @@ classdef ast
         function o = simplify_pass(o)
         % Bottom-up application of local simplification rules. One pass; simplify()
         % wraps this in a fixed-point loop alternating with canonicalise.
+        %
+        % Preserves the canon flag on a subtree it leaves untouched: if the input
+        % was canonical and neither the children recursion nor simplify_node
+        % changed its key, the node is still a fixed point of canonicalise, so the
+        % next canonicalise can prune it. Any change (or an uncached key that
+        % forbids the comparison) conservatively clears canon.
+            was_canon = o.canon;
+            old_skey = o.skey;
             for i = 1:numel(o.children)
                 o.children{i} = ast.simplify_pass(o.children{i});
             end
+            if ~isempty(o.children), o.skey = ast.build_key(o); o.canon = false; end
             o = ast.simplify_node(o);
+            o.canon = was_canon && ~isempty(old_skey) && strcmp(o.skey, old_skey);
         end % function
 
         function o = simplify_node(o)
