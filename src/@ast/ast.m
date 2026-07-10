@@ -23,9 +23,10 @@ classdef ast
 %            exogenous variable (e.g. Consumption(-1), K(+1)). The lag is
 %            stored as a non-zero signed integer; lag 0 collapses to 'sym'.
 %            value = {name, lag}                  children = {}
-%   'ss'     steady-state operator on a symbol (STEADY_STATE(x)). Treated as
-%            a constant w.r.t. the dynamic variable x.
-%            value = char (name)                  children = {}
+%   'ss'     steady-state operator on an expression (STEADY_STATE(expr), e.g.
+%            STEADY_STATE(k) or STEADY_STATE(k/y)). The value of expr at the
+%            steady state; a constant w.r.t. the dynamic variables it references.
+%            value = []                           children = {expr}
 %   'call'   function call: built-in mathematical function applied to one or
 %            more arguments (exp(x), log(a+b), max(a, b)). The function name
 %            must belong to ast.RESERVED_FNAMES.
@@ -165,7 +166,9 @@ classdef ast
                         str = sprintf('%s(%d)', o.value{1}, o.value{2});
                     end
                 case 'ss'
-                    str = sprintf('STEADY_STATE(%s)', o.value);
+                    % STEADY_STATE(expr): render the child expression with no outer
+                    % parentheses (the STEADY_STATE(...) already delimits it).
+                    str = sprintf('STEADY_STATE(%s)', o.children{1}.string());
                 case 'call'
                     args = cell(1, numel(o.children));
                     for i = 1:numel(o.children)
@@ -546,11 +549,9 @@ classdef ast
                     if strcmp(o.value{1}, oldname)
                         o = ast('tsym', {newname, o.value{2}}, {});
                     end
-                case 'ss'
-                    if strcmp(o.value, oldname)
-                        o = ast('ss', newname, {});
-                    end
                 otherwise
+                    % 'ss' falls here too: rename recurses into the STEADY_STATE(...)
+                    % child, so STEADY_STATE(oldname) → STEADY_STATE(newname).
                     for i = 1:numel(o.children)
                         o.children{i} = o.children{i}.rename(oldname, newname);
                     end
@@ -574,14 +575,16 @@ classdef ast
             switch o.type
                 case 'sym'
                     if ismember(o.value, names)
-                        o = ast('ss', o.value, {});
+                        o = ast('ss', [], {ast('sym', o.value, {})});
                     end
                 case 'tsym'
                     if ismember(o.value{1}, names)
-                        o = ast('ss', o.value{1}, {});
+                        % Drop the lag: at the steady state x(-k) = x.
+                        o = ast('ss', [], {ast('sym', o.value{1}, {})});
                     end
                 case {'num', 'ss'}
-                    % leaf: nothing to convert
+                    % num is a leaf; an existing 'ss' is already at the steady state,
+                    % so it is left untouched (no double STEADY_STATE(STEADY_STATE(·))).
                 otherwise
                     for i = 1:numel(o.children)
                         o.children{i} = o.children{i}.at_steady_state(names);
@@ -616,7 +619,10 @@ classdef ast
                 case 'tsym'
                     v = ast.lookup_value(o.value{1}, values);
                 case 'ss'
-                    v = ast.lookup_value(o.value, values);
+                    % STEADY_STATE(expr): evaluate the child. The value map carries
+                    % steady-state values, so this yields the steady-state value of
+                    % the expression.
+                    v = o.children{1}.eval(values);
                 case 'uminus'
                     v = -o.children{1}.eval(values);
                 case 'binop'
@@ -735,8 +741,15 @@ classdef ast
                         str = sprintf('%s_{t%+d}', base, o.value{2});
                     end
                 case 'ss'
-                    % Steady-state variable: postfix superscript star, e.g. K^{\star}.
-                    str = [ast.latex_name(o.value, texname_map) '^{\star}'];
+                    % Steady state: postfix superscript star. A bare variable renders
+                    % K^{\star}; a compound expression is wrapped, (k/y)^{\star}.
+                    child = o.children{1};
+                    if strcmp(child.type, 'sym')
+                        str = [ast.latex_name(child.value, texname_map) '^{\star}'];
+                    else
+                        cs = child.to_latex(texname_map, false, '', false);
+                        str = ['\left(' cs '\right)^{\star}'];
+                    end
                 case 'call'
                     str = ast.latex_call(o, texname_map, dated);
                 case 'uminus'
@@ -1201,9 +1214,9 @@ classdef ast
                         acc{end+1} = node.value;
                     case 'tsym'
                         acc{end+1} = node.value{1};
-                    case 'ss'
-                        acc{end+1} = node.value;
                     otherwise
+                        % 'ss' falls here too: the symbols inside STEADY_STATE(expr)
+                        % are referenced (as steady-state values), so recurse.
                         for j = 1:numel(node.children)
                             acc = walk(node.children{j}, acc);
                         end
@@ -1269,10 +1282,14 @@ classdef ast
             switch o.type
                 case 'num'
                     % scale-invariant constant: degree 0
-                case {'sym', 'ss'}
+                case 'sym'
                     if isKey(var_index, o.value)
                         deg(var_index(o.value)) = 1;
                     end
+                case 'ss'
+                    % STEADY_STATE(expr) scales as expr does (its steady-state level):
+                    % STEADY_STATE(x) is degree 1 in x, STEADY_STATE(k/y) degree 0.
+                    [deg, cons, ok] = o.children{1}.scaling_degree(var_index, nvar, values);
                 case 'tsym'
                     if isKey(var_index, o.value{1})
                         deg(var_index(o.value{1})) = 1;
@@ -1907,16 +1924,16 @@ classdef ast
                     %   2. Reserved function name: 'call' node, takes one or more expr args.
                     %   3. User identifier: 'tsym' node, takes a signed integer time subscript.
                     if strcmp(name, 'STEADY_STATE')
-                        if pos > length(tokens) || ~strcmp(tokens{pos}.type, 'symbol')
-                            error('ast:parse', 'STEADY_STATE expects a symbol argument.');
-                        end
-                        sname = tokens{pos}.value;
-                        pos = pos + 1;
+                        % STEADY_STATE takes an arbitrary expression argument (Dynare
+                        % reference manual), not just a bare symbol: STEADY_STATE(k/y),
+                        % STEADY_STATE(exp(a)). The 'ss' node is a unary operator whose
+                        % single child is that expression, evaluated at the steady state.
+                        [arg, pos] = ast.parse_expr(tokens, pos);
                         if pos > length(tokens) || ~strcmp(tokens{pos}.type, 'rparen')
                             error('ast:parse', 'STEADY_STATE: missing ")".');
                         end
                         pos = pos + 1;
-                        node = ast('ss', sname, {});
+                        node = ast('ss', [], {arg});
                     elseif ismember(name, ast.RESERVED_FNAMES)
                         % Function call: collect at least one argument, then any
                         % comma-separated extras (for multi-arg calls like max(a, b)).
@@ -3314,7 +3331,7 @@ classdef ast
                 case 'tsym'
                     k = sprintf('1_sym_%s_%d', o.value{1}, o.value{2});
                 case 'ss'
-                    k = sprintf('2_ss_%s', o.value);
+                    k = sprintf('2_ss_%s', ast.sort_key(o.children{1}));
                 case 'uminus'
                     k = sprintf('3_neg_%s', ast.sort_key(o.children{1}));
                 case 'call'
@@ -3349,7 +3366,12 @@ classdef ast
                 case 'tsym'
                     k = sprintf('1_sym_%s_%d', o.value{1}, o.value{2});
                 case 'ss'
-                    k = ['2_ss_' o.value];
+                    ck = o.children{1}.skey;
+                    if isempty(ck) || numel(ck) > 512
+                        k = '';
+                        return
+                    end
+                    k = ['2_ss_' ck];
                 case 'uminus'
                     ck = o.children{1}.skey;
                     if isempty(ck) || numel(ck) > 512

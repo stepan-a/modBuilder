@@ -7,7 +7,8 @@ cases = {
     'a + b)'                 % stray close paren
     'a @ b'                  % bad character
     'x(1.5)'                 % non-integer time subscript
-    'STEADY_STATE(a + b)'    % STEADY_STATE expects a bare symbol
+    'STEADY_STATE(a + )'     % STEADY_STATE with a malformed expression
+    'STEADY_STATE(a + b'     % STEADY_STATE with a missing ")"
     };
 
 for i = 1:numel(cases)

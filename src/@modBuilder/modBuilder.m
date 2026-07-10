@@ -4592,7 +4592,7 @@ classdef modBuilder < handle
                     % expression may reference earlier-solved variables (including the numerical
                     % blocks' unknowns) by name, which render with the steady-state star.
                     for j = 1:numel(b.closed_form)
-                        lhs = ast('ss', b.closed_form(j).var, {}).to_latex(map);
+                        lhs = ast('ss', [], {ast('sym', b.closed_form(j).var, {})}).to_latex(map);
                         rhs = ast(b.closed_form(j).expr).at_steady_state(endo).to_latex(map);
                         rows{end+1} = ['  ' lhs ' &= ' rhs]; %#ok<AGROW>
                     end
@@ -4783,7 +4783,7 @@ classdef modBuilder < handle
                     else
                         tp = ast('tsym', {v, k}, {}).to_latex(map, {v});
                     end
-                    d = ['\left(' tp ' - ' ast('ss', v, {}).to_latex(map) '\right)'];
+                    d = ['\left(' tp ' - ' ast('ss', [], {ast('sym', v, {})}).to_latex(map) '\right)'];
                 else
                     base = ast('sym', v, {}).to_latex(map);
                     if k == 0

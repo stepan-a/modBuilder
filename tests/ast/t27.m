@@ -13,7 +13,7 @@ assert(thrown, 'Expected ast:constructor for a 2-argument call.');
 bad_exprs = {
     '1.2.3'             % malformed number
     'a +'               % operator with no right operand
-    'STEADY_STATE(1)'   % STEADY_STATE expects a symbol argument
+    'STEADY_STATE(a b)' % STEADY_STATE with a malformed argument (no operator)
     'log(a'             % missing closing parenthesis
     'x(y)'              % non-integer time subscript
     'x(-1'              % missing ")" after time subscript

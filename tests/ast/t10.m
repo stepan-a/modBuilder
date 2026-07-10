@@ -70,11 +70,12 @@ n = ast('a + b');
 r = n.substitute('c', 'x');
 assert(ast.ast_equal(r, n), 'no-op for absent symbol');
 
-% STEADY_STATE leaves of the host tree are not entered
+% Substitute descends into a STEADY_STATE(...) argument: the steady-state value
+% of x becomes the steady-state value of the replacement.
 n = ast('STEADY_STATE(x) + x');
 r = n.substitute('x', 'y');
-expected = ast('STEADY_STATE(x) + y');
-assert(ast.ast_equal(r, expected), 'host ss left untouched');
+expected = ast('STEADY_STATE(y) + y');
+assert(ast.ast_equal(r, expected), 'substitute descends into ss argument');
 
 % Substitute is a value-class operation: the original tree must be unchanged
 n = ast('alpha + beta');
