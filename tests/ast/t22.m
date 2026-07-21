@@ -40,4 +40,11 @@ rhs = ast('log(Z) - rho*log(Z) - (1-rho)*mu').isolate('Z');
 chk = ast('binop', '-', {rhs, ast('exp(mu)')}).expand().simplify();
 assert(ast.is_zero(chk),                           sprintf('isolate(Z) with drift should give exp(mu), got %s', rhs.string()));
 
+% Unit-root diagnostic: when the summed coefficient folds to zero the equation pins
+% the growth of f(P), not its level -- isolate reports it through its second output.
+[rhs, info] = ast('log(Z) - (1-lam)*log(Z) - lam*log(Z) - ez').isolate('Z');
+assert(isempty(rhs) && info.unit_root,             'zero-sum coefficients must raise the unit_root diagnostic');
+[~, info] = ast('log(Z) - rho*log(Z)').isolate('Z');
+assert(~info.unit_root,                            'a pinned equation must not raise unit_root');
+
 fprintf('t22.m: invertible-call recogniser + isolate OK\n');

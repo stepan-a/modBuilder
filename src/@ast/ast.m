@@ -1061,7 +1061,7 @@ classdef ast
             end
         end % function
 
-        function rhs = isolate(o, x, allow_binomial, allow_clear)
+        function [rhs, info] = isolate(o, x, allow_binomial, allow_clear)
         % Try to isolate x from the equation o = 0, returning an AST tree for x or [].
         %
         % INPUTS:
@@ -1079,8 +1079,13 @@ classdef ast
         %                            The recursive retry passes false to terminate.
         %
         % OUTPUTS:
-        % - rhs [ast]    AST such that x = rhs is structurally equivalent, or [] if no
-        %                recogniser applies.
+        % - rhs  [ast]    AST such that x = rhs is structurally equivalent, or [] if no
+        %                 recogniser applies.
+        % - info [struct] diagnostic on failure; field unit_root is true when the
+        %                 x-bearing terms all matched the same call f(P) but their
+        %                 coefficients sum to zero — the equation pins the growth of
+        %                 f(P), not its level, and the caller should tell the user the
+        %                 level of x is theirs to fix.
         %
         % REMARKS:
         % - Tries the invertible-call recogniser first; if it succeeds, recurses on the
@@ -1093,9 +1098,12 @@ classdef ast
             if nargin < 4, allow_clear = true; end
             o = o.canonicalise().simplify();
 
-            % Invertible-call recogniser
-            if o.is_invertible_call_in(x)
-                [fname, P, coef, rest] = o.split_invertible_call(x);
+            % Invertible-call recogniser (split_call_terms called once, directly: it
+            % both decides and decomposes, and carries the unit-root diagnostic that
+            % the is_invertible_call_in predicate discards)
+            [okc, fname, P, coef, rest, ur] = ast.split_call_terms(o, x);
+            info = struct('unit_root', ur);
+            if okc
                 target = ast.neg_div(rest, coef);
                 switch fname
                     case 'exp'
@@ -1106,7 +1114,8 @@ classdef ast
                         rhs = []; return
                 end
                 residual = ast('binop', '-', {P, inv_target});
-                rhs = residual.isolate(x, true, allow_clear);
+                [rhs, rinfo] = residual.isolate(x, true, allow_clear);
+                info.unit_root = info.unit_root || rinfo.unit_root;
                 return
             end
 
@@ -1157,10 +1166,12 @@ classdef ast
             if allow_clear && ast.node_count(o) <= 4096 && ast.has_denominator_in(o, x)
                 cleared = o.clear_denominators();
                 if ~ast.ast_equal(cleared, o)
-                    rhs = cleared.isolate(x, allow_binomial, false);
+                    [rhs, rinfo] = cleared.isolate(x, allow_binomial, false);
+                    info.unit_root = info.unit_root || rinfo.unit_root;
                     if ~isempty(rhs), return, end
                     if cleared.numerically_affine_in({x})
-                        rhs = cleared.expand().simplify().isolate(x, allow_binomial, false);
+                        [rhs, rinfo] = cleared.expand().simplify().isolate(x, allow_binomial, false);
+                        info.unit_root = info.unit_root || rinfo.unit_root;
                         if ~isempty(rhs), return, end
                     end
                 end
@@ -3186,13 +3197,16 @@ classdef ast
             end
         end % function
 
-        function [ok, fname, P, coef, rest] = split_call_terms(o, x)
+        function [ok, fname, P, coef, rest, unit_root] = split_call_terms(o, x)
         % Decompose a canonicalised tree into Σ coef_i · f(P) + rest with f ∈ {exp, log}:
         % every x-bearing additive term must be coef_i · f(P) for the same subtree f(P)
         % (structural match), so u = f(P) is an atomic unknown with coefficient Σ coef_i.
         % Returns ok = false when a term resists, the calls differ, or the summed
-        % coefficient folds to zero (the equation does not pin x).
-            ok = false; fname = ''; P = []; coef = []; rest = [];
+        % coefficient folds to zero (the equation does not pin x). The latter case also
+        % raises unit_root: every occurrence matched the same call but the coefficients
+        % cancel — for a staticised dynamic equation this is a unit root, the equation
+        % pins the growth of f(P) and leaves its level to the user.
+            ok = false; fname = ''; P = []; coef = []; rest = []; unit_root = false;
             terms = ast.flatten(o, '+');
             coefs = {};
             rest_terms = {};
@@ -3218,7 +3232,7 @@ classdef ast
             end
             coef = ast.sum_of(coefs).simplify();
             if ast.is_zero(coef)
-                fname = ''; P = []; coef = []; return
+                fname = ''; P = []; coef = []; unit_root = true; return
             end
             rest = ast.sum_of(rest_terms).simplify();
             ok = true;

@@ -7260,10 +7260,22 @@ classdef modBuilder < handle
                     f = modBuilder.static_residual(o, members(1));
                     f = modBuilder.substitute_known(f, vars_block, known_names, known_asts, param_names);
                     if ~isempty(f)
-                        rhs_tree = f.isolate(vars_block{1});
+                        [rhs_tree, iso] = f.isolate(vars_block{1});
                         if ~isempty(rhs_tree)
                             cf(1).var = vars_block{1};
                             cf(1).expr = rhs_tree.string();
+                        else
+                            % Unit-root diagnostic: either the invertible-call recogniser
+                            % saw the coefficients on f(x) sum to zero, or the variable
+                            % cancelled outright between its own occurrences when the
+                            % residual was simplified (the rho = 1 literal, e.g.
+                            % log(Z) - log(Z(-1)) folding to 0). Both mean the equation
+                            % pins the growth rate and leaves the level undetermined.
+                            vname = vars_block{1};
+                            cancelled = ast.count_occurrences(f, vname) > 0 && ast.count_occurrences(f.canonicalise().simplify(), vname) == 0;
+                            if iso.unit_root || cancelled
+                                modBuilder.warn_silent('modBuilder:steady_plan:unitRoot', 'Equation "%s" has a unit root in %s: its coefficients cancel in the static residual, so the equation pins the growth rate of %s, not its level. The steady-state level of %s is yours to fix (declare a steady-state value or pass it as an anchor).', o.equations{members(1), modBuilder.EQ_COL_NAME}, vname, vname, vname);
+                            end
                         end
                     end
                 elseif numel(members) >= 2 && numel(members) <= options.MaxBlockSize

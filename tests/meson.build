@@ -344,6 +344,7 @@ listoftests = [
   'steady-plan/t32.m',
   'steady-plan/t33.m',
   'steady-plan/t34.m',
+  'steady-plan/t35.m',
   'scaling/t01.m',
   'examples/steady.m',
 ]
