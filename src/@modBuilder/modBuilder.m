@@ -6940,6 +6940,11 @@ classdef modBuilder < handle
             % Distinguished from exogenous anchors so no closed form is derived from
             % the now-redundant equation.
             is_norm_anchor = false(n, 1);
+            % forced_pair(i): the bipartite matcher left equation i unmatched and the
+            % completion pass force-paired it to a variable it does not pin -- the
+            % endogenous unit-root signature, reported once at the pairing (the
+            % singleton close skips its own unit-root warning for these blocks).
+            forced_pair = false(n, 1);
             if options.Match
                 keys = o.equations(:, modBuilder.EQ_COL_NAME);
                 eqasts_s = cell(n, 1);
@@ -7027,6 +7032,7 @@ classdef modBuilder < handle
                         i = real_idx(t);
                         v = eq2var_r{t};
                         if isempty(v)
+                            forced = false;
                             pos = find(strcmp(keys{i}, remaining), 1);
                             if isempty(pos)
                                 pos = find(ismember(remaining, eqasts_s{i}.symbol_names()), 1);
@@ -7034,6 +7040,7 @@ classdef modBuilder < handle
                             if ~isempty(pos)
                                 v = remaining{pos};
                                 remaining(pos) = [];
+                                forced = true;
                             elseif ~isempty(anchor_queue)
                                 v = anchor_queue{1};
                                 anchor_queue(1) = [];
@@ -7042,8 +7049,24 @@ classdef modBuilder < handle
                             elseif ~isempty(remaining)
                                 v = remaining{1};
                                 remaining(1) = [];
+                                forced = true;
                             else
                                 v = keys{i};
+                                forced = true;
+                            end
+                            % A forced pairing that the equation cannot honour is the
+                            % endogenous unit-root signature: the matcher found no
+                            % admissible variable for this equation (every candidate is
+                            % absent or factors out of the static residual, as c does in
+                            % the Euler condition once beta*R = 1), so some level is left
+                            % undetermined and the pairing exists only to keep the plan
+                            % square. Warn here, where the reduced residual is available.
+                            if forced
+                                [has, cancels] = eqasts_s{i}.check_factor(v);
+                                if ~has || cancels
+                                    forced_pair(i) = true;
+                                    modBuilder.warn_silent('modBuilder:steady_plan:endogenousUnitRoot', 'Equation "%s" pins none of the remaining variables at the steady state (its static residual reduces to %s = 0), leaving the level of %s undetermined -- an endogenous unit root (e.g. incomplete-markets open economy). Close the model or fix the level of %s (declared steady-state value or anchor).', keys{i}, eqasts_s{i}.string(), v, v);
+                                end
                             end
                         end
                         var_names{i} = v;
@@ -7273,7 +7296,7 @@ classdef modBuilder < handle
                             % pins the growth rate and leaves the level undetermined.
                             vname = vars_block{1};
                             cancelled = ast.count_occurrences(f, vname) > 0 && ast.count_occurrences(f.canonicalise().simplify(), vname) == 0;
-                            if iso.unit_root || cancelled
+                            if (iso.unit_root || cancelled) && ~forced_pair(members(1))
                                 modBuilder.warn_silent('modBuilder:steady_plan:unitRoot', 'Equation "%s" has a unit root in %s: its coefficients cancel in the static residual, so the equation pins the growth rate of %s, not its level. The steady-state level of %s is yours to fix (declare a steady-state value or pass it as an anchor).', o.equations{members(1), modBuilder.EQ_COL_NAME}, vname, vname, vname);
                             end
                         end
