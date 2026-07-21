@@ -1031,57 +1031,34 @@ classdef ast
         end % function
 
         function tf = is_invertible_call_in(o, x)
-        % Test whether the tree has the form coef · f(P(x)) + rest with f ∈ {exp, log},
-        % P(x) linear or monomial in x, and x not appearing elsewhere.
+        % Test whether the tree has the form Σ coef_i · f(P(x)) + rest with f ∈ {exp, log},
+        % the same subtree f(P) in every x-bearing term, and x not appearing elsewhere.
         %
         % REMARKS:
         % - The allowlist is intentionally small; multi-branch transcendentals (sin, cos)
         %   are excluded because their inverses are set-valued.
+        % - Several occurrences of the same call are accepted, their coefficients summed:
+        %   the additive log form of an autoregressive process leaves the static residual
+        %   log(Z) - rho*log(Z), where u = log(Z) is pinned even though no recogniser
+        %   collects the symbolic coefficients into (1-rho)·u.
         % - Used by ast.isolate to unwrap exp/log wrappers around the unknown before
         %   delegating to the linear or monomial recogniser on the inverted equation.
-            o = o.canonicalise().simplify();
-            terms = ast.flatten(o, '+');
-            x_term = [];
-            for i = 1:numel(terms)
-                t = terms{i};
-                if ast.count_occurrences(t, x) > 0
-                    if ~isempty(x_term)
-                        tf = false; return
-                    end
-                    x_term = t;
-                end
-            end
-            if isempty(x_term)
-                tf = false; return
-            end
-            [tf, ~, ~, ~] = ast.extract_call_factor(x_term, x);
+            [tf, ~, ~, ~, ~] = ast.split_call_terms(o.canonicalise().simplify(), x);
         end % function
 
         function [fname, P, coef, rest] = split_invertible_call(o, x)
         % Decompose o into (fname, P, coef, rest) such that o = coef · fname(P) + rest,
-        % where fname ∈ {exp, log}, P is linear or monomial in x, and x appears nowhere
-        % else. Errors if no such decomposition exists.
+        % where fname ∈ {exp, log}, x appears only inside occurrences of the same subtree
+        % fname(P), and coef sums the occurrences' coefficients. Errors if no such
+        % decomposition exists.
         %
         % REMARKS:
         % - Setting o = 0 gives fname(P) = -rest/coef, hence P = fname^{-1}(-rest/coef);
         %   ast.isolate then recurses on P - fname^{-1}(-rest/coef) to extract x.
-            if ~o.is_invertible_call_in(x)
+            [ok, fname, P, coef, rest] = ast.split_call_terms(o.canonicalise().simplify(), x);
+            if ~ok
                 error('ast:split_invertible_call', 'Expression is not in invertible-call form for "%s".', x);
             end
-            o = o.canonicalise().simplify();
-            terms = ast.flatten(o, '+');
-            x_term = [];
-            rest_terms = {};
-            for i = 1:numel(terms)
-                t = terms{i};
-                if ast.count_occurrences(t, x) > 0
-                    x_term = t;
-                else
-                    rest_terms{end+1} = t; %#ok<AGROW>
-                end
-            end
-            [~, fname, P, coef] = ast.extract_call_factor(x_term, x);
-            rest = ast.sum_of(rest_terms).simplify();
         end % function
 
         function rhs = isolate(o, x, allow_binomial, allow_clear)
@@ -3207,6 +3184,44 @@ classdef ast
                 otherwise
                     ok = false; fname = ''; P = []; coef = [];
             end
+        end % function
+
+        function [ok, fname, P, coef, rest] = split_call_terms(o, x)
+        % Decompose a canonicalised tree into Σ coef_i · f(P) + rest with f ∈ {exp, log}:
+        % every x-bearing additive term must be coef_i · f(P) for the same subtree f(P)
+        % (structural match), so u = f(P) is an atomic unknown with coefficient Σ coef_i.
+        % Returns ok = false when a term resists, the calls differ, or the summed
+        % coefficient folds to zero (the equation does not pin x).
+            ok = false; fname = ''; P = []; coef = []; rest = [];
+            terms = ast.flatten(o, '+');
+            coefs = {};
+            rest_terms = {};
+            for i = 1:numel(terms)
+                t = terms{i};
+                if ast.count_occurrences(t, x) > 0
+                    [okt, fn, Pt, c] = ast.extract_call_factor(t, x);
+                    if ~okt
+                        fname = ''; P = []; return
+                    end
+                    if isempty(coefs)
+                        fname = fn; P = Pt;
+                    elseif ~strcmp(fn, fname) || ~ast.ast_equal(Pt, P)
+                        fname = ''; P = []; return
+                    end
+                    coefs{end+1} = c; %#ok<AGROW>
+                else
+                    rest_terms{end+1} = t; %#ok<AGROW>
+                end
+            end
+            if isempty(coefs)
+                return
+            end
+            coef = ast.sum_of(coefs).simplify();
+            if ast.is_zero(coef)
+                fname = ''; P = []; coef = []; return
+            end
+            rest = ast.sum_of(rest_terms).simplify();
+            ok = true;
         end % function
 
         function c = peel_x(t, x)
