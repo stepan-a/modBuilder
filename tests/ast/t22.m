@@ -47,4 +47,11 @@ assert(isempty(rhs) && info.unit_root,             'zero-sum coefficients must r
 [~, info] = ast('log(Z) - rho*log(Z)').isolate('Z');
 assert(~info.unit_root,                            'a pinned equation must not raise unit_root');
 
+% The pinning divisors travel in info.coefs so a caller holding a calibration can
+% detect knife-edge points (coefficient symbolically non-zero, numerically zero).
+[rhs, info] = ast('b - R*b - x').isolate('b');
+assert(~isempty(rhs) && isscalar(info.coefs),      'the linear recogniser must expose its pinning coefficient');
+assert(abs(info.coefs{1}.eval(struct('R', 1))) < 1e-14, 'the coefficient must evaluate to 0 at R = 1');
+assert(abs(info.coefs{1}.eval(struct('R', 0.5)) - 0.5) < 1e-14, 'the coefficient must evaluate to 1-R off the knife edge');
+
 fprintf('t22.m: invertible-call recogniser + isolate OK\n');

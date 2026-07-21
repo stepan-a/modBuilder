@@ -1882,6 +1882,54 @@ classdef modBuilder < handle
             warning(varargin{:});
         end % function
 
+        function check_knife_edge(coefs, values, eqname, vname)
+        % Warn when one of the pinning coefficients collected by ast.isolate
+        % evaluates to a numerical zero at the calibration: the closed form is
+        % symbolically valid but divides by zero at the calibrated point -- a
+        % unit root the symbolic recognisers cannot see (e.g. 1 - beta*R once
+        % beta*R = 1, or 1 - R on an accumulation equation with R = 1).
+        %
+        % INPUTS:
+        % - coefs    [cell]    pinning divisor asts, from the coefs field of
+        %                      ast.isolate's diagnostic output
+        % - values   [struct]  numeric shadow of the plan (calibrated parameters,
+        %                      exogenous levels, closed forms evaluated so far)
+        % - eqname   [char]    equation name, for the message
+        % - vname    [char]    pinned variable name, for the message
+        %
+        % REMARKS:
+        % - The tolerance is relative to the summed magnitude of the coefficient's
+        %   additive terms, so 1 - beta*R is caught at beta*R = 1 without flagging
+        %   genuinely small coefficients on badly scaled models.
+        % - A coefficient referencing an unavailable value is skipped: nothing can
+        %   be concluded here, and that gap surfaces loudly at evaluation time.
+            for k = 1:numel(coefs)
+                c = coefs{k};
+                try
+                    v = c.eval(values);
+                catch
+                    continue
+                end
+                if ~(isnumeric(v) && isscalar(v) && isfinite(v) && isreal(v))
+                    continue
+                end
+                scale = 1;
+                try
+                    terms = ast.flatten(c.canonicalise().simplify(), '+');
+                    s = 0;
+                    for tt = 1:numel(terms)
+                        s = s + abs(terms{tt}.eval(values));
+                    end
+                    scale = max(1, s);
+                catch
+                end
+                if abs(v) <= 1e-9 * scale
+                    modBuilder.warn_silent('modBuilder:steady_plan:calibrationUnitRoot', 'Equation "%s" pins %s only on a knife edge: the coefficient %s evaluates to %.3g at the calibration, so its closed form divides by a numerical zero -- a unit root at this calibration. Fix the level of %s by other means or move the calibration off the knife edge.', eqname, vname, c.string(), v, vname);
+                    return
+                end
+            end
+        end % function
+
         function str = printlist(names)
         % Convert a cell array of names to a space-separated string ending with semicolon
         %
@@ -7201,13 +7249,24 @@ classdef modBuilder < handle
             propagate = options.PropagateKnown;
             param_names = {};
             if ~isempty(o.params), param_names = o.params(:, modBuilder.COL_NAME)'; end
-            % Calibration map for evaluating numeric exponents (x^alpha) in the
-            % block homogeneity test (block_scale_freedom).
-            expo_values = struct();
+            % Numeric shadow of the plan: the calibrated point (parameters and
+            % exogenous levels), extended below with each closed block's evaluated
+            % forms as the topological sweep advances. Used to evaluate numeric
+            % exponents in the block homogeneity test (block_scale_freedom), the
+            % scale-ray determinant probe, and the knife-edge checks (a pinning
+            % coefficient or block determinant that is symbolically non-zero but
+            % vanishes at the calibrated point -- a unit root at this calibration).
+            calib_values = struct();
             for i = 1:size(o.params, 1)
                 val = o.params{i, modBuilder.COL_VALUE};
                 if isnumeric(val) && isscalar(val) && isfinite(val)
-                    expo_values.(o.params{i, modBuilder.COL_NAME}) = val;
+                    calib_values.(o.params{i, modBuilder.COL_NAME}) = val;
+                end
+            end
+            for i = 1:size(o.varexo, 1)
+                val = o.varexo{i, modBuilder.COL_VALUE};
+                if isnumeric(val) && isscalar(val) && isfinite(val)
+                    calib_values.(o.varexo{i, modBuilder.COL_NAME}) = val;
                 end
             end
             endo_names_all = o.var(:, modBuilder.COL_NAME)';
@@ -7287,6 +7346,7 @@ classdef modBuilder < handle
                         if ~isempty(rhs_tree)
                             cf(1).var = vars_block{1};
                             cf(1).expr = rhs_tree.string();
+                            modBuilder.check_knife_edge(iso.coefs, calib_values, o.equations{members(1), modBuilder.EQ_COL_NAME}, vars_block{1});
                         else
                             % Unit-root diagnostic: either the invertible-call recogniser
                             % saw the coefficients on f(x) sum to zero, or the variable
@@ -7322,7 +7382,7 @@ classdef modBuilder < handle
                         % linearise_system makes ratio equations like z1/z2 = p
                         % recognisably linear, so the Cramer path WOULD fire). Decide
                         % scale freedom up front and route accordingly.
-                        scale_free = modBuilder.block_scale_freedom(residuals, vars_block, expo_values);
+                        scale_free = modBuilder.block_scale_freedom(residuals, vars_block, calib_values);
                         % First attempt: jointly linear → Bareiss + back-substitution.
                         ok_lin = false;
                         if numel(members) <= 8
@@ -7339,7 +7399,7 @@ classdef modBuilder < handle
                             % genuinely scale-free) keeps the gauge machinery in charge.
                             regular = false;
                             try
-                                dv = ast.symbolic_det(A_mat).eval(expo_values);
+                                dv = ast.symbolic_det(A_mat).eval(calib_values);
                                 regular = isfinite(dv) && abs(dv) > 1e-9;
                             catch
                             end
@@ -7373,6 +7433,26 @@ classdef modBuilder < handle
                                     cf(end+1).var = vars_block{jj}; %#ok<AGROW>
                                     cf(end).expr = rhs_in_order{jj}.string();
                                 end
+                                % Knife-edge check: bareiss_triangulate only rules out
+                                % SYMBOLIC singularity; a determinant vanishing at the
+                                % calibrated point slips through and the back-substituted
+                                % forms divide by a numerical zero. Tolerance relative to
+                                % the entry magnitudes (Hadamard-style bound); skipped
+                                % when an entry references an unavailable value, since
+                                % that path fails loudly at evaluation time anyway.
+                                try
+                                    dv = ast.symbolic_det(A_mat).eval(calib_values);
+                                    ma = 0;
+                                    for rr = 1:n_var
+                                        for cc = 1:n_var
+                                            ma = max(ma, abs(A_mat{rr, cc}.eval(calib_values)));
+                                        end
+                                    end
+                                    if isnumeric(dv) && isscalar(dv) && isfinite(dv) && isreal(dv) && abs(dv) <= 1e-9 * max(1, ma^n_var)
+                                        modBuilder.warn_silent('modBuilder:steady_plan:calibrationUnitRoot', 'The block {%s} is singular at the calibration: its determinant evaluates to %.3g, so the levels are jointly undetermined -- a unit root at this calibration. Fix one level or move the calibration off the knife edge.', strjoin(vars_block, ', '), dv);
+                                    end
+                                catch
+                                end
                             end
                         end
                         % Fallback: iterated symbolic elimination via the per-equation
@@ -7384,7 +7464,7 @@ classdef modBuilder < handle
                         if isempty(cf)
                             if scale_free
                                 for gi = 1:numel(vars_block)
-                                    cf_gauge = modBuilder.ratio_parametrise(residuals, vars_block, param_names, vars_block{gi}, expo_values);
+                                    cf_gauge = modBuilder.ratio_parametrise(residuals, vars_block, param_names, vars_block{gi}, calib_values);
                                     if numel(cf_gauge) == numel(vars_block) - 1
                                         cf = cf_gauge;
                                         break
@@ -7446,6 +7526,21 @@ classdef modBuilder < handle
                 blocks(end).deps = already_solved;
                 blocks(end).extdeps = consts;
                 blocks(end).closed_form = cf;
+
+                % Advance the numeric shadow: evaluate the block's closed forms in
+                % order (later assignments may reference earlier ones by name) so the
+                % knife-edge and determinant probes downstream can conclude. A form
+                % whose value is unavailable or non-finite is skipped -- dependent
+                % probes then skip too, and the gap surfaces loudly at evaluation time.
+                for jj = 1:numel(cf)
+                    try
+                        vv = ast(cf(jj).expr).eval(calib_values);
+                        if isnumeric(vv) && isscalar(vv) && isfinite(vv) && isreal(vv)
+                            calib_values.(cf(jj).var) = vv;
+                        end
+                    catch
+                    end
+                end
             end
 
             % Gauge backout: recover the level of a scale-free block from a consistency
@@ -7578,7 +7673,7 @@ classdef modBuilder < handle
                                         end
                                         if isempty(rhs_g), continue, end
                                         rhs_g = rhs_g.simplify();
-                                        if ast.is_zero(rhs_g) && modBuilder.homogeneous_in(r, gauges_left, expo_values)
+                                        if ast.is_zero(rhs_g) && modBuilder.homogeneous_in(r, gauges_left, calib_values)
                                             % zero root of a homogeneous equation: the
                                             % trivial ray, not a level
                                             continue
@@ -7721,7 +7816,7 @@ classdef modBuilder < handle
                         end
                         if ~okres, continue, end
                         try
-                            cf_ratio = modBuilder.ratio_parametrise(residuals, vars_block, param_names, g, expo_values);
+                            cf_ratio = modBuilder.ratio_parametrise(residuals, vars_block, param_names, g, calib_values);
                         catch
                             cf_ratio = struct('var', {}, 'expr', {});
                         end
@@ -7802,7 +7897,7 @@ classdef modBuilder < handle
                             end
                             if isempty(rhs_g), continue, end
                             rhs_g = rhs_g.simplify();
-                            if ast.is_zero(rhs_g) && modBuilder.homogeneous_in(r, {g}, expo_values)
+                            if ast.is_zero(rhs_g) && modBuilder.homogeneous_in(r, {g}, calib_values)
                                 % zero root of a homogeneous equation: the trivial ray
                                 continue
                             end

@@ -1081,11 +1081,16 @@ classdef ast
         % OUTPUTS:
         % - rhs  [ast]    AST such that x = rhs is structurally equivalent, or [] if no
         %                 recogniser applies.
-        % - info [struct] diagnostic on failure; field unit_root is true when the
-        %                 x-bearing terms all matched the same call f(P) but their
-        %                 coefficients sum to zero — the equation pins the growth of
-        %                 f(P), not its level, and the caller should tell the user the
-        %                 level of x is theirs to fix.
+        % - info [struct] diagnostics; field unit_root is true when the x-bearing
+        %                 terms all matched the same call f(P) but their coefficients
+        %                 sum to zero — the equation pins the growth of f(P), not its
+        %                 level, and the caller should tell the user the level of x is
+        %                 theirs to fix. Field coefs collects the pinning divisors used
+        %                 along the successful chain (linear/monomial coefficient,
+        %                 binomial ratio and exponent gap, invertible-call coefficient):
+        %                 symbolically non-zero by construction, but a caller holding a
+        %                 calibration can evaluate them to detect knife-edge points
+        %                 where the closed form divides by a numerical zero.
         %
         % REMARKS:
         % - Tries the invertible-call recogniser first; if it succeeds, recurses on the
@@ -1102,7 +1107,7 @@ classdef ast
             % both decides and decomposes, and carries the unit-root diagnostic that
             % the is_invertible_call_in predicate discards)
             [okc, fname, P, coef, rest, ur] = ast.split_call_terms(o, x);
-            info = struct('unit_root', ur);
+            info = struct('unit_root', ur, 'coefs', {{}});
             if okc
                 target = ast.neg_div(rest, coef);
                 switch fname
@@ -1116,6 +1121,7 @@ classdef ast
                 residual = ast('binop', '-', {P, inv_target});
                 [rhs, rinfo] = residual.isolate(x, true, allow_clear);
                 info.unit_root = info.unit_root || rinfo.unit_root;
+                info.coefs = [{coef}, rinfo.coefs];
                 return
             end
 
@@ -1124,6 +1130,7 @@ classdef ast
                 [a, b] = o.split_linear(x);
                 if ~(strcmp(a.type, 'num') && a.value == 0)
                     rhs = ast.neg_div(b, a).simplify();
+                    info.coefs = {a};
                     return
                 end
             end
@@ -1135,6 +1142,7 @@ classdef ast
                     base = ast.neg_div(b, a);
                     inv_d = ast('binop', '/', {ast('num', 1, {}), d});
                     rhs = ast('binop', '^', {base, inv_d}).simplify();
+                    info.coefs = {a, d};
                     return
                 end
             end
@@ -1149,6 +1157,7 @@ classdef ast
                     dexp = ast('binop', '-', {p, q});
                     inv_dexp = ast('binop', '/', {ast('num', 1, {}), dexp});
                     rhs = ast('binop', '^', {base, inv_dexp}).simplify();
+                    info.coefs = {cp, dexp};
                     return
                 end
             end
@@ -1168,10 +1177,12 @@ classdef ast
                 if ~ast.ast_equal(cleared, o)
                     [rhs, rinfo] = cleared.isolate(x, allow_binomial, false);
                     info.unit_root = info.unit_root || rinfo.unit_root;
+                    info.coefs = rinfo.coefs;
                     if ~isempty(rhs), return, end
                     if cleared.numerically_affine_in({x})
                         [rhs, rinfo] = cleared.expand().simplify().isolate(x, allow_binomial, false);
                         info.unit_root = info.unit_root || rinfo.unit_root;
+                        info.coefs = rinfo.coefs;
                         if ~isempty(rhs), return, end
                     end
                 end
