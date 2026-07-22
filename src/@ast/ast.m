@@ -215,9 +215,12 @@ classdef ast
                         parens = true;
                     elseif cp == pp
                         if strcmp(parent_op, '^')
-                            % '^' is right-associative: same-prec left children must wrap
-                            % so that (a^b)^c does not re-parse as a^(b^c).
-                            parens = ~is_right;
+                            % '^' is right-associative for the ast parser, but the
+                            % rendered strings are also consumed by MATLAB (generated
+                            % steady-state helpers, eval) where '^' associates LEFT.
+                            % Wrap same-prec children on BOTH sides so x^(a^b) and
+                            % (x^a)^b read identically under either convention.
+                            parens = true;
                         else
                             % '+', '-', '*', '/' are left-associative: same-prec right
                             % children must wrap so that a-(b-c) does not re-parse as a-b-c.
@@ -380,7 +383,7 @@ classdef ast
             end
         end % function
 
-        function [has, cancels] = check_factor(o, varname)
+        function [has, cancels, xpow] = check_factor(o, varname)
         % Test whether varname is a common multiplicative factor of the tree.
         %
         % INPUTS:
@@ -390,17 +393,26 @@ classdef ast
         % OUTPUTS:
         % - has      [logical]  scalar, true iff varname appears anywhere in o
         % - cancels  [logical]  scalar, true iff varname appears only as a multiplicative
-        %                       factor (i.e., the whole expression equals varname * f where
-        %                       f does not depend on varname). Implies has.
+        %                       factor (i.e., the whole expression equals varname^k * f
+        %                       where f does not depend on varname and k is the common net
+        %                       power). Implies has. Under the non-zero convention the
+        %                       root set of the expression then does not constrain varname.
+        % - xpow     [ast]      the net power k when cancels is true ([] otherwise).
         %
         % REMARKS:
         % - 'tsym' nodes match by name, so check_factor on a non-staticised tree treats x
         %   and x(-1) as the same symbol. Call staticise first if you want the static check.
         % - 'ss' nodes (STEADY_STATE) never match, since STEADY_STATE(x) is a constant w.r.t.
         %   the dynamic variable x.
+        % - An additive split cancels only when both sides carry the SAME net power of
+        %   varname: c^(-sigma) - beta*R*c^(-sigma) factors (both terms carry c^(-sigma)),
+        %   but chi*h^phi - w*h^(-1) does not (factoring h^(-1) leaves h^(phi+1) in the
+        %   cofactor). Powers are compared numerically when both are numeric, otherwise
+        %   through the simplified symbolic difference.
         % - The test is purely structural: cases like w/w − ω that require algebraic
         %   simplification to detect a zero net power of w are not handled here. They will
         %   be covered by the follow-up simplify pass.
+            xpow = [];
             switch o.type
                 case {'num', 'ss'}
                     % Numeric literals and STEADY_STATE(_) are constants w.r.t. varname.
@@ -410,14 +422,16 @@ classdef ast
                     % A bare 'x' is trivially x*1, so cancels iff this is x.
                     has = strcmp(o.value, varname);
                     cancels = has;
+                    if cancels, xpow = ast('num', 1, {}); end
                 case 'tsym'
                     % Match by name only: x and x(-1) share the same multiplicative role
                     % once the equation is staticised.
                     has = strcmp(o.value{1}, varname);
                     cancels = has;
+                    if cancels, xpow = ast('num', 1, {}); end
                 case 'uminus'
                     % Sign flip preserves the multiplicative-factor structure.
-                    [has, cancels] = o.children{1}.check_factor(varname);
+                    [has, cancels, xpow] = o.children{1}.check_factor(varname);
                 case 'call'
                     % varname appearing inside a non-linear function f(...) cannot be
                     % factored out of f; just report presence.
@@ -430,22 +444,23 @@ classdef ast
                     end
                     cancels = false;
                 case 'binop'
-                    [lhas, lcanc] = o.children{1}.check_factor(varname);
-                    [rhas, rcanc] = o.children{2}.check_factor(varname);
+                    [lhas, lcanc, lpow] = o.children{1}.check_factor(varname);
+                    [rhas, rcanc, rpow] = o.children{2}.check_factor(varname);
                     has = lhas || rhas;
+                    cancels = false;
                     switch o.value
                         case '*'
-                            % Multiplication preserves cancellation: x*g cancels if x
-                            % cancels in the side that contains it; x*x cancels iff
-                            % both sides cancel (giving x^2 ⋅ rest).
+                            % Multiplication preserves cancellation: x^a * g gives net
+                            % power a from the side that contains x; x^a * x^b gives a+b.
                             if lhas && ~rhas
                                 cancels = lcanc;
+                                if cancels, xpow = lpow; end
                             elseif rhas && ~lhas
                                 cancels = rcanc;
+                                if cancels, xpow = rpow; end
                             elseif lhas && rhas
                                 cancels = lcanc && rcanc;
-                            else
-                                cancels = false;
+                                if cancels, xpow = ast('binop', '+', {lpow, rpow}).simplify(); end
                             end
                         case '/'
                             % Numerator only: cancellation propagates from the numerator.
@@ -453,25 +468,24 @@ classdef ast
                             % conservatively say no — would require simplification.
                             if lhas && ~rhas
                                 cancels = lcanc;
-                            else
-                                cancels = false;
+                                if cancels, xpow = lpow; end
                             end
                         case {'+', '-'}
                             % Additive split: x is a common factor only if it factors out
-                            % of every term. If one side lacks x entirely, the whole sum
-                            % is f + g(x-free) and x cannot be pulled out.
-                            if lhas && rhas
-                                cancels = lcanc && rcanc;
-                            else
-                                cancels = false;
+                            % of every term WITH THE SAME net power — else the cofactor
+                            % still depends on x. If one side lacks x entirely, the whole
+                            % sum is f + g(x-free) and x cannot be pulled out.
+                            if lhas && rhas && lcanc && rcanc
+                                cancels = ast.same_power(lpow, rpow);
+                                if cancels, xpow = lpow; end
                             end
                         case '^'
-                            % x^n is itself a multiplicative factor; f^x with x in the
-                            % exponent is transcendental in x and does not factor.
+                            % x^n is itself a multiplicative factor (net power n, or a·n
+                            % for (x^a)^n); f^x with x in the exponent is transcendental
+                            % in x and does not factor.
                             if lhas && ~rhas
                                 cancels = lcanc;
-                            else
-                                cancels = false;
+                                if cancels, xpow = ast('binop', '*', {lpow, o.children{2}}).simplify(); end
                             end
                     end
                 otherwise
@@ -3205,6 +3219,17 @@ classdef ast
                     coef = ast.product_of(nonx);
                 otherwise
                     ok = false; fname = ''; P = []; coef = [];
+            end
+        end % function
+
+        function tf = same_power(a, b)
+        % Compare two net-power trees produced by check_factor: numerically when both
+        % are numeric leaves (the common case), through the simplified symbolic
+        % difference otherwise.
+            if strcmp(a.type, 'num') && strcmp(b.type, 'num')
+                tf = a.value == b.value;
+            else
+                tf = ast.is_zero(ast('binop', '-', {a, b}).simplify());
             end
         end % function
 

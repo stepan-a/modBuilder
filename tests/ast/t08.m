@@ -43,9 +43,22 @@ assert(has && ~cancels, 'x in exponent does not cancel');
 [has, cancels] = ast('exp(x) - 1').staticise().check_factor('x');
 assert(has && ~cancels, 'x inside exp does not cancel');
 
-% x^n cancels (it is a multiplicative factor x^n)
+% x^n cancels (it is a multiplicative factor x^n) when the net power is the SAME
+% in every additive term; with different powers the cofactor still depends on x
+% (x^2 + x^3 = x^2*(1 + x) pins x = -1) and must NOT cancel.
+[has, cancels] = ast('x^2 + alpha*x^2').staticise().check_factor('x');
+assert(has && cancels, 'equal powers of x cancel as a common factor');
 [has, cancels] = ast('x^2 + x^3').staticise().check_factor('x');
-assert(has && cancels, 'x^n cancels as a factor');
+assert(has && ~cancels, 'different powers of x do not cancel');
+
+% The CRRA Euler shape factors (both terms carry c^(-sigma) exactly)...
+[has, cancels] = ast('c^(-sigma) - beta*R*c^(-sigma)').staticise().check_factor('c');
+assert(has && cancels, 'c^(-sigma) factors out of the static Euler condition');
+
+% ...but the intratemporal labour condition does not: h^phi against h^(-1)
+% leaves h^(phi+1) in the cofactor, so the equation genuinely pins h.
+[has, cancels] = ast('chi*h^phi - (1-alpha)*(y/h)*c^(-sigma)').staticise().check_factor('h');
+assert(has && ~cancels, 'mixed powers of h must not report a common factor');
 
 % STEADY_STATE(x) is not the same as x: variable does not match
 [has, cancels] = ast('STEADY_STATE(x) + alpha').check_factor('x');
