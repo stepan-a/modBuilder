@@ -3779,6 +3779,15 @@ classdef modBuilder < handle
                 end
             end
 
+            % A variable assigned by a multi-output block call cannot also carry a
+            % scalar expression; drop the call (rebuild the plan) first.
+            for r = 1:size(o.steady_state, 1)
+                nm = o.steady_state{r, modBuilder.SS_COL_NAME};
+                if iscell(nm) && ismember(varname, nm)
+                    error('modBuilder:steady:assignedByCall', 'Symbol "%s" is already assigned by the block call "[%s] = %s"; it cannot also carry a scalar steady-state expression.', varname, strjoin(nm, ', '), o.steady_state{r, modBuilder.SS_COL_EXPR});
+                end
+            end
+
             % Check if varname already has a steady-state expression
             idx = strcmp(varname, o.steady_state(:, modBuilder.SS_COL_NAME));
 
@@ -3831,6 +3840,49 @@ classdef modBuilder < handle
 
             n = size(o.steady_state, 1);
             o.steady_state{n+1, modBuilder.SS_COL_NAME} = name;
+            o.steady_state{n+1, modBuilder.SS_COL_EXPR} = expression;
+        end % function
+
+        function o = steady_call(o, outnames, expression)
+        % Register a multi-output call in the steady_state_model block:
+        % [outnames{1}, ..., outnames{n}] = expression;
+        %
+        % INPUTS:
+        % - o            [modBuilder]
+        % - outnames     [cell]   cellstr of endogenous variable names assigned by the call
+        % - expression   [char]   RHS call, e.g. 'mymodel_ssblock_2(K, alpha, s)'
+        %
+        % OUTPUTS:
+        % - o            [modBuilder]
+        %
+        % REMARKS:
+        % - Dynare accepts MATLAB functions returning several outputs inside a
+        %   steady_state_model block; this is how apply_steady_plan hands the blocks
+        %   without a symbolic closed form over to a generated numerical routine.
+        % - The row is stored with a cellstr in the name column; checksteady treats it
+        %   as a single node assigning all its outputs, whose dependencies are the
+        %   symbols appearing in the call's argument list.
+        % - Each output must be an endogenous variable not already assigned (neither by
+        %   a scalar expression nor by another call).
+            arguments
+                o
+                outnames   (1,:) cell {mustBeNonempty}
+                expression (1,:) char {mustBeNonempty}
+            end
+            for j = 1:numel(outnames)
+                nm = outnames{j};
+                if ~ismember(nm, o.var(:, modBuilder.COL_NAME))
+                    error('modBuilder:steady_call:notEndogenous', 'Symbol "%s" is not a known endogenous variable.', nm)
+                end
+                for r = 1:size(o.steady_state, 1)
+                    prev = o.steady_state{r, modBuilder.SS_COL_NAME};
+                    if (ischar(prev) && strcmp(prev, nm)) || (iscell(prev) && ismember(nm, prev))
+                        error('modBuilder:steady_call:alreadyExists', 'Symbol "%s" already has a steady-state assignment.', nm)
+                    end
+                end
+            end
+            n = size(o.steady_state, 1);
+            o.steady_state{n+1, modBuilder.SS_COL_NAME} = outnames;
             o.steady_state{n+1, modBuilder.SS_COL_EXPR} = expression;
         end % function
 
@@ -3902,7 +3954,7 @@ classdef modBuilder < handle
             o.calibration_swaps{n+1, 3} = param_name;
         end % function
 
-        function sorted_names = checksteady(o)
+        function [sorted_names, sorted_rows] = checksteady(o)
         % Validate steady-state expressions and return symbol names in topological order.
         %
         % INPUTS:
@@ -3910,12 +3962,20 @@ classdef modBuilder < handle
         %
         % OUTPUTS:
         % - sorted_names   [cell]      1×n cell array of symbol names in dependency order
+        % - sorted_rows    [double]    row indices of o.steady_state in the same order;
+        %                              a multi-output call row (added by steady_call)
+        %                              appears once here while contributing all its
+        %                              output names to sorted_names.
         %
         % REMARKS:
         % - For each expression, all symbols must be known (via issymbol()).
         % - Topological sort uses Kahn's algorithm.
-        % - Nodes are symbols in steady_state(:, SS_COL_NAME).
-        % - Edge A → B means expression for B references symbol A and A is also a node.
+        % - Nodes are the rows of steady_state; a row assigns one symbol (char name)
+        %   or several (cellstr name, a block call registered by steady_call).
+        % - Edge A → B means the expression of row B references a symbol assigned by
+        %   row A. For a call row, the dependencies are the symbols of the argument
+        %   list only (the leading identifier is the generated function's name, not a
+        %   model symbol).
         % - Symbols with only numeric values (not nodes) are treated as leaf constants.
         % - Tie-breaking: when multiple nodes have in-degree 0, the one with the smallest
         %   row index in steady_state is picked first (preserves call order).
@@ -3925,10 +3985,23 @@ classdef modBuilder < handle
 
             if n == 0
                 sorted_names = {};
+                sorted_rows = [];
                 return
             end
 
-            node_names = o.steady_state(:, modBuilder.SS_COL_NAME)';
+            % provides{i}: cellstr of the symbols assigned by row i.
+            provides = cell(1, n);
+            row_label = cell(1, n);
+            for i = 1:n
+                nm = o.steady_state{i, modBuilder.SS_COL_NAME};
+                if ischar(nm)
+                    provides{i} = {nm};
+                    row_label{i} = nm;
+                else
+                    provides{i} = nm;
+                    row_label{i} = ['[' strjoin(nm, ', ') ']'];
+                end
+            end
 
             % Build adjacency and in-degree
             in_degree = zeros(1, n);
@@ -3940,40 +4013,53 @@ classdef modBuilder < handle
 
             for i = 1:n
                 expr = o.steady_state{i, modBuilder.SS_COL_EXPR};
+                if ~ischar(o.steady_state{i, modBuilder.SS_COL_NAME})
+                    % Call row: dependencies live in the argument list; the leading
+                    % identifier is the helper function's name, not a model symbol.
+                    op = find(expr == '(', 1);
+                    cl = find(expr == ')', 1, 'last');
+                    if isempty(op) || isempty(cl) || cl < op
+                        error('modBuilder:checksteady:badCall', 'Malformed block call "%s" for %s.', expr, row_label{i})
+                    end
+                    expr = expr(op+1:cl-1);
+                end
                 syms_in_expr = modBuilder.getsymbols(expr);
                 for j = 1:numel(syms_in_expr)
                     sym = syms_in_expr{j};
-                    % If sym is itself a node in the steady-state table (a model variable
-                    % with a steady-state expression OR an auxiliary intermediate added by
-                    % steady_aux), record the dependency edge. Otherwise it must be a
-                    % declared model symbol — error if it isn't.
-                    node_idx = find(strcmp(sym, node_names));
+                    % If sym is itself assigned by a row of the steady-state table (a
+                    % model variable with a steady-state expression, an auxiliary
+                    % intermediate added by steady_aux, or an output of a block call),
+                    % record the dependency edge. Otherwise it must be a declared model
+                    % symbol — error if it isn't.
+                    node_idx = find(cellfun(@(p) ismember(sym, p), provides), 1);
                     if ~isempty(node_idx)
-                        % Edge: node_idx → i (sym must be computed before node i)
+                        % Edge: node_idx → i (sym must be computed before node i);
+                        % a self-reference builds the loop edge i → i and surfaces
+                        % as a circular-dependency error below, as before.
                         adj{node_idx}(end+1) = i;
                         in_degree(i) = in_degree(i) + 1;
                     elseif ~o.issymbol(sym)
-                        error('modBuilder:checksteady:unknownSymbol', 'Unknown symbol "%s" in steady-state expression for "%s".', sym, node_names{i})
+                        error('modBuilder:checksteady:unknownSymbol', 'Unknown symbol "%s" in steady-state expression for "%s".', sym, row_label{i})
                     end
                 end
             end
 
             % Kahn's algorithm with stable tie-breaking (smallest row index first)
-            sorted_names = cell(1, n);
-            count = 0;
+            sorted_names = {};
+            sorted_rows = zeros(1, n);
 
             for iter = 1:n
                 % Find all nodes with in-degree 0
                 candidates = find(in_degree == 0);
                 if isempty(candidates)
                     % Remaining nodes form a cycle
-                    remaining = node_names(in_degree > 0);
+                    remaining = row_label(in_degree > 0);
                     error('modBuilder:checksteady:circularDep', 'Circular dependency detected among steady-state expressions: %s.', strjoin(remaining, ', '))
                 end
                 % Tie-breaking: pick the candidate with smallest original row index
                 chosen = candidates(1);
-                count = count + 1;
-                sorted_names{count} = node_names{chosen};
+                sorted_rows(iter) = chosen;
+                sorted_names = [sorted_names, provides{chosen}]; %#ok<AGROW>
                 % Mark as processed (set in-degree to -1 so it won't be picked again)
                 in_degree(chosen) = -1;
                 % Reduce in-degree for dependents
@@ -4461,13 +4547,31 @@ classdef modBuilder < handle
                 %
                 % Print steady_state_model block
                 %
-                sorted_names = o.checksteady();
+                [sorted_names, sorted_rows] = o.checksteady();
                 fprintf(fid, '\nsteady_state_model;\n\n');
-                for i=1:numel(sorted_names)
-                    ss_idx = strcmp(sorted_names{i}, o.steady_state(:, modBuilder.SS_COL_NAME));
-                    fprintf(fid, '\t%s = %s;\n', sorted_names{i}, o.steady_state{ss_idx, modBuilder.SS_COL_EXPR});
+                for i=1:numel(sorted_rows)
+                    nm = o.steady_state{sorted_rows(i), modBuilder.SS_COL_NAME};
+                    expr = o.steady_state{sorted_rows(i), modBuilder.SS_COL_EXPR};
+                    if ischar(nm)
+                        fprintf(fid, '\t%s = %s;\n', nm, expr);
+                    elseif isscalar(nm)
+                        % Single-output block call: plain assignment, no brackets.
+                        fprintf(fid, '\t%s = %s;\n', nm{1}, expr);
+                    else
+                        % Multi-output block call registered by steady_call (a helper
+                        % generated by apply_steady_plan): Dynare accepts MATLAB
+                        % functions returning several outputs in steady_state_model.
+                        fprintf(fid, '\t[%s] = %s;\n', strjoin(nm, ', '), expr);
+                    end
                 end
                 fprintf(fid, '\nend;\n');
+                % Dynare requires every endogenous variable to be assigned in a
+                % steady_state_model block; a partial block fails at run time with an
+                % uninitialised-variable error far from its cause, so flag it here.
+                missing = setdiff(o.var(:, modBuilder.COL_NAME)', sorted_names);
+                if ~isempty(missing)
+                    modBuilder.warn_silent('modBuilder:write:incompleteSteadyStateModel', 'The steady_state_model block leaves %d endogenous variable(s) unassigned:%s Dynare will fail at run time; close the corresponding blocks (apply_steady_plan with GenerateHelpers=true) or declare their values with steady().', numel(missing), modBuilder.printlist(missing));
+                end
             end
 
             if options.initval
@@ -6883,6 +6987,9 @@ classdef modBuilder < handle
         % - blocks    [struct array]   one entry per SCC, in topological order:
         %               .vars         [cell]    endogenous variable names in the block
         %               .eqs          [cell]    equation names paired to those vars (= .vars in this codebase)
+        %               .eqnames      [cell]    declaration keys of the block's equations (they differ
+        %                                       from .eqs under Match=true, where the pairing is
+        %                                       recomputed; used to rebuild the block residuals)
         %               .kind         [char]    'trivial' | 'self-recursive' | 'simultaneous' | 'anchor'
         %               .deps         [cell]    already-solved endogenous names referenced from this block
         %               .extdeps      [cell]    parameter / exogenous names referenced from this block
@@ -6894,6 +7001,13 @@ classdef modBuilder < handle
         %                                             by Bareiss + back-substitution. Entries are in
         %                                             evaluation order; later assignments may
         %                                             reference earlier-assigned variables by name.
+        %               .reduced      [struct]  non-empty .vars/.residuals when a stalled elimination
+        %                                       left a REDUCED square system: .vars are the open
+        %                                       variables, .residuals (cell of char) their equations
+        %                                       with every closed form substituted in. closed_form is
+        %                                       then the conditional epilogue: valid once .vars are
+        %                                       solved (apply_steady_plan's generated helpers solve
+        %                                       exactly this reduced system).
         %               .backout      [struct]  non-empty when the block scale was recovered by the
         %                                       gauge backout, with fields .gauge (the variable whose
         %                                       level the consistency equation pins) and .eq (the
@@ -6973,7 +7087,7 @@ classdef modBuilder < handle
             o.refresh_tables();
 
             n = size(o.equations, 1);
-            blocks = struct('vars', {}, 'eqs', {}, 'kind', {}, 'deps', {}, 'extdeps', {}, 'closed_form', {}, 'backout', {});
+            blocks = struct('vars', {}, 'eqs', {}, 'eqnames', {}, 'kind', {}, 'deps', {}, 'extdeps', {}, 'closed_form', {}, 'backout', {}, 'reduced', {});
             if n == 0
                 return
             end
@@ -7322,6 +7436,7 @@ classdef modBuilder < handle
             % Group equation indices by SCC, in topological order.
             for k = 1:numel(ord)
                 members = find(bins == ord(k));
+                reduced_info = struct('vars', {{}}, 'residuals', {{}});
                 vs = var_names(members)';
                 if isrow(vs)
                     vars_block = vs;
@@ -7514,10 +7629,19 @@ classdef modBuilder < handle
                                 % ran first), so a zero level here is the artefact, and
                                 % rejecting it leaves the variable open for the gauge
                                 % backout instead of poisoning the chain.
-                                elim_cf = ast.iterated_elimination(residuals, vars_block, param_names, true);
+                                [elim_cf, elim_rem] = ast.iterated_elimination(residuals, vars_block, param_names, true);
                                 for jj = 1:numel(elim_cf)
                                     cf(end+1).var = elim_cf(jj).var; %#ok<AGROW>
                                     cf(end).expr = elim_cf(jj).expr.string();
+                                end
+                                % A stalled elimination still shrinks the numerical
+                                % problem: record the reduced square system (open
+                                % variables + substituted residuals) so the helper
+                                % generation solves 4 unknowns instead of 10, with the
+                                % closed forms becoming the conditional epilogue.
+                                if ~isempty(elim_cf) && ~isempty(elim_rem.vars)
+                                    reduced_info.vars = elim_rem.vars;
+                                    reduced_info.residuals = cellfun(@(t) t.string(), elim_rem.residuals, 'UniformOutput', false);
                                 end
                             end
                         end
@@ -7555,10 +7679,16 @@ classdef modBuilder < handle
 
                 blocks(end+1).vars = vars_block; %#ok<AGROW>
                 blocks(end).eqs = vars_block;
+                % Declaration keys of the block's equations: under Match=true the
+                % pairing is recomputed, so the paired variable names (.eqs) no longer
+                % identify the equation rows; the keys let apply_steady_plan rebuild
+                % the block residuals when it generates a numerical helper.
+                blocks(end).eqnames = o.equations(members, modBuilder.EQ_COL_NAME)';
                 blocks(end).kind = kind;
                 blocks(end).deps = already_solved;
                 blocks(end).extdeps = consts;
                 blocks(end).closed_form = cf;
+                blocks(end).reduced = reduced_info;
 
                 % Advance the numeric shadow: evaluate the block's closed forms in
                 % order (later assignments may reference earlier ones by name) so the
@@ -8374,28 +8504,63 @@ classdef modBuilder < handle
             end
         end % function
 
-        function o = apply_steady_plan(o, blocks)
+        function o = apply_steady_plan(o, blocks, options)
         % Write the closed-form assignments produced by steady_plan into o.steady_state.
         %
         % INPUTS:
         % - o        [modBuilder]
         % - blocks   [struct array]   optional; if omitted, computed by o.steady_plan().
+        % - options.GenerateHelpers  [logical] (default false) generate a numerical routine
+        %            for every non-anchor block without a complete set of closed forms and
+        %            register its call in the steady_state_model block (steady_call).
+        % - options.Basename         [char]    base name of the generated routines, required
+        %            with GenerateHelpers=true; a path prefix is honoured ('out/mymodel'
+        %            writes out/mymodel_ssblock_<k>.m).
+        % - options.Solver           [char]    'newton' (default) inlines a damped Newton
+        %            iteration with the analytic Jacobian, making the helper self-contained;
+        %            'dynare' delegates to dynare_solve -- the solver family distributed with
+        %            Dynare, fsolve included via solve_algo = 0 -- reusing the running
+        %            session's options_ with jacobian_flag set.
+        % - options.SolveAlgo        [int]     with Solver='dynare', force options_.solve_algo
+        %            inside the helper; when omitted the session's solve_algo applies.
+        % - options.Tolerance        [double]  residual tolerance baked into the helper
+        %            (default 1e-10; also passed as tolx to dynare_solve).
+        % - options.MaxIterations    [int]     iteration cap baked into the helper (default 100).
         %
         % OUTPUTS:
         % - o        [modBuilder]     updated object with steady_state populated for each block
-        %                             that has a closed form.
+        %                             that has a closed form (and, under GenerateHelpers, a
+        %                             block call registered for each one that has not).
         %
         % REMARKS:
         % - Iterates over the plan in topological order and calls m.steady(var, expr) for
-        %   every block whose closed_form is non-empty (singleton blocks where ast.isolate
-        %   could derive a closed form).
-        % - Simultaneous blocks are skipped; the user must provide steady-state values
-        %   manually (m.steady) or call m.solve_system.
+        %   every block whose closed_form is complete.
+        % - Without GenerateHelpers, a block with an incomplete closed_form writes whatever
+        %   assignments it carries (possibly none); the user must provide the missing values
+        %   manually (m.steady) or call m.solve_system. write() warns when the resulting
+        %   steady_state_model block does not cover every endogenous variable.
+        % - With GenerateHelpers, each non-anchor block without a complete closed_form is
+        %   handed to a generated routine <Basename>_ssblock_<k>.m that solves its static
+        %   system (residuals and analytic Jacobian inlined), and the steady_state_model
+        %   block gains the multi-output call [x1, ..., xn] = <Basename>_ssblock_<k>(...)
+        %   at its topological position -- Dynare accepts multi-output MATLAB functions
+        %   there. Anchor blocks are left open: their levels are user-supplied by
+        %   convention, and a unit-root process has no level to solve for.
         % - m.steady replaces an existing entry in place, so calling apply_steady_plan twice
-        %   is idempotent for the closed-form blocks.
+        %   is idempotent for the closed-form blocks. Block calls are not replaced in place;
+        %   regenerate on a fresh copy of the model when the plan changes.
             arguments
                 o
                 blocks = []
+                options.GenerateHelpers (1,1) logical = false
+                options.Basename (1,:) char = ''
+                options.Solver (1,:) char {mustBeMember(options.Solver, {'newton', 'dynare'})} = 'newton'
+                options.SolveAlgo double {mustBeScalarOrEmpty} = []
+                options.Tolerance (1,1) double {mustBePositive} = 1e-10
+                options.MaxIterations (1,1) double {mustBeInteger, mustBePositive} = 100
+            end
+            if options.GenerateHelpers && isempty(options.Basename)
+                error('modBuilder:apply_steady_plan:missingBasename', 'GenerateHelpers=true requires the Basename option (it names the generated routines).');
             end
             if isempty(blocks)
                 blocks = o.steady_plan();
@@ -8409,12 +8574,171 @@ classdef modBuilder < handle
                     o.steady(o.calibration_swaps{s, 1}, num2str(o.calibration_swaps{s, 2}, 15));
                 end
             end
+            [helper_dir, helper_stem] = fileparts(options.Basename);
             for k = 1:numel(blocks)
                 cf = blocks(k).closed_form;
-                for jj = 1:numel(cf)
-                    o.steady(cf(jj).var, cf(jj).expr);
+                if ~options.GenerateHelpers || numel(cf) == numel(blocks(k).vars) || strcmp(blocks(k).kind, 'anchor')
+                    for jj = 1:numel(cf)
+                        o.steady(cf(jj).var, cf(jj).expr);
+                    end
+                else
+                    funcname = sprintf('%s_ssblock_%d', helper_stem, k);
+                    if ~isempty(blocks(k).reduced.vars)
+                        % A stalled elimination left a reduced square system: the
+                        % helper solves only the open variables, and the block's
+                        % closed forms become the conditional epilogue, emitted as
+                        % scalar rows that checksteady orders after the call.
+                        outvars = blocks(k).reduced.vars;
+                        res = cellfun(@(s) ast(s).strip_ss().simplify(), blocks(k).reduced.residuals, 'UniformOutput', false);
+                        for jj = 1:numel(cf)
+                            o.steady(cf(jj).var, cf(jj).expr);
+                        end
+                    else
+                        % No reduction available (e.g. the block exceeded MaxBlockSize
+                        % and no closure was attempted): solve the whole block.
+                        outvars = blocks(k).vars;
+                        res = cell(1, numel(outvars));
+                        for jj = 1:numel(outvars)
+                            idx = find(strcmp(blocks(k).eqnames{jj}, o.equations(:, modBuilder.EQ_COL_NAME)), 1);
+                            if isempty(idx)
+                                error('modBuilder:apply_steady_plan:unknownEquation', 'Equation "%s" of the block is not in the model.', blocks(k).eqnames{jj});
+                            end
+                            f = modBuilder.static_residual(o, idx);
+                            if isempty(f)
+                                error('modBuilder:apply_steady_plan:badEquation', 'Equation "%s" cannot be parsed into a static residual.', blocks(k).eqnames{jj});
+                            end
+                            res{jj} = f.strip_ss().simplify();
+                        end
+                    end
+                    argnames = o.generate_ss_helper(fullfile(helper_dir, [funcname '.m']), funcname, outvars, res, options.Solver, options.SolveAlgo, options.Tolerance, options.MaxIterations);
+                    o.steady_call(outvars, sprintf('%s(%s)', funcname, strjoin(argnames, ', ')));
                 end
             end
+        end % function
+
+        function argnames = generate_ss_helper(o, filepath, funcname, outvars, res, solver, solve_algo, tolf, maxit)
+        % Generate the numerical routine solving one steady-state system; internal,
+        % called by apply_steady_plan(GenerateHelpers=true).
+        %
+        % INPUTS:
+        % - o          [modBuilder]
+        % - filepath   [char]    destination .m file
+        % - funcname   [char]    function name (file stem)
+        % - outvars    [cell]    unknowns solved by the routine (the whole block, or the
+        %                        open variables of its reduced system)
+        % - res        [cell]    static residual asts of the system, one per unknown,
+        %                        STEADY_STATE wrappers already stripped
+        % - solver     [char]    'newton' (self-contained damped Newton) or 'dynare'
+        %                        (delegate to dynare_solve with jacobian_flag set)
+        % - solve_algo [double]  [] or the options_.solve_algo to force under 'dynare'
+        % - tolf       [double]  residual tolerance baked into the file
+        % - maxit      [double]  iteration cap baked into the file
+        %
+        % OUTPUTS:
+        % - argnames   [cell]    symbols the helper takes as inputs, in signature order:
+        %                        every symbol referenced by the residuals that is not an
+        %                        unknown (upstream endogenous, parameters, exogenous).
+        %                        The caller passes them by name from the
+        %                        steady_state_model scope.
+        %
+        % REMARKS:
+        % - The Jacobian is derived symbolically (ast.diff_ast), so the generated file
+        %   has no dependency on modBuilder at run time -- and none at all beyond
+        %   dynare_solve in the 'dynare' variant.
+        % - The initial guess is the calibration of the unknowns at generation time
+        %   (1 for variables without a finite value).
+            nv = numel(outvars);
+            argnames = {};
+            for j = 1:nv
+                sn = res{j}.symbol_names();
+                for s = 1:numel(sn)
+                    if ~ismember(sn{s}, outvars) && ~ismember(sn{s}, argnames)
+                        argnames{end+1} = sn{s}; %#ok<AGROW>
+                    end
+                end
+            end
+            x0 = ones(nv, 1);
+            for j = 1:nv
+                vi = find(strcmp(outvars{j}, o.var(:, modBuilder.COL_NAME)), 1);
+                if ~isempty(vi)
+                    v = o.var{vi, modBuilder.COL_VALUE};
+                    if isnumeric(v) && isscalar(v) && isfinite(v)
+                        x0(j) = v;
+                    end
+                end
+            end
+            outlist = strjoin(outvars, ', ');
+            arglist = strjoin(argnames, ', ');
+            x0list = strjoin(arrayfun(@(v) num2str(v, 15), x0, 'UniformOutput', false), '; ');
+            fid = fopen(filepath, 'w');
+            if fid == -1
+                error('modBuilder:generate_ss_helper:cannotWrite', 'Cannot open "%s" for writing.', filepath);
+            end
+            closer = onCleanup(@() fclose(fid)); %#ok<NASGU>
+            fprintf(fid, 'function [%s] = %s(%s)\n', outlist, funcname, arglist);
+            fprintf(fid, '%% Steady-state block {%s} -- generated by modBuilder.apply_steady_plan (Solver=''%s'').\n', outlist, solver);
+            fprintf(fid, '%% Solves the static system r(x) = 0 with the analytic Jacobian inlined below.\n');
+            fprintf(fid, '%% Regenerate rather than edit.\n\n');
+            fprintf(fid, 'x = [%s];\n', x0list);
+            if strcmp(solver, 'newton')
+                fprintf(fid, 'for it = 1:%d\n', maxit);
+                fprintf(fid, '    [r, J] = block_system(x%s);\n', sprintf(', %s', argnames{:}));
+                fprintf(fid, '    if max(abs(r)) < %g\n', tolf);
+                fprintf(fid, '        break\n');
+                fprintf(fid, '    end\n');
+                fprintf(fid, '    dx = -(J\\r);\n');
+                fprintf(fid, '    lambda = 1;\n');
+                fprintf(fid, '    r0 = max(abs(r));\n');
+                fprintf(fid, '    while lambda > 1/1024\n');
+                fprintf(fid, '        rt = block_system(x + lambda*dx%s);\n', sprintf(', %s', argnames{:}));
+                fprintf(fid, '        if all(isfinite(rt)) && all(isreal(rt)) && max(abs(rt)) < r0\n');
+                fprintf(fid, '            break\n');
+                fprintf(fid, '        end\n');
+                fprintf(fid, '        lambda = lambda/2;\n');
+                fprintf(fid, '    end\n');
+                fprintf(fid, '    x = x + lambda*dx;\n');
+                fprintf(fid, 'end\n');
+                fprintf(fid, 'r = block_system(x%s);\n', sprintf(', %s', argnames{:}));
+                fprintf(fid, 'if ~(max(abs(r)) < %g)\n', tolf);
+                fprintf(fid, '    error(''%s:noConvergence'', ''No convergence after %d iterations (max residual %%g).'', max(abs(r)));\n', funcname, maxit);
+                fprintf(fid, 'end\n');
+            else
+                fprintf(fid, 'global options_\n');
+                fprintf(fid, 'if isempty(options_)\n');
+                fprintf(fid, '    error(''%s:noDynareSession'', ''This helper delegates to dynare_solve and must run inside a Dynare session (global options_ is not set).'');\n', funcname);
+                fprintf(fid, 'end\n');
+                fprintf(fid, 'opts = options_;\n');
+                fprintf(fid, 'opts.jacobian_flag = true;\n');
+                if ~isempty(solve_algo)
+                    fprintf(fid, 'opts.solve_algo = %d;\n', solve_algo);
+                end
+                fprintf(fid, '[x, errorflag] = dynare_solve(@block_system, x, %d, %g, %g, opts%s);\n', maxit, tolf, tolf, sprintf(', %s', argnames{:}));
+                fprintf(fid, 'if errorflag\n');
+                fprintf(fid, '    error(''%s:noConvergence'', ''dynare_solve failed on the steady-state block {%s}.'');\n', funcname, outlist);
+                fprintf(fid, 'end\n');
+            end
+            for j = 1:nv
+                fprintf(fid, '%s = x(%d);\n', outvars{j}, j);
+            end
+            fprintf(fid, 'end\n\n');
+            fprintf(fid, 'function [r, J] = block_system(x%s)\n', sprintf(', %s', argnames{:}));
+            for j = 1:nv
+                fprintf(fid, '%s = x(%d);\n', outvars{j}, j);
+            end
+            fprintf(fid, 'r = zeros(%d, 1);\n', nv);
+            for j = 1:nv
+                fprintf(fid, 'r(%d) = %s;\n', j, res{j}.string());
+            end
+            fprintf(fid, 'J = zeros(%d, %d);\n', nv, nv);
+            for i2 = 1:nv
+                for j2 = 1:nv
+                    d = res{i2}.diff_ast(outvars{j2}).simplify();
+                    if ~ast.is_zero(d)
+                        fprintf(fid, 'J(%d, %d) = %s;\n', i2, j2, d.string());
+                    end
+                end
+            end
+            fprintf(fid, 'end\n');
         end % function
 
         function o = solve(o, eqname, sname, sinit, tol, maxit)

@@ -590,7 +590,7 @@ Export model to a Dynare `.mod` file.
 **Options (name-value):**
 - `initval` — Include an `initval` block with initial values for endogenous variables (default: `false`)
 - `steady` — Call `steady` after the initval block (default: `false`). A warning is issued if `initval` is `false` and `steady_state_model` is `false`.
-- `steady_state_model` — Include a `steady_state_model` block with analytical expressions defined via the `steady()` method (default: `false`). Expressions are automatically sorted in dependency order.
+- `steady_state_model` — Include a `steady_state_model` block with analytical expressions defined via the `steady()` method (default: `false`). Expressions are automatically sorted in dependency order; multi-output block calls registered by `apply_steady_plan(GenerateHelpers=true)` print as `[x1, ..., xn] = routine(...)`. A warning (`modBuilder:write:incompleteSteadyStateModel`) is issued when the block leaves endogenous variables unassigned — Dynare would fail at run time far from the cause.
 - `steady_options` — Options for the `steady` command as a cell array of key-value pairs and flags, e.g. `{'maxit', 100, 'nocheck'}` (default: `{}`)
 - `check` — Call `check` after `steady` (default: `false`). An error is thrown if `steady` is `false`.
 - `precision` — Number of significant digits for numerical values (default: 6 decimal places)
@@ -797,9 +797,27 @@ m.apply_steady_plan(b);   % write the closed forms into the steady-state block
 
 Render the structural steady-state plan as a human-readable summary: each block with its kind, its variable(s), the already-solved variables it depends on, and its external constants. Singleton blocks with a closed form print as `x = expr`; blocks without one are flagged `needs solver`. If `blocks` is omitted, `steady_plan()` is called with defaults.
 
-#### `apply_steady_plan([blocks])`
+#### `apply_steady_plan([blocks][, GenerateHelpers, Basename, Solver, SolveAlgo, Tolerance, MaxIterations])`
 
-Write the closed-form assignments produced by `steady_plan` into the model's steady-state block, iterating over the plan in topological order and calling `steady(var, expr)` for every block with a closed form. Blocks without one are skipped — provide their values manually or with `solve_system`. Idempotent: `steady` replaces existing entries in place.
+Write the closed-form assignments produced by `steady_plan` into the model's steady-state block, iterating over the plan in topological order and calling `steady(var, expr)` for every block with a complete closed form. Idempotent: `steady` replaces existing entries in place.
+
+Blocks without a symbolic closed form — the per-country or per-sector cores of large models — need not be abandoned to a global numerical solve: with `GenerateHelpers=true`, each such block is handed to a **generated MATLAB routine** `<Basename>_ssblock_<k>.m` that solves its static system (residuals and analytic Jacobian inlined), and the `steady_state_model` block gains the multi-output call `[x1, ..., xn] = <Basename>_ssblock_<k>(deps..., params...)` at its topological position — Dynare accepts multi-output MATLAB functions there. The steady state then stays analytical *conditionally* on small numerical systems.
+
+**Options (name–value):**
+- `GenerateHelpers` (logical, default `false`) — generate a routine for every non-anchor block without a complete closed form. Anchor blocks stay open: their levels are user-supplied by convention.
+- `Basename` (char, required with `GenerateHelpers`) — base name of the generated routines; a path prefix is honoured.
+- `Solver` (char, default `'newton'`) — `'newton'` inlines a damped Newton iteration with the analytic Jacobian, making the routine fully self-contained; `'dynare'` delegates to `dynare_solve`, the solver family distributed with Dynare (`fsolve` included, via `solve_algo = 0`), reusing the running session's `options_` with `jacobian_flag` set.
+- `SolveAlgo` (integer, optional) — with `Solver='dynare'`, force `options_.solve_algo` inside the routine; omitted, the session's `solve_algo` applies.
+- `Tolerance` (default `1e-10`) and `MaxIterations` (default `100`) — baked into the generated routine.
+
+The initial guess of each routine is the calibration of the block variables at generation time. Multi-output rows are registered through `steady_call(outnames, expression)`, which can also be used directly to hook a hand-written routine into the `steady_state_model` block.
+
+```matlab
+pl = m.steady_plan(Match=true);
+m.apply_steady_plan(pl, GenerateHelpers=true, Basename='mymodel');
+m.write('mymodel', steady_state_model=true);
+% mymodel.mod + mymodel_ssblock_<k>.m, ready for Dynare
+```
 
 #### `suggest_anchors([Candidates, Keep, PropagateKnown])`
 

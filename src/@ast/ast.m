@@ -607,6 +607,23 @@ classdef ast
             end
         end % function
 
+        function o = strip_ss(o)
+        % Replace every STEADY_STATE(expr) node by its argument expression. At the
+        % steady state the operator is the identity, and the stripped tree prints as
+        % plain MATLAB — string() would otherwise emit STEADY_STATE(...), which is
+        % not a callable function. Used by the steady-state block helpers generated
+        % by modBuilder.apply_steady_plan, whose residuals are evaluated at the
+        % steady state by construction.
+            if strcmp(o.type, 'ss')
+                o = o.children{1}.strip_ss();
+            else
+                for i = 1:numel(o.children)
+                    o.children{i} = o.children{i}.strip_ss();
+                end
+                if ~isempty(o.children), o.skey = ast.build_key(o); o.canon = false; end
+            end
+        end % function
+
         function v = eval(o, values)
         % Evaluate the tree numerically given a struct mapping symbol names to scalar values.
         %
@@ -2890,7 +2907,7 @@ classdef ast
             end
         end % function
 
-        function cf_list = iterated_elimination(residuals, vars, parameter_names, reject_zero)
+        function [cf_list, remaining] = iterated_elimination(residuals, vars, parameter_names, reject_zero)
         % Iterated symbolic elimination on a simultaneous block: try to isolate one
         % variable at a time via the linear / monomial / invertible-call recognisers
         % (ast.isolate), substitute the closed form into every other equation,
@@ -2915,11 +2932,18 @@ classdef ast
         %                             closed form can be legitimate.
         %
         % OUTPUTS:
-        % - cf_list  [struct array]   .var (char), .expr (ast) for each variable that
+        % - cf_list    [struct array] .var (char), .expr (ast) for each variable that
         %                             got isolated, in *evaluation order*: the variable
         %                             eliminated last appears first in the array
         %                             (because its closed form does not reference any
         %                             other unresolved variable in the block).
+        % - remaining  [struct]       the REDUCED system left when the elimination
+        %                             stalls: .vars (cell) the unresolved variable
+        %                             names, .residuals (cell of ast) the still-active
+        %                             equations with every closed form substituted in
+        %                             and simplified — a square system in .vars,
+        %                             conditional on which cf_list closes the block.
+        %                             Both fields empty on full resolution.
         %
         % REMARKS:
         % - Greedy selection per iteration: prefer the (var, eq) pair that, on success,
@@ -3017,6 +3041,7 @@ classdef ast
                 cf_list(end+1).var = elim(i).var; %#ok<AGROW>
                 cf_list(end).expr = elim(i).expr;
             end
+            remaining = struct('vars', {vars(active)}, 'residuals', {residuals(active)});
         end % function
 
 
