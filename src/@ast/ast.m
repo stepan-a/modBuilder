@@ -3012,7 +3012,12 @@ classdef ast
                             end
                             f = f.expand().simplify();
                         end
-                        rhs = f.isolate(v, allow_binomial, allow_clear);
+                        % The clearing fallback of isolate costs minutes on the giant
+                        % residuals left by chained monomial substitutions (composite
+                        % symbolic exponents); cap the probe size like the expansion
+                        % tier does, keeping the cheap recognisers unrestricted.
+                        probe_clear = allow_clear && ast.node_count(f) <= 2048;
+                        rhs = f.isolate(v, allow_binomial, probe_clear);
                         if isempty(rhs)
                             continue
                         end
@@ -3026,7 +3031,17 @@ classdef ast
                                 gain = gain + 1;
                             end
                         end
-                        score = gain * 1e6 - length(rhs.string());
+                        % Ratio eliminations take absolute priority: when the closed
+                        % form is a MONOMIAL in the remaining unknowns (the equation
+                        % identifies a ratio -- k = rho*h from an Euler condition,
+                        % c_1 = omega^(-1/sigma)*c_2 from risk sharing), substituting
+                        % it preserves the monomial structure of the other equations.
+                        % Consuming these first keeps a later, structure-destroying
+                        % substitution (a resource constraint inlined into an Euler
+                        % condition) from burying the ratio beyond the recognisers.
+                        others = vars(active_idx(active_idx ~= pos));
+                        ratio_pick = ast.monomial_in_vars(rhs, others);
+                        score = ratio_pick * 1e12 + gain * 1e6 - length(rhs.string());
                         if score > best_score
                             best_score = score;
                             best_pos = pos;
@@ -3261,6 +3276,57 @@ classdef ast
                     coef = ast.product_of(nonx);
                 otherwise
                     ok = false; fname = ''; P = []; coef = [];
+            end
+        end % function
+
+        function tf = monomial_in_vars(o, names)
+        % True iff the tree's dependence on the listed names is purely multiplicative:
+        % o is a product of name-free factors and powers v^e with v in names and e
+        % name-free — a RATIO/monomial form. A name inside a call, a sum, or an
+        % exponent breaks the property.
+        %
+        % REMARKS:
+        % - Used by iterated_elimination to give ratio eliminations priority: a closed
+        %   form that is monomial in the remaining unknowns (k = rho*h from an Euler
+        %   condition, c_1 = omega^(-1/sigma)*c_2 from risk sharing) substitutes
+        %   without destroying the monomial structure of the other equations, whereas
+        %   substituting a sum into a power buries the unknowns beyond the recognisers.
+            occ = false;
+            for i = 1:numel(names)
+                if ast.count_occurrences(o, names{i}) > 0
+                    occ = true;
+                    break
+                end
+            end
+            if ~occ
+                tf = true;
+                return
+            end
+            switch o.type
+                case {'sym', 'tsym'}
+                    tf = true;
+                case 'uminus'
+                    tf = ast.monomial_in_vars(o.children{1}, names);
+                case 'binop'
+                    switch o.value
+                        case {'*', '/'}
+                            tf = ast.monomial_in_vars(o.children{1}, names) && ast.monomial_in_vars(o.children{2}, names);
+                        case '^'
+                            expfree = true;
+                            for i = 1:numel(names)
+                                if ast.count_occurrences(o.children{2}, names{i}) > 0
+                                    expfree = false;
+                                    break
+                                end
+                            end
+                            tf = expfree && ast.monomial_in_vars(o.children{1}, names);
+                        otherwise
+                            % A name-bearing sum is not a monomial.
+                            tf = false;
+                    end
+                otherwise
+                    % Calls (and anything else) bearing a name break the property.
+                    tf = false;
             end
         end % function
 

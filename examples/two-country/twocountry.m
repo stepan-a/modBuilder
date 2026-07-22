@@ -74,18 +74,22 @@ m.endogenous('k_2', 10);
 
 pl = m.steady_plan(Match=true, MaxBlockSize=10);
 m.print_steady_plan(pl);
-% -> A_1 and A_2 close analytically (anchor blocks). Elimination shrinks the
-%    10-variable world core to a REDUCED 3-unknown system {k_2, h_2, c_1};
-%    the other seven variables get closed forms conditional on those three.
+% -> A_1 and A_2 close analytically (anchor blocks). The ratio-priority
+%    elimination consumes the equations that identify RATIOS first (each Euler
+%    condition pins k_i proportional to h_i, risk sharing pins c_1 against
+%    c_2), so 9 of the 10 core variables close conditional on c_2 -- only the
+%    world resource constraint resists, its residual being a sum of powers of
+%    c_2 whose composite symbolic exponents defeat the recognisers. The
+%    symbolic exponent algebra makes this plan take a few minutes.
 
 cd(here);
 m.apply_steady_plan(pl, GenerateHelpers=true, Basename='twocountry');
 m.write('twocountry', steady_state_model=true, steady=true);
 % -> twocountry.mod whose steady_state_model block reads: the two analytic
 %    anchors, then
-%      [k_2, h_2, c_1] = twocountry_ssblock_3(...);
-%    (the generated Newton routine solves only the reduced 3x3 system), then
-%    the seven conditional closed forms as the analytic epilogue.
+%      c_2 = twocountry_ssblock_3(...);
+%    (the generated Newton routine solves ONE nonlinear equation), then the
+%    nine conditional closed forms as the analytic epilogue.
 
 % =========================================================================
 %  VERIFICATION: execute the emitted cascade and check every equation
