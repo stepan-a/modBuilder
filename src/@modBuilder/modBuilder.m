@@ -6911,7 +6911,11 @@ classdef modBuilder < handle
         % - 'anchor':          (Match=true only) an economically exogenous variable -- one belonging to an
         %                      AR/ARMA/VAR driving process (a sink block of the dependency graph fed by an
         %                      exogenous innovation), whose steady-state value is a free anchor supplied by
-        %                      the user rather than pinned by the rest of the model.
+        %                      the user rather than pinned by the rest of the model. A multivariate process
+        %                      (VAR) is kept as a single 'anchor' block of size > 1: its joint static
+        %                      system (I-K)x = c is closed like a simultaneous block, so the closed forms
+        %                      come out in evaluation order and the determinant probe catches unit-root
+        %                      processes (det(I-K) = 0 at the calibration).
         % - The dependency analysis collects symbol names from each equation via the AST, regardless of
         %   lag. The static dependency graph and its SCC structure are identical to what one obtains by
         %   first staticising every equation, since name equality is unchanged by staticise.
@@ -7153,9 +7157,32 @@ classdef modBuilder < handle
             for i = 1:n
                 eqname_i = var_names{i};
                 if options.Match
-                    if is_anchor(i)
-                        % An anchor equation is an identity at the steady state: it pins
-                        % nothing, so its variable depends on nothing and is a pure source.
+                    if is_anchor(i) && ~is_norm_anchor(i)
+                        % A process anchor is self-contained only when univariate: a
+                        % member of a VAR process depends on its siblings, and cutting
+                        % those edges would split the process SCC into singletons whose
+                        % closed forms reference each other out of evaluation order,
+                        % hiding the joint static system (I-K)x = c from the Bareiss
+                        % determinant probe (det(I-K) = 0 at the calibration is a
+                        % unit-root process). Keep dependencies on other process
+                        % anchors: a sink block references no endogenous outside
+                        % itself, so this reconstructs exactly the process SCC and
+                        % leaves univariate anchors as pure sources.
+                        cand = eqasts_s{i}.symbol_names();
+                        cand = cand(~strcmp(cand, eqname_i));
+                        names = {};
+                        for kk = 1:numel(cand)
+                            nm_kk = cand{kk};
+                            if isKey(var_idx, nm_kk) && is_anchor(var_idx(nm_kk)) && ~is_norm_anchor(var_idx(nm_kk))
+                                [has_kk, canc_kk] = eqasts_s{i}.check_factor(nm_kk);
+                                if has_kk && ~canc_kk
+                                    names{end+1} = nm_kk; %#ok<AGROW>
+                                end
+                            end
+                        end
+                    elseif is_anchor(i)
+                        % A norm-anchor consistency equation stays a pure source: its
+                        % anchor value is user-supplied and the equation pins nothing.
                         names = {};
                     else
                         % Dependencies from the simplified static residual; the paired
@@ -7303,7 +7330,13 @@ classdef modBuilder < handle
                 end
 
                 if numel(members) > 1
-                    kind = 'simultaneous';
+                    if all(is_anchor(members)) && ~any(is_norm_anchor(members))
+                        % A multivariate exogenous driving process (VAR): kept as one
+                        % block so its joint static system closes in evaluation order.
+                        kind = 'anchor';
+                    else
+                        kind = 'simultaneous';
+                    end
                 else
                     i = members(1);
                     if is_anchor(i)

@@ -26,8 +26,15 @@ m.exogenous('e_w', 0);
 b = m.steady_plan(Match=true);
 kindof = dictionary();
 for k = 1:numel(b)
-    kindof(b(k).vars{1}) = b(k).kind;
+    for j = 1:numel(b(k).vars)
+        kindof(b(k).vars{j}) = b(k).kind;
+    end
 end
+
+% The VAR members live in a single anchor block (closed jointly, in evaluation
+% order -- see steady-plan/t38), not in one singleton per variable.
+nvars = arrayfun(@(x) numel(x.vars), b);
+assert(isscalar(find(nvars == 2)), 'v1 and v2 should form exactly one block of size 2');
 
 % AR(1) and VAR(1) members are exogenous anchors.
 assert(strcmp(kindof('z'),  'anchor'), 'z (AR(1)) should be an anchor, got %s',  kindof('z'));
