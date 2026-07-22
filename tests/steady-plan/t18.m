@@ -1,8 +1,9 @@
-% steady_plan: partial closure on rbc3's four-variable Euler block. The iterated
-% elimination resolves y, k, c, but the labour FOC after substitution has h
-% appearing with multiple exponents (h^(1+psi), h^(1-alpha) and the h that comes
-% in via the substituted k expression), so no recogniser fires for h. The plan
-% reports the residual {h} explicitly.
+% steady_plan: FULL closure of rbc3's four-variable Euler block. The labour FOC
+% after substitution has h appearing with multiple exponents (h^(1+psi),
+% h^(1-alpha) and the h nested in a power-of-product via the substituted k
+% expression); the expansion tier of the iterated elimination distributes the
+% powers over the products, collects h into a single monomial, and the whole
+% block closes analytically.
 
 addpath ../utils
 
@@ -34,14 +35,18 @@ if ~isequal(sort(b2.vars), sort({'c', 'h', 'k', 'y'}))
 end
 
 resolved = {b2.closed_form.var};
-residual = setdiff(b2.vars, resolved);
-if numel(residual) ~= 1 || ~strcmp(residual{1}, 'h')
-    error('Expected residual {h}, got {%s}.', strjoin(residual, ', '))
+if numel(resolved) ~= 4
+    error('Expected full closure of the Euler block, got %d/4 (missing {%s}).', numel(resolved), strjoin(setdiff(b2.vars, resolved), ', '))
 end
 
-% Three of the four vars must be resolved.
-if numel(resolved) ~= 3
-    error('Expected 3 resolved vars, got %d.', numel(resolved))
+% The closed forms must evaluate to an exact steady state (a = b = 0 at zero shocks).
+vals = struct('alpha', 0.36, 'rho', 0.95, 'tau', 0.025, 'beta', 0.99, 'deltak', 0.025, 'psi', 0, 'theta', 2.95, 'e', 0, 'u', 0, 'a', 0, 'b', 0);
+for j = 1:numel(b2.closed_form)
+    vals.(b2.closed_form(j).var) = ast(b2.closed_form(j).expr).eval(vals);
+end
+r = [vals.y - exp(vals.a)*vals.k^vals.alpha*vals.h^(1-vals.alpha); vals.k - exp(vals.b)*(vals.y - vals.c) - (1-vals.deltak)*vals.k; vals.c*vals.theta*vals.h^(1+vals.psi) - (1-vals.alpha)*vals.y; 1/vals.beta - (vals.alpha*vals.y/vals.k + 1 - vals.deltak)];
+if max(abs(r)) > 1e-9
+    error('Closed forms do not solve the Euler block (max residual %g).', max(abs(r)))
 end
 
-fprintf('t18.m: rbc3 Euler block: 3 of 4 vars resolved, residual {h} reported OK\n');
+fprintf('t18.m: rbc3 Euler block closes fully through the expansion tier OK\n');

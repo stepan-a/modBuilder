@@ -1,7 +1,8 @@
-% suggest_calibrations: rbc3 with no swap declared. The residual {h} should
-% admit at least the (h, theta) full-closure swap. The framework also discovers
-% (h, psi) as algebraically valid even though theta is the economically natural
-% choice — surfacing both is fine; the user reads the menu critically.
+% suggest_calibrations: rbc3 variant with no swap declared and a labour FOC that
+% resists every elimination tier (h sits both in a power and inside a log, so
+% neither the recognisers nor the expansion tier can collect it): the plan keeps
+% the residual {h}, which should admit at least the (h, theta) full-closure swap
+% (theta enters linearly, so pinning h frees theta analytically).
 
 addpath ../utils
 
@@ -10,7 +11,7 @@ m.add('a', 'a = rho*a(-1) + tau*b(-1) + e');
 m.add('b', 'b = tau*a(-1) + rho*b(-1) + u');
 m.add('y', 'y = exp(a)*(k(-1)^alpha)*(h^(1-alpha))');
 m.add('c', 'k = exp(b)*(y-c) + (1-deltak)*k(-1)');
-m.add('h', 'c*theta*h^(1+psi) = (1-alpha)*y');
+m.add('h', 'c*theta*(h^(1+psi) + log(h)) = (1-alpha)*y');
 m.add('k', '1/beta = ((exp(b)*c)/(exp(b(+1))*c(+1)))*(exp(b(+1))*alpha*y(+1)/k + (1-deltak))');
 m.parameter('alpha', 0.36);
 m.parameter('rho', 0.95);

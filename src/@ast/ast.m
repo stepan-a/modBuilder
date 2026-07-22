@@ -2949,6 +2949,10 @@ classdef ast
         % - Greedy selection per iteration: prefer the (var, eq) pair that, on success,
         %   eliminates the most other-equation occurrences of var (highest "gain"); break
         %   ties on shorter rendered closed-form length.
+        % - Four probing tiers, each tried only when the previous one stalls: plain
+        %   recognisers, binomial-power, denominator clearing, and expansion (distribute
+        %   powers over products so a variable buried in a power-of-product collects
+        %   into one monomial; size-gated at 512 nodes).
         % - The closed form for an early-eliminated variable may reference other vars in
         %   the block that are eliminated later. The output ordering ensures the
         %   evaluation chain is well-defined: for steady_state_model emission, write the
@@ -2984,9 +2988,16 @@ classdef ast
                 % stuck-only tier: clearing denominators costs seconds per probe on the
                 % inlined residuals of a large block, so it must never run inside the
                 % productive rounds — only when the elimination would otherwise stop.
-                for tier = [false, true, true; false, false, true]
+                % A FOURTH, last-resort tier expands the residual before probing:
+                % distributing powers over products and collapsing the towers collects
+                % a variable nested inside a power-of-product (the Euler shape
+                % k^(a-1)·(...k^(-a)...)^E left by earlier substitutions) into a single
+                % monomial the recognisers handle. Expansion costs seconds on symbolic
+                % power products, so it is both stuck-only and size-gated.
+                for tier = [false, true, true, true; false, false, true, true; false, false, false, true]
                     allow_binomial = tier(1);
                     allow_clear = tier(2);
+                    use_expand = tier(3);
                     best_score = -inf;
                     for ii = 1:numel(active_idx)
                         pos = active_idx(ii);
@@ -2994,6 +3005,12 @@ classdef ast
                         f = residuals{pos};
                         if ast.count_occurrences(f, v) == 0
                             continue
+                        end
+                        if use_expand
+                            if ast.node_count(f) > 512
+                                continue
+                            end
+                            f = f.expand().simplify();
                         end
                         rhs = f.isolate(v, allow_binomial, allow_clear);
                         if isempty(rhs)
