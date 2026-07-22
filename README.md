@@ -29,6 +29,7 @@ Each equation in a modBuilder model is explicitly associated with one endogenous
 - **Model Operations**: Copy, merge, extract submodels, and more
 - **Symbolic Differentiation**: Analytical partial derivatives and Jacobians via an AST engine (`partial`, `symbolic_jacobian`)
 - **Optimal-Policy FOCs**: Derive the first-order conditions of a recursive optimisation and grow the model into the (square) planner problem (`lagrangian_foc`, `ramsey_foc`, `augment`); substitute auxiliary variables back out symbolically (`eliminate`)
+- **Steady-State Analysis**: Structural block decomposition of the steady state with symbolic closed forms, exogenous-process and normalisation anchors, scale-symmetry diagnostics and unit-root warnings (`steady_plan`, `suggest_anchors`, `scaling_symmetries`)
 - **Dynare Export**: Generate syntactically valid `.mod` files ready for simulation
 - **LaTeX Export**: Render the model, its steady-state system (flat or as a recursively-ordered block plan), and its log-linearisation as paper-ready LaTeX (`tex_model`, `tex_steady_state_system`, `tex_steady_state_plan`, `tex_linearise`)
 
@@ -143,6 +144,9 @@ m.add('r', '1/beta = (c/c(+1))*(r(+1)+1-delta)');
 % Implicit loops - creates x_1, x_2, x_3
 m.add('x_$1', 'x_$1 = alpha_$1 * y', {1, 2, 3});
 ```
+
+**Remarks:**
+- Equations may reference the Dynare steady-state operator with any expression argument — `STEADY_STATE(x)`, but also `STEADY_STATE(k/y)` or `STEADY_STATE(exp(a))` — as allowed by the Dynare reference manual. The argument is evaluated at the steady state and treated as a constant with respect to the dynamics.
 
 #### `parameter(pname, value[, long_name[, tex_name]])`
 
@@ -489,6 +493,8 @@ m.summary();
 %   Equations:     10
 ```
 
+For a compact alternative, displaying the object at the prompt (or calling `disp(m)`) prints a one-line description of the model dimensions along with a status flag telling whether the symbol tables are current — a "stale" model is not an error, the tables are rebuilt lazily on the next query that needs them.
+
 #### `table(type)`
 
 Get a formatted table of symbols.
@@ -700,6 +706,9 @@ Numerically solve a single equation for one symbol using Newton's method with au
 - `tol` (optional) — Convergence tolerance (default: `1e-10`)
 - `maxit` (optional) — Maximum iterations (default: `100`)
 
+**Remarks:**
+- If the Newton iteration fails (singular or non-finite Jacobian, failed line search, maximum iterations reached), the method raises a contextual error; a non-converged iterate is never silently written into the calibration.
+
 **Example:**
 
 ```matlab
@@ -723,6 +732,7 @@ Numerically solve a system of equations for multiple symbols simultaneously usin
 **Remarks:**
 - The system must be square (same number of equations and unknowns).
 - Current symbol values are used as the initial guess; all symbols being solved for must have a numeric value set beforehand.
+- If the Newton iteration fails (singular or non-finite Jacobian, failed line search, maximum iterations reached), the method raises a contextual error; a non-converged iterate is never silently written into the calibration.
 
 **Examples:**
 
@@ -746,6 +756,60 @@ m.solve_system({'y', 'c'}, {'alpha', 'c'});
 % With custom tolerance
 m.solve_system({'k', 'y', 'c'}, {'k', 'y', 'c'}, 'tol', 1e-12);
 ```
+
+### Steady-State Analysis
+
+These methods analyse the *static* structure of the model: which variable each equation pins at the steady state, in which order the steady-state values can be computed, which blocks admit symbolic closed forms and which need a numerical solver. They complement `steady()` / `checksteady()` (user-supplied analytical expressions) and `solve_system()` (numerical closure).
+
+#### `steady_plan([Match, Anchors, PropagateKnown, MaxBlockSize])`
+
+Compute the structural steady-state plan: the strongly-connected blocks of the dependency graph induced by the equation–variable pairing, in topological order, with a closed form derived for every block the symbolic machinery can close.
+
+**Options (name–value):**
+- `Match` (logical, default `false`) — Recompute the equation↔variable pairing by bipartite matching on the simplified static residuals instead of using the declaration pairing. This exposes the recursive steady-state structure that an arbitrary declaration pairing hides: a large simultaneous block frequently decomposes into singletons plus a few small blocks. Economically exogenous variables (AR/ARMA/VAR driving processes, detected structurally as sink blocks of the dependency graph fed by an exogenous innovation) are treated as **anchors** and excluded from the matching.
+- `Anchors` (cell, default `{}`, requires `Match=true`) — Endogenous variables whose steady-state level is a user-supplied normalisation (e.g. a labour-supply scale), on top of the auto-detected exogenous processes. Fixing K anchors leaves K equations unmatched: the consistency conditions the anchor values must satisfy.
+- `PropagateKnown` (logical, default `false`) — Inline the values declared through `steady()` and the exogenous calibrations into the residuals before planning; folding shocks to their steady-state levels often turns residuals into linear or invertible forms.
+- `MaxBlockSize` (integer, default `8`) — Largest simultaneous block the symbolic machinery attempts to close; elimination cost grows quickly with block size.
+
+**Returns** a struct array, one entry per block in topological order, with fields:
+- `vars`, `eqs` — variable(s) and paired equation(s) of the block;
+- `kind` — `'trivial'` (solvable in one step), `'self-recursive'` (the variable appears in its own equation, typically through a lag), `'simultaneous'` (jointly determined), or `'anchor'` (an exogenous driving process; a multivariate process (VAR) is kept as a single anchor block of size > 1, closed jointly so its assignments come out in evaluation order);
+- `deps` — already-solved endogenous variables referenced by the block; `extdeps` — parameters and exogenous variables referenced;
+- `closed_form` — struct array of `.var` / `.expr` assignments in evaluation order (empty when the block needs a numerical solver);
+- `backout` — the gauge variable(s) and consistency equation(s) used when the block level was recovered by the gauge backout.
+
+**Closure machinery** (per block): singleton blocks go through `ast.isolate` (invertible-call, linear, monomial and binomial-power recognisers — see the [AST README](src/@ast/README.md)); jointly linear simultaneous blocks are closed by fraction-free (Bareiss) triangulation and back-substitution; homogeneous blocks — whose equations pin the ratios but not the level — are re-parametrised in ratios, and the level is recovered from a consistency equation absorbed by an anchor (gauge backout). Calibration swaps declared on the model are honoured under `Match=true`.
+
+**Example:**
+
+```matlab
+b = m.steady_plan(Match=true);
+m.print_steady_plan(b);   % human-readable summary of the cascade
+m.apply_steady_plan(b);   % write the closed forms into the steady-state block
+```
+
+**Diagnostics.** `steady_plan` warns when the model fails to pin a steady-state level:
+- `modBuilder:steady_plan:unitRoot` — an AR-type equation whose coefficients on the recurring term cancel in the static residual (e.g. `log(Z) = log(Z(-1)) + e`): the equation pins the growth rate, not the level. Declare the steady-state level or pass the variable as an anchor.
+- `modBuilder:steady_plan:endogenousUnitRoot` — an equation pins none of the remaining variables (its static residual reduces to a condition on parameters, e.g. the Euler condition `1 - beta*R = 0` of an incomplete-markets open economy), so some level is determined by initial conditions rather than by the model. Close the model (debt-elastic interest premium, endogenous discounting, …) or fix the level.
+- `modBuilder:steady_plan:calibrationUnitRoot` — the plan is symbolically regular but singular at the calibrated point: a pinning coefficient (e.g. `1-R` at `R = 1`) or a block determinant (e.g. `1-k^2` at `k = 1`) evaluates to a numerical zero, so a closed form divides by zero at this calibration. Move the calibration off the knife edge or fix the level by other means.
+
+#### `print_steady_plan([blocks])`
+
+Render the structural steady-state plan as a human-readable summary: each block with its kind, its variable(s), the already-solved variables it depends on, and its external constants. Singleton blocks with a closed form print as `x = expr`; blocks without one are flagged `needs solver`. If `blocks` is omitted, `steady_plan()` is called with defaults.
+
+#### `apply_steady_plan([blocks])`
+
+Write the closed-form assignments produced by `steady_plan` into the model's steady-state block, iterating over the plan in topological order and calling `steady(var, expr)` for every block with a closed form. Blocks without one are skipped — provide their values manually or with `solve_system`. Idempotent: `steady` replaces existing entries in place.
+
+#### `suggest_anchors([Candidates, Keep, PropagateKnown])`
+
+Reduce a pool of candidate steady-state anchors to an irreducible subset, by greedy leave-one-out testing swept to a fixed point: a candidate is dropped when the plan closes just as well without its anchor status *and* its declared value. Candidates default to the endogenous variables with a value declared through `steady()`, excluding auto-detected exogenous processes — the method never invents a value, it only reports which of the declared knowns the structural plan actually needs.
+
+**Returns** a struct with fields `anchors` (the irreducible subset), `dropped` (candidates found deducible), `residual` and `open` (number and names of variables left open under the returned set; empty on full closure).
+
+#### `scaling_symmetries([IncludeParameters])`
+
+Detect the scale symmetries of the steady-state system: assignments of an exponent to each endogenous variable such that a joint rescaling leaves every static equation homogeneous. Each independent symmetry is a scale freedom of the steady state, and its invariant ratios (`K/L`, `C/Y`, …) are the intensive variables that make the system scale-free. Diagnostic only — it reports the co-scaling groups and their exponents, it does not rewrite the model. With `IncludeParameters=true`, level parameters are also allowed to scale, revealing the latent scaling structure that explicit normalisation parameters otherwise pin. Called with no output, prints a readable summary.
 
 ### Symbolic Differentiation
 

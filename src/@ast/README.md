@@ -31,7 +31,7 @@ array.
 | `num`    | Numeric literal (`0.33`, `1e-5`)                                         | double scalar        | `{}`                |
 | `sym`    | Bare symbol at the current period (parameter, endogenous, exogenous)     | char (name)          | `{}`                |
 | `tsym`   | Lead or lag of a variable (`Consumption(-1)`, `K(+1)`)                   | `{name, lag}`        | `{}`                |
-| `ss`     | Steady-state operator on a symbol (`STEADY_STATE(x)`)                    | char (name)          | `{}`                |
+| `ss`     | Steady-state operator on an expression (`STEADY_STATE(x)`, `STEADY_STATE(k/y)`) | `[]`          | `{argument}`        |
 | `call`   | Built-in function call (`exp(x)`, `log(a+b)`, `max(a, b)`)               | char (function name) | `{arg1, arg2, ...}` |
 | `binop`  | Binary operator `+ - * / ^` (`^` right-associative, the rest left-)      | char (operator)      | `{left, right}`     |
 | `uminus` | Unary minus (`-x`)                                                       | `[]`                 | `{operand}`         |
@@ -122,6 +122,13 @@ the everyday cases:
 - *double negation* — `−(−f) → f`, `−num → num(-num)`
 - *sign propagation* — `(−1) · f → −f`, `f · (−g) → −(f·g)`,
   `(−f) · g → −(f·g)`
+- *power towers* — `(f^a)^b → f^(a·b)`, sound under the positive-base
+  convention the power algebra already assumes; the collapse is skipped
+  for an even integer `a` with a non-integer `b` (it would drop the
+  absolute value), and the sign of `(−f)^n` is pulled out for integer `n`
+- *sign-opposite bases in `·` chains* — bases are matched modulo sign
+  when the exponents are integers, so `(1−b) / (−1+b) → −1`; the signs
+  accumulate into a numeric factor
 
 Cancellation is detected up to commutativity (so `a·b − b·a → 0`)
 because the operands are sorted by `canonicalise` before comparison.
@@ -283,16 +290,42 @@ never match: `STEADY_STATE(x)` is a constant w.r.t. the dynamic variable
 `x`. The check is purely structural; cases that require algebraic
 simplification (e.g. `w/w → 1`) are not detected — see *Limitations*.
 
-#### `t.isolate(x)`
+#### `[rhs, info] = t.isolate(x)`
 
 Solve the equation `t = 0` for the symbol `x` — `t` is read as the
 residual `LHS - RHS`. Returns an AST `rhs` such that `x = rhs`, or `[]`
 when no recogniser applies. It canonicalises and simplifies first, then
-tries an invertible-call recogniser (`exp` / `log`, recursing on the
-inverted equation), a linear recogniser, and a monomial one, in that
-order. Returns `[]` when `x`'s coefficient folds to 0 (the equation does
-not actually pin `x`) or when the pattern is none of the recognised closed
-forms.
+tries four recognisers in order:
+
+1. an **invertible-call** recogniser — `exp` / `log` wrapping the
+   unknown, recursing on the inverted equation. Several occurrences of
+   the *same* call subtree are accepted, their coefficients summed, so
+   the additive log form of an AR process
+   (`log(Z) - rho*log(Z(-1)) - e`, whose static residual keeps the two
+   symbolically-weighted `log(Z)` terms apart) closes to
+   `Z = exp(e/(1-rho))`;
+2. a **linear** recogniser (`a·x + b = 0`);
+3. a **monomial** recogniser (`a·x^d + b = 0`);
+4. a last-resort **binomial-power** recogniser
+   (`cp·x^p + cq·x^q = 0 → x = (−cq/cp)^(1/(p−q))`).
+
+When everything fails and `x` sits under a denominator, the residual is
+multiplied through by its denominators — sound under the non-zero
+steady-state convention — and the recognisers are retried once.
+
+Returns `[]` when `x`'s coefficient folds to 0 (the equation does not
+actually pin `x`) or when the pattern is none of the recognised closed
+forms. The second output `info` carries diagnostics:
+
+- `info.unit_root` — true when every `x`-bearing term matched the same
+  call `f(P)` but the summed coefficient folded to zero: the equation
+  pins the *growth* of `f(P)`, not its level (`modBuilder.steady_plan`
+  surfaces this as its unit-root warnings);
+- `info.coefs` — the pinning divisors used along the successful closure
+  chain, symbolically non-zero by construction; a caller holding a
+  calibration can evaluate them to detect knife-edge points where the
+  closed form divides by a numerical zero (this feeds the
+  `modBuilder:steady_plan:calibrationUnitRoot` warning).
 
 Semantics are **steady-state**: `x` and its leads/lags are treated as the
 same unknown, so the solve aggregates them (this is what `steady_plan`
@@ -324,9 +357,10 @@ symbol; `values.(name)` is the scalar substituted for any `sym`,
 - `tsym(name, k)` resolves to `values.(name)` — the lag is ignored.
   Caller is responsible for staticising first if a different
   semantics is wanted.
-- `ss(name)` also resolves to `values.(name)`: `STEADY_STATE(x)` and
-  the static value of `x` are identical when `values` carries
-  steady-state calibrations.
+- an `ss` node evaluates its argument expression at `values`:
+  `STEADY_STATE(x)` resolves to `values.x` and `STEADY_STATE(k/y)` to
+  `values.k / values.y` — the steady-state and static values coincide
+  when `values` carries steady-state calibrations.
 - `call` nodes dispatch via `feval`; the function name has already
   been validated by the parser against `ast.RESERVED_FNAMES`.
 - A symbol with no entry in `values` raises `ast:eval` with a clear
