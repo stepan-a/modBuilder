@@ -47,6 +47,18 @@ assert(isempty(rhs) && info.unit_root,             'zero-sum coefficients must r
 [~, info] = ast('log(Z) - rho*log(Z)').isolate('Z');
 assert(~info.unit_root,                            'a pinned equation must not raise unit_root');
 
+% Zero-base guard: under the non-zero steady-state convention, a·x^d = 0 pins x
+% only when d is a positive number. The c-cancelling Euler condition must NOT
+% pretend to pin c through the 0^(-1/sig) artefact (the equation pins R), a
+% positive power yields the literal zero root (callers filter it with
+% reject_zero), and coef*exp(P) = 0 has no root at all (never fabricate log(0)).
+rhs = ast('c^(-sig) - beta*R*c^(-sig)').isolate('c');
+assert(isempty(rhs),                               'a c-cancelling equation must not return a closed form for c');
+rhs = ast('2*x^3').isolate('x');
+assert(~isempty(rhs) && strcmp(rhs.type, 'num') && rhs.value == 0, 'a positive numeric power must pin the literal zero root');
+rhs = ast('k*exp(a)').isolate('a');
+assert(isempty(rhs),                               'coef*exp(P) = 0 has no root; no log(0) closed form');
+
 % The pinning divisors travel in info.coefs so a caller holding a calibration can
 % detect knife-edge points (coefficient symbolically non-zero, numerically zero).
 [rhs, info] = ast('b - R*b - x').isolate('b');

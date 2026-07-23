@@ -1140,7 +1140,15 @@ classdef ast
             [okc, fname, P, coef, rest, ur] = ast.split_call_terms(o, x);
             info = struct('unit_root', ur, 'coefs', {{}});
             if okc
-                target = ast.neg_div(rest, coef);
+                target = ast.neg_div(rest, coef).simplify();
+                if strcmp(fname, 'exp') && ast.is_zero(target)
+                    % coef·exp(P) = 0 has no root: exp never vanishes. Skip the
+                    % inversion (it would fabricate log(0)) and let the remaining
+                    % recognisers have the residual.
+                    okc = false;
+                end
+            end
+            if okc
                 switch fname
                     case 'exp'
                         inv_target = ast('call', 'log', {target});
@@ -1170,11 +1178,25 @@ classdef ast
             if o.is_monomial_in(x)
                 [a, d, b] = o.split_monomial(x);
                 if ~(strcmp(a.type, 'num') && a.value == 0)
-                    base = ast.neg_div(b, a);
-                    inv_d = ast('binop', '/', {ast('num', 1, {}), d});
-                    rhs = ast('binop', '^', {base, inv_d}).simplify();
-                    info.coefs = {a, d};
-                    return
+                    base = ast.neg_div(b, a).simplify();
+                    if ast.is_zero(base)
+                        % a·x^d = 0: with a positive numeric exponent the root is
+                        % x = 0 (left to the caller's reject_zero policy); with a
+                        % negative one 1/x^|d| = 0 has NO root, and a symbolic
+                        % exponent is sign-ambiguous. Never return 0^(1/d) — the
+                        % c = 0^(-1/sigma) artefact of a c-cancelling Euler
+                        % condition — but fall through to the other recognisers.
+                        if strcmp(d.type, 'num') && d.value > 0
+                            rhs = ast('num', 0, {});
+                            info.coefs = {a, d};
+                            return
+                        end
+                    else
+                        inv_d = ast('binop', '/', {ast('num', 1, {}), d});
+                        rhs = ast('binop', '^', {base, inv_d}).simplify();
+                        info.coefs = {a, d};
+                        return
+                    end
                 end
             end
 
@@ -1184,12 +1206,23 @@ classdef ast
             if allow_binomial
                 [okb, cp, p, cq, q] = o.split_binomial_power(x);
                 if okb && ~(strcmp(cp.type, 'num') && cp.value == 0)
-                    base = ast.neg_div(cq, cp);
-                    dexp = ast('binop', '-', {p, q});
-                    inv_dexp = ast('binop', '/', {ast('num', 1, {}), dexp});
-                    rhs = ast('binop', '^', {base, inv_dexp}).simplify();
-                    info.coefs = {cp, dexp};
-                    return
+                    base = ast.neg_div(cq, cp).simplify();
+                    dexp = ast('binop', '-', {p, q}).simplify();
+                    if ast.is_zero(base)
+                        % Same zero-base guard as the monomial recogniser: only a
+                        % positive numeric exponent gap turns x^(p-q) = 0 into the
+                        % literal root x = 0.
+                        if strcmp(dexp.type, 'num') && dexp.value > 0
+                            rhs = ast('num', 0, {});
+                            info.coefs = {cp, dexp};
+                            return
+                        end
+                    else
+                        inv_dexp = ast('binop', '/', {ast('num', 1, {}), dexp});
+                        rhs = ast('binop', '^', {base, inv_dexp}).simplify();
+                        info.coefs = {cp, dexp};
+                        return
+                    end
                 end
             end
 
