@@ -5694,6 +5694,14 @@ classdef modBuilder < handle
                     error('modBuilder:flip:notExogenous', '"%s" is not a known exogenous variable.', varexoname)
                 end
 
+                % The equation currently attached to varname becomes varexoname's
+                % equation: varexoname must appear in it, otherwise the equation
+                % cannot determine varexoname. Checked before any mutation so a
+                % bad pair leaves the object untouched.
+                if ~ismember(varexoname, o.T.equations.(varname))
+                    error('modBuilder:flip:notInEquation', 'Exogenous variable "%s" does not appear in equation "%s".', varexoname, varname)
+                end
+
                 % Copy variables
                 o.var = [o.var; {varexoname o.varexo{ix,modBuilder.COL_VALUE} o.varexo{ix,modBuilder.COL_LONG_NAME} o.varexo{ix,modBuilder.COL_TEX_NAME}}];
                 o.varexo = [o.varexo; {varname o.var{ie,modBuilder.COL_VALUE} o.var{ie,modBuilder.COL_LONG_NAME} o.var{ie,modBuilder.COL_TEX_NAME}}];
