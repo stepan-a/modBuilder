@@ -8,7 +8,7 @@ try
     model.parameter('alpha_$1', 0.33, 'texname', '\alpha_{$1,$2}', {1, 2});
     error('Expected error: texname has 2 indices but parameter name has 1 index');
 catch ME
-    if ~contains(ME.message, 'texname has 2 indices')
+    if ~contains(ME.message, 'texname has placeholders {$1, $2}')
         rethrow(ME);
     end
     fprintf('Test 1 passed: texname validation works\n');
@@ -21,7 +21,7 @@ try
     model.parameter('alpha_$1', 0.33, 'long_name', 'Parameter $1 in sector $2', {1, 2});
     error('Expected error: long_name has 2 indices but parameter name has 1 index');
 catch ME
-    if ~contains(ME.message, 'long_name has 2 indices')
+    if ~contains(ME.message, 'long_name has placeholders {$1, $2}')
         rethrow(ME);
     end
     fprintf('Test 2 passed: long_name validation works\n');
@@ -46,7 +46,7 @@ try
     model.parameter('beta_$1', 0.5, 'texname', '\beta', {1, 2});
     error('Expected error: texname has 0 indices but parameter name has 1 index');
 catch ME
-    if ~contains(ME.message, 'texname has 0 indices')
+    if ~contains(ME.message, 'texname has placeholders {}')
         rethrow(ME);
     end
     fprintf('Test 4 passed: Zero indices in texname correctly detected\n');
