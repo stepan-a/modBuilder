@@ -2317,12 +2317,17 @@ classdef modBuilder < handle
     methods(Static)
 
         function n = total_residual_count(blocks)
-        % Count the total number of unresolved variables across all simultaneous blocks
-        % of a steady-state plan. Used by suggest_calibrations to score candidate swaps.
+        % Count the total number of unresolved variables across the non-anchor blocks
+        % of a steady-state plan. Used by suggest_calibrations to score candidate
+        % swaps. Anchor blocks are excluded: their levels are user-supplied by
+        % convention, an open one is not a residual a swap should chase. Open
+        % SINGLETONS do count -- with every (equation, unknown) pair probed, an
+        % unresolved variable often survives alone (a transcendental FOC) rather than
+        % inside a simultaneous block.
             n = 0;
             for k = 1:numel(blocks)
                 b = blocks(k);
-                if strcmp(b.kind, 'simultaneous')
+                if ~strcmp(b.kind, 'anchor')
                     resolved = {b.closed_form.var};
                     n = n + numel(setdiff(b.vars, resolved));
                 end
@@ -8185,7 +8190,12 @@ classdef modBuilder < handle
             seen = dictionary(string.empty, logical.empty);
             for k = 1:numel(blocks)
                 b = blocks(k);
-                if ~strcmp(b.kind, 'simultaneous'), continue, end
+                % Any non-anchor block can carry a residual worth a swap: now that the
+                % elimination probes every (equation, unknown) pair, an unresolved
+                % variable often survives as an open SINGLETON (a transcendental FOC)
+                % rather than inside a simultaneous block. Anchor levels are
+                % user-supplied by convention, not swap targets.
+                if strcmp(b.kind, 'anchor'), continue, end
                 resolved = {b.closed_form.var};
                 residual = setdiff(b.vars, resolved);
                 if isempty(residual), continue, end

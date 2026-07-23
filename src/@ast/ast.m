@@ -2948,10 +2948,14 @@ classdef ast
         % isolations succeed.
         %
         % INPUTS:
-        % - residuals        [cell]   1×n cell of static-residual ASTs (one per
-        %                             equation, paired with vars{i} = the variable
-        %                             the equation pins in matchequations)
-        % - vars             [cell]   1×n cell of variable name strings
+        % - residuals        [cell]   1×n cell of static-residual ASTs (one per equation)
+        % - vars             [cell]   1×n cell of variable name strings — the block
+        %                             unknowns. The positional pairing with residuals is
+        %                             immaterial: every (equation, unknown) pair is
+        %                             probed, so a declaration pairing that assigns an
+        %                             equation to a variable it cannot pin (anchor
+        %                             blocks are never re-matched) does not starve the
+        %                             elimination of the decisive probe.
         % - parameter_names  [cell]   (optional) names treated as time-invariant
         %                             during substitution; defaults to {}
         % - reject_zero      [logical] (optional, default false) skip any (var, eq)
@@ -3007,11 +3011,13 @@ classdef ast
             end
 
             active = true(1, n);
+            unknowns = vars;
             elim = struct('var', {}, 'expr', {});
 
-            while any(active)
+            while any(active) && ~isempty(unknowns)
                 active_idx = find(active);
                 best_pos = -1;
+                best_var = '';
                 best_rhs = [];
                 % Cheap recognisers first (allow_binomial = false); only if NO variable
                 % is solvable that way do we allow the stronger binomial-power rule. This
@@ -3034,51 +3040,66 @@ classdef ast
                     best_score = -inf;
                     for ii = 1:numel(active_idx)
                         pos = active_idx(ii);
-                        v = vars{pos};
-                        f = residuals{pos};
-                        if ast.count_occurrences(f, v) == 0
-                            continue
-                        end
-                        if use_expand
-                            if ast.node_count(f) > 512
+                        f0 = residuals{pos};
+                        fexp = [];
+                        % Probe EVERY remaining unknown appearing in this equation, not
+                        % only the one the caller's pairing assigned to it: a pairing
+                        % chosen by declaration (anchor blocks are never re-matched)
+                        % can starve the elimination of the decisive probe -- the
+                        % (R, Euler) isolation that the cancellation of consumption
+                        % makes trivial while the paired (c, Euler) pins nothing.
+                        for vv = 1:numel(unknowns)
+                            v = unknowns{vv};
+                            if ast.count_occurrences(f0, v) == 0
                                 continue
                             end
-                            f = f.expand().simplify();
-                        end
-                        % The clearing fallback of isolate costs minutes on the giant
-                        % residuals left by chained monomial substitutions (composite
-                        % symbolic exponents); cap the probe size like the expansion
-                        % tier does, keeping the cheap recognisers unrestricted.
-                        probe_clear = allow_clear && ast.node_count(f) <= 2048;
-                        rhs = f.isolate(v, allow_binomial, probe_clear);
-                        if isempty(rhs)
-                            continue
-                        end
-                        if reject_zero && strcmp(rhs.type, 'num') && rhs.value == 0
-                            continue
-                        end
-                        gain = 0;
-                        for jj = 1:numel(active_idx)
-                            other = active_idx(jj);
-                            if other ~= pos && ast.count_occurrences(residuals{other}, v) > 0
-                                gain = gain + 1;
+                            f = f0;
+                            if use_expand
+                                if ast.node_count(f0) > 512
+                                    continue
+                                end
+                                if isempty(fexp)
+                                    fexp = f0.expand().simplify();
+                                end
+                                f = fexp;
                             end
-                        end
-                        % Ratio eliminations take absolute priority: when the closed
-                        % form is a MONOMIAL in the remaining unknowns (the equation
-                        % identifies a ratio -- k = rho*h from an Euler condition,
-                        % c_1 = omega^(-1/sigma)*c_2 from risk sharing), substituting
-                        % it preserves the monomial structure of the other equations.
-                        % Consuming these first keeps a later, structure-destroying
-                        % substitution (a resource constraint inlined into an Euler
-                        % condition) from burying the ratio beyond the recognisers.
-                        others = vars(active_idx(active_idx ~= pos));
-                        ratio_pick = ast.monomial_in_vars(rhs, others);
-                        score = ratio_pick * 1e12 + gain * 1e6 - length(rhs.string());
-                        if score > best_score
-                            best_score = score;
-                            best_pos = pos;
-                            best_rhs = rhs;
+                            % The clearing fallback of isolate costs minutes on the
+                            % giant residuals left by chained monomial substitutions
+                            % (composite symbolic exponents); cap the probe size like
+                            % the expansion tier does, keeping the cheap recognisers
+                            % unrestricted.
+                            probe_clear = allow_clear && ast.node_count(f) <= 2048;
+                            rhs = f.isolate(v, allow_binomial, probe_clear);
+                            if isempty(rhs)
+                                continue
+                            end
+                            if reject_zero && strcmp(rhs.type, 'num') && rhs.value == 0
+                                continue
+                            end
+                            gain = 0;
+                            for jj = 1:numel(active_idx)
+                                other = active_idx(jj);
+                                if other ~= pos && ast.count_occurrences(residuals{other}, v) > 0
+                                    gain = gain + 1;
+                                end
+                            end
+                            % Ratio eliminations take absolute priority: when the closed
+                            % form is a MONOMIAL in the remaining unknowns (the equation
+                            % identifies a ratio -- k = rho*h from an Euler condition,
+                            % c_1 = omega^(-1/sigma)*c_2 from risk sharing), substituting
+                            % it preserves the monomial structure of the other equations.
+                            % Consuming these first keeps a later, structure-destroying
+                            % substitution (a resource constraint inlined into an Euler
+                            % condition) from burying the ratio beyond the recognisers.
+                            others = unknowns(~strcmp(unknowns, v));
+                            ratio_pick = ast.monomial_in_vars(rhs, others);
+                            score = ratio_pick * 1e12 + gain * 1e6 - length(rhs.string());
+                            if score > best_score
+                                best_score = score;
+                                best_pos = pos;
+                                best_var = v;
+                                best_rhs = rhs;
+                            end
                         end
                     end
                     if best_pos ~= -1
@@ -3090,23 +3111,23 @@ classdef ast
                     break
                 end
 
-                v = vars{best_pos};
                 for ii = 1:numel(active_idx)
                     other = active_idx(ii);
                     if other ~= best_pos
-                        residuals{other} = residuals{other}.substitute(v, best_rhs, parameter_names).simplify();
+                        residuals{other} = residuals{other}.substitute(best_var, best_rhs, parameter_names).simplify();
                     end
                 end
-                elim(end+1).var = v; %#ok<AGROW>
+                elim(end+1).var = best_var; %#ok<AGROW>
                 elim(end).expr = best_rhs;
                 active(best_pos) = false;
+                unknowns(strcmp(unknowns, best_var)) = [];
             end
 
             for i = numel(elim):-1:1
                 cf_list(end+1).var = elim(i).var; %#ok<AGROW>
                 cf_list(end).expr = elim(i).expr;
             end
-            remaining = struct('vars', {vars(active)}, 'residuals', {residuals(active)});
+            remaining = struct('vars', {unknowns}, 'residuals', {residuals(active)});
         end % function
 
 

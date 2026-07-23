@@ -13,21 +13,21 @@ r3 = ast('c*h^p - w').staticise().simplify();                            % pins 
 
 [cf, rem] = ast.iterated_elimination({r1, r2, r3}, {'k', 'c', 'h'}, {'a', 'b', 's', 'p', 'w'});
 
-assert(numel(cf) == 2, sprintf('ratio priority must close k and h, got %d closures', numel(cf)));
-assert(isequal(rem.vars, {'c'}), 'the aggregate constraint must be the one left open, pinning c');
-for j = 1:numel(cf)
-    assert(ast.monomial_in_vars(cf(j).expr, {'c'}), sprintf('%s must close as a monomial in c, got %s', cf(j).var, cf(j).expr.string()));
-end
+% With the ratio picks consumed first (and every (equation, unknown) pair probed,
+% not just the caller's pairing), the whole system closes analytically: the ratio
+% substitutions keep the aggregate constraint a two-power binomial instead of a
+% buried (k+h)^(-s).
+assert(numel(cf) == 3, sprintf('the system must close fully, got %d closures', numel(cf)));
+assert(isempty(rem.vars), 'no unknown must remain open');
 
-% Conditional on ANY c > 0, the consumed equations must hold identically at the
-% closed forms, while the remaining one still pins c.
-vals = struct('a', 0.3, 'b', 0.9, 's', 2, 'p', 1.5, 'w', 1.2, 'c', 2);
-for j = numel(cf):-1:1
+% The closed forms, evaluated in the returned order, must solve all three equations.
+vals = struct('a', 0.3, 'b', 0.9, 's', 2, 'p', 1.5, 'w', 1.2);
+for j = 1:numel(cf)
     vals.(cf(j).var) = cf(j).expr.eval(vals);
 end
-assert(abs(r1.eval(vals)) < 1e-12, 'the Euler-like equation must hold identically at the closed forms');
-assert(abs(r3.eval(vals)) < 1e-12, 'the labour-like equation must hold identically at the closed forms');
-assert(abs(rem.residuals{1}.eval(vals)) > 1e-3, 'the open equation must genuinely restrict c');
+assert(abs(r1.eval(vals)) < 1e-9, 'the Euler-like equation must hold at the closed forms');
+assert(abs(r2.eval(vals)) < 1e-9, 'the aggregate constraint must hold at the closed forms');
+assert(abs(r3.eval(vals)) < 1e-9, 'the labour-like equation must hold at the closed forms');
 
 % monomial_in_vars draws the line correctly.
 assert( ast.monomial_in_vars(ast('rho*h^2/c').simplify(), {'h', 'c'}), 'a power quotient is a monomial in {h, c}');
