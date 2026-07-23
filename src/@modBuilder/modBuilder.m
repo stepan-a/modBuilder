@@ -4369,6 +4369,23 @@ classdef modBuilder < handle
             % Auto-update symbol tables if needed
             o.refresh_tables();
 
+            if strcmp(oldsymbol, newsymbol)
+                return
+            end
+
+            % Validate the target name before any mutation: an invalid identifier
+            % would make the dynamic-field assignments below fail half-way through,
+            % and a collision would silently overwrite the existing symbol's entry.
+            if ~isvarname(newsymbol)
+                error('modBuilder:rename:badName', '"%s" is not a valid symbol name.', newsymbol)
+            end
+
+            modBuilder.validate_symbol_name(newsymbol, 'rename');
+
+            if o.issymbol(newsymbol) || ismember(newsymbol, o.symbols)
+                error('modBuilder:rename:nameCollision', 'Cannot rename "%s" into "%s": "%s" already exists in the model.', oldsymbol, newsymbol, newsymbol)
+            end
+
             [type, id] = o.typeof(oldsymbol);
 
             switch type
