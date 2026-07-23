@@ -2395,6 +2395,58 @@ classdef modBuilder < handle
             if nb < 2
                 return
             end
+            % The change of variables bites when some block equation involves the
+            % block variables through their ratios alone (homogeneous of degree 0):
+            % the gauge then cancels there and pins the ratios. On a LARGE block with
+            % no such equation, the nb attempts below -- each paying expand/simplify
+            % on every residual plus a full elimination -- are almost surely waste
+            % (they dominated a whole steady_plan profile at 90 of 93 seconds), so
+            % they are skipped. Small blocks keep the attempt regardless: it is cheap,
+            % and the internal re-matching of the transformed equations can rescue a
+            % block whose declaration pairing starves the elimination of the right
+            % probes (an anchor block never re-paired by matchequations). Degree-0
+            % homogeneity is probed numerically at deterministic positive points; a
+            % residual that cannot be evaluated there keeps the benefit of the doubt.
+            has_ratio_eq = nb <= 4;
+            for e = 1:numel(residuals)
+                if has_ratio_eq
+                    break
+                end
+                syms = residuals{e}.symbol_names();
+                if ~any(ismember(vars_block, syms))
+                    continue
+                end
+                try
+                    vals = struct();
+                    for si = 1:numel(syms)
+                        vals.(syms{si}) = 1 + 0.05 * si;
+                    end
+                    r0 = residuals{e}.eval(vals);
+                    okhom = isfinite(r0) && isreal(r0);
+                    for lambda = [2, 3]
+                        vals2 = vals;
+                        for vi = 1:numel(vars_block)
+                            if isfield(vals2, vars_block{vi})
+                                vals2.(vars_block{vi}) = lambda * vals2.(vars_block{vi});
+                            end
+                        end
+                        r1 = residuals{e}.eval(vals2);
+                        if ~(isfinite(r1) && isreal(r1) && abs(r1 - r0) <= 1e-9 * max(1, abs(r0)))
+                            okhom = false;
+                            break
+                        end
+                    end
+                catch
+                    okhom = true;
+                end
+                if okhom
+                    has_ratio_eq = true;
+                    break
+                end
+            end
+            if ~has_ratio_eq
+                return
+            end
             for g = 1:nb
                 gauge = vars_block{g};
                 others = vars_block([1:g-1, g+1:nb]);
