@@ -3058,7 +3058,11 @@ classdef ast
         % isolations succeed.
         %
         % INPUTS:
-        % - residuals        [cell]   1×n cell of static-residual ASTs (one per equation)
+        % - residuals        [cell]   1×n cell of static-residual ASTs (one per equation).
+        %                             PRECONDITION: each residual must be a simplify()
+        %                             fixed point (all callers pass .simplify() outputs);
+        %                             the substitution guard in the elimination loop
+        %                             relies on it to skip untouched residuals.
         % - vars             [cell]   1×n cell of variable name strings — the block
         %                             unknowns. The positional pairing with residuals is
         %                             immaterial: every (equation, unknown) pair is
@@ -3232,9 +3236,13 @@ classdef ast
                     break
                 end
 
+                % symbol_names matches substitute's reach exactly (sym + tsym
+                % everywhere, including under ss), so the guard skips exactly the
+                % residuals where the substitute would be a no-op; skipping their
+                % simplify too is covered by the fixed-point precondition above.
                 for ii = 1:numel(active_idx)
                     other = active_idx(ii);
-                    if other ~= best_pos
+                    if other ~= best_pos && ismember(best_var, residuals{other}.symbol_names())
                         residuals{other} = residuals{other}.substitute(best_var, best_rhs, parameter_names).simplify();
                     end
                 end
