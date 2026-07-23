@@ -841,34 +841,52 @@ classdef ast
             end
         end % function
 
-        function tf = is_linear_in(o, x)
+        function tf = is_linear_in(o, x, assume_canonical)
         % Test whether the tree is linear in symbol x.
         %
         % INPUTS:
-        % - o   [ast]    tree to test
-        % - x   [char]   1×n array, symbol name
+        % - o                 [ast]      tree to test
+        % - x                 [char]     1×n array, symbol name
+        % - assume_canonical  [logical]  (optional, default false) when true, o is
+        %                                asserted to already be canonicalise().simplify()
+        %                                output and the internal normalisation is skipped;
+        %                                the caller is responsible (same contract as
+        %                                split_call_terms). isolate passes true after its
+        %                                entry normalisation.
         %
         % OUTPUTS:
         % - tf  [logical] true iff o = a · x + b structurally, with a and b independent of x.
         %
         % REMARKS:
-        % - Canonicalises and simplifies the tree first, so a/b is rewritten as a·b^(-1),
-        %   constants are folded, and obvious cancellations are removed.
+        % - Canonicalises and simplifies the tree first (unless assume_canonical), so a/b
+        %   is rewritten as a·b^(-1), constants are folded, and obvious cancellations are
+        %   removed.
         % - x is matched against 'sym' and 'tsym' leaves (lag is ignored, as expected
         %   for a static-equation analysis); 'ss' nodes are constants and never count
         %   as a use of x.
         % - x inside a 'call' (e.g. exp(x)), in a denominator, raised to a non-1 exponent,
         %   or appearing more than once in any single multiplicative chain, breaks linearity.
-            o = o.canonicalise().simplify();
+            arguments
+                o
+                x
+                assume_canonical (1,1) logical = false
+            end
+            if ~assume_canonical
+                o = o.canonicalise().simplify();
+            end
             [tf, ~] = ast.linear_walk(o, x);
         end % function
 
-        function [a, b] = split_linear(o, x)
+        function [a, b] = split_linear(o, x, assume_canonical)
         % Split the tree into (a, b) such that o = a · x + b, with a and b independent of x.
         %
         % INPUTS:
-        % - o   [ast]    tree (must be linear in x; check with is_linear_in first)
-        % - x   [char]   1×n array, symbol name
+        % - o                 [ast]      tree (must be linear in x; check with is_linear_in first)
+        % - x                 [char]     1×n array, symbol name
+        % - assume_canonical  [logical]  (optional, default false) when true, o is asserted
+        %                                to already be canonicalise().simplify() output and
+        %                                the internal normalisation is skipped (see
+        %                                is_linear_in / split_call_terms for the contract)
         %
         % OUTPUTS:
         % - a   [ast]    coefficient tree (independent of x)
@@ -879,10 +897,20 @@ classdef ast
         % - Both a and b are simplified before returning.
         % - Used by modBuilder.steady_plan to generate closed-form steady-state assignments
         %   for trivial / self-recursive blocks: from f(x) = LHS - RHS = 0, x = -b/a.
-            if ~o.is_linear_in(x)
+            arguments
+                o
+                x
+                assume_canonical (1,1) logical = false
+            end
+            if ~assume_canonical
+                o = o.canonicalise().simplify();
+            end
+            % Guard on the normalised tree directly: is_linear_in(raw) is exactly
+            % linear_walk(normalise(raw)), so this is the same predicate without a
+            % second normalisation pass.
+            if ~ast.linear_walk(o, x)
                 error('ast:split_linear', 'Expression is not linear in "%s".', x);
             end
-            o = o.canonicalise().simplify();
             % Use the substitution identity for an expression that is linear in x:
             %   b = expr at x = 0
             %   a = expr at x = 1 minus b
@@ -972,26 +1000,37 @@ classdef ast
             [tf, ~] = ast.linear_set_walk(o, vars);
         end % function
 
-        function tf = is_monomial_in(o, x)
+        function tf = is_monomial_in(o, x, assume_canonical)
         % Test whether the tree has the form α·x^d + β with α, β, d independent of x,
         % and at least one term containing x (so the split is meaningful).
         %
         % INPUTS:
-        % - o   [ast]    tree to test
-        % - x   [char]   symbol name
+        % - o                 [ast]      tree to test
+        % - x                 [char]     symbol name
+        % - assume_canonical  [logical]  (optional, default false) when true, o is asserted
+        %                                to already be canonicalise().simplify() output and
+        %                                the internal normalisation is skipped (see
+        %                                is_linear_in / split_call_terms for the contract)
         %
         % OUTPUTS:
         % - tf  [logical] true iff o = α·x^d + β with α and d both x-free, x present.
         %
         % REMARKS:
-        % - Canonicalises and simplifies first, so x · x^n → x^(n+1) and constant-folding
-        %   are applied before the structural check.
+        % - Canonicalises and simplifies first (unless assume_canonical), so x · x^n →
+        %   x^(n+1) and constant-folding are applied before the structural check.
         % - Each x-bearing term must be of the form coef · x or coef · x^d (possibly with
         %   uminus). All x-bearing terms must share the SAME exponent d.
         % - The d=1 case overlaps with is_linear_in; both return true for that case.
         % - x inside a 'call' (e.g. exp(x)), in a denominator, or appearing more than
         %   once in a single term breaks the monomial structure.
-            o = o.canonicalise().simplify();
+            arguments
+                o
+                x
+                assume_canonical (1,1) logical = false
+            end
+            if ~assume_canonical
+                o = o.canonicalise().simplify();
+            end
             terms = ast.flatten(o, '+');
             d_seen = [];
             has_x = false;
@@ -1018,8 +1057,16 @@ classdef ast
             tf = has_x;
         end % function
 
-        function [a, d, b] = split_monomial(o, x)
+        function [a, d, b] = split_monomial(o, x, assume_canonical)
         % Decompose o = a · x^d + b. Errors if not monomial in x.
+        %
+        % INPUTS:
+        % - o                 [ast]      tree (must be monomial in x)
+        % - x                 [char]     symbol name
+        % - assume_canonical  [logical]  (optional, default false) when true, o is asserted
+        %                                to already be canonicalise().simplify() output and
+        %                                the internal normalisation is skipped (see
+        %                                is_linear_in / split_call_terms for the contract)
         %
         % OUTPUTS:
         % - a   [ast]    coefficient of x^d (independent of x)
@@ -1031,10 +1078,18 @@ classdef ast
         % - When several x-bearing terms share the same exponent (e.g. 2·x^d + 3·x^d),
         %   their coefficients are summed into a; this matches what split_linear does
         %   for d = 1.
-            if ~o.is_monomial_in(x)
+            arguments
+                o
+                x
+                assume_canonical (1,1) logical = false
+            end
+            if ~assume_canonical
+                o = o.canonicalise().simplify();
+            end
+            % Guard on the normalised tree (no second normalisation pass).
+            if ~o.is_monomial_in(x, true)
                 error('ast:split_monomial', 'Expression is not monomial in "%s".', x);
             end
-            o = o.canonicalise().simplify();
             terms = ast.flatten(o, '+');
             a_terms = {};
             b_terms = {};
@@ -1055,7 +1110,7 @@ classdef ast
             b = ast.sum_of(b_terms).simplify();
         end % function
 
-        function [ok, cp, p, cq, q] = split_binomial_power(o, x)
+        function [ok, cp, p, cq, q] = split_binomial_power(o, x, assume_canonical)
         % Recognise o = cp·x^p + cq·x^q with p, q distinct exponents independent of x
         % and NO x-free term (same-exponent terms are grouped). Returns ok=false
         % otherwise. The closed form for o = 0 is x = (-cq/cp)^(1/(p-q)).
@@ -1067,8 +1122,18 @@ classdef ast
         %   variable solvable, it is used as a LAST RESORT by iterated_elimination and
         %   by isolate only when allow_binomial is set, so it does not skew the greedy
         %   elimination order towards a high-gain-but-unhelpful variable.
+        % - assume_canonical (optional, default false): when true, o is asserted to
+        %   already be canonicalise().simplify() output and the internal normalisation
+        %   is skipped (see is_linear_in / split_call_terms for the contract).
+            arguments
+                o
+                x
+                assume_canonical (1,1) logical = false
+            end
             ok = false; cp = []; p = []; cq = []; q = [];
-            o = o.canonicalise().simplify();
+            if ~assume_canonical
+                o = o.canonicalise().simplify();
+            end
             terms = ast.flatten(o, '+');
             exps = {}; coefs = {};
             for i = 1:numel(terms)
@@ -1204,9 +1269,9 @@ classdef ast
                 return
             end
 
-            % Linear recogniser
-            if o.is_linear_in(x)
-                [a, b] = o.split_linear(x);
+            % Linear recogniser (o was normalised at entry: pass assume_canonical)
+            if o.is_linear_in(x, true)
+                [a, b] = o.split_linear(x, true);
                 if ~(strcmp(a.type, 'num') && a.value == 0)
                     rhs = ast.neg_div(b, a).simplify();
                     info.coefs = {a};
@@ -1214,9 +1279,9 @@ classdef ast
                 end
             end
 
-            % Monomial recogniser
-            if o.is_monomial_in(x)
-                [a, d, b] = o.split_monomial(x);
+            % Monomial recogniser (o was normalised at entry: pass assume_canonical)
+            if o.is_monomial_in(x, true)
+                [a, d, b] = o.split_monomial(x, true);
                 if ~(strcmp(a.type, 'num') && a.value == 0)
                     base = ast.neg_div(b, a).simplify();
                     if ast.is_zero(base)
@@ -1244,7 +1309,7 @@ classdef ast
             % -cq/cp → x = (-cq/cp)^(1/(p-q)). Gated so it never pre-empts a cheaper
             % isolate elsewhere in a greedy elimination (see iterated_elimination).
             if allow_binomial
-                [okb, cp, p, cq, q] = o.split_binomial_power(x);
+                [okb, cp, p, cq, q] = o.split_binomial_power(x, true);
                 if okb && ~(strcmp(cp.type, 'num') && cp.value == 0)
                     base = ast.neg_div(cq, cp).simplify();
                     dexp = ast('binop', '-', {p, q}).simplify();
@@ -3318,6 +3383,10 @@ classdef ast
                                 % base is itself monomial in x with NO x-free term,
                                 % base = cb·x^db, so base^exp = cb^exp · x^(db·exp).
                                 [ok_b, cb, db] = ast.extract_monomial(base, x);
+                                % Default (normalising) recogniser forms on purpose:
+                                % the term comes from ast.flatten, which synthesises
+                                % new nodes, so the already-normalised guarantee that
+                                % would justify assume_canonical does not hold here.
                                 if ~ok_b && base.is_monomial_in(x)
                                     [cb, db, bconst] = base.split_monomial(x);
                                     ok_b = ast.is_zero(bconst.simplify());
