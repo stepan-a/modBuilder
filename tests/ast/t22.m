@@ -66,4 +66,16 @@ assert(~isempty(rhs) && isscalar(info.coefs),      'the linear recogniser must e
 assert(abs(info.coefs{1}.eval(struct('R', 1))) < 1e-14, 'the coefficient must evaluate to 0 at R = 1');
 assert(abs(info.coefs{1}.eval(struct('R', 0.5)) - 0.5) < 1e-14, 'the coefficient must evaluate to 1-R off the knife edge');
 
+% The binomial-power recogniser groups exponents up to rational equality: two
+% structurally different writings of the same exponent form ONE class, so a sum
+% that is mathematically a two-power binomial closes even when the substitution
+% chains disguised it as three powers.
+r = ast('2*x^(alpha/(alpha+phi) + sigma) + 3*x^((alpha + sigma*(alpha+phi))/(alpha+phi)) - w*x');
+rhs = r.isolate('x');
+assert(~isempty(rhs), 'disguised two-power binomial must close');
+vals = struct('alpha', 0.3, 'phi', 1.5, 'sigma', 2, 'w', 4);
+xv = rhs.eval(vals);
+E = vals.alpha/(vals.alpha+vals.phi) + vals.sigma;
+assert(abs(2*xv^E + 3*xv^E - vals.w*xv) < 1e-9, 'the recovered root must solve the disguised binomial');
+
 fprintf('t22.m: invertible-call recogniser + isolate OK\n');

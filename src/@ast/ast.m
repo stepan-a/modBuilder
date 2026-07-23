@@ -1045,7 +1045,10 @@ classdef ast
                 end
                 pos = 0;
                 for j = 1:numel(exps)
-                    if ast.ast_equal(exps{j}, d), pos = j; break; end
+                    % same_power, not plain structural equality: substitution chains
+                    % write the same rational exponent in different shapes, and the
+                    % two-power structure only appears once they are grouped.
+                    if ast.same_power(exps{j}, d), pos = j; break; end
                 end
                 if pos == 0
                     exps{end+1} = d; coefs{end+1} = c; %#ok<AGROW>
@@ -3055,7 +3058,18 @@ classdef ast
                             end
                             f = f0;
                             if use_expand
-                                if ast.node_count(f0) > 512
+                                % The size gate is relaxed on the TERMINAL round (one
+                                % unknown left): closing that residual ends the whole
+                                % elimination, so one large expansion is worth paying —
+                                % it is what collects the substituted world resource
+                                % constraint into the two-power binomial that pins the
+                                % last consumption.
+                                if numel(unknowns) == 1
+                                    expand_cap = 4096;
+                                else
+                                    expand_cap = 512;
+                                end
+                                if ast.node_count(f0) > expand_cap
                                     continue
                                 end
                                 if isempty(fexp)
@@ -3266,6 +3280,43 @@ classdef ast
                                     [cb, db, bconst] = base.split_monomial(x);
                                     ok_b = ast.is_zero(bconst.simplify());
                                 end
+                                if ~ok_b && strcmp(base.type, 'binop') && (strcmp(base.value, '+') || strcmp(base.value, '-'))
+                                    % A sum base whose every term is a monomial of x
+                                    % with the SAME net exponent — up to rational
+                                    % equality (same_power): substitution chains write
+                                    % one exponent in several shapes — is itself a
+                                    % monomial, sum(c_i)·x^E, so base^exp collects
+                                    % after all. This is how the world resource
+                                    % constraint's (sum)^(-sigma) term of a two-country
+                                    % model becomes extractable.
+                                    bterms = ast.flatten(base, '+');
+                                    bcoefs = {};
+                                    bd = [];
+                                    ok_sum = true;
+                                    for bi = 1:numel(bterms)
+                                        if ast.count_occurrences(bterms{bi}, x) == 0
+                                            ok_sum = false;
+                                            break
+                                        end
+                                        [ok_t, ct, dt] = ast.extract_monomial(bterms{bi}, x);
+                                        if ~ok_t
+                                            ok_sum = false;
+                                            break
+                                        end
+                                        if isempty(bd)
+                                            bd = dt;
+                                        elseif ~ast.same_power(bd, dt)
+                                            ok_sum = false;
+                                            break
+                                        end
+                                        bcoefs{end+1} = ct; %#ok<AGROW>
+                                    end
+                                    if ok_sum && ~isempty(bcoefs)
+                                        cb = ast.sum_of(bcoefs);
+                                        db = bd;
+                                        ok_b = true;
+                                    end
+                                end
                                 if ok_b
                                     coef = ast('binop', '^', {cb, exp_node});
                                     d = ast('binop', '*', {db, exp_node});
@@ -3385,14 +3436,57 @@ classdef ast
         end % function
 
         function tf = same_power(a, b)
-        % Compare two net-power trees produced by check_factor: numerically when both
-        % are numeric leaves (the common case), through the simplified symbolic
-        % difference otherwise.
+        % Decide whether two exponent trees denote the same function of their symbols.
+        %
+        % Substitution chains write the same rational exponent in structurally
+        % different ways (alpha/(alpha+phi) assembled through different routes), so
+        % structural comparison under-groups: the world resource constraint of a
+        % two-country model looks like six distinct powers of consumption when it is
+        % a two-power binomial. Tiered decision:
+        %   (i)   numeric leaves compare directly;
+        %   (ii)  structural equality;
+        %   (iii) a numeric probe at deterministic positive points — disagreement
+        %         PROVES inequality (the common case) for the price of two
+        %         evaluations, and gates the expensive tier on the pairs worth it;
+        %   (iv)  exact confirmation: the difference, simplified, then denominators
+        %         cleared, expanded and re-simplified, must collapse to zero.
+        % The probe never decides equality on its own — a false grouping would
+        % fabricate wrong closed forms — so the predicate is incomplete (no
+        % polynomial gcd) but never wrong.
             if strcmp(a.type, 'num') && strcmp(b.type, 'num')
                 tf = a.value == b.value;
-            else
-                tf = ast.is_zero(ast('binop', '-', {a, b}).simplify());
+                return
             end
+            if ast.ast_equal(a, b)
+                tf = true;
+                return
+            end
+            syms = unique([a.symbol_names(), b.symbol_names()]);
+            for spacing = [0.05, 0.13]
+                vals = struct();
+                for i = 1:numel(syms)
+                    vals.(syms{i}) = 1 + spacing * i;
+                end
+                try
+                    va = a.eval(vals);
+                    vb = b.eval(vals);
+                    if isfinite(va) && isfinite(vb) && abs(va - vb) > 1e-9 * max(1, max(abs(va), abs(vb)))
+                        tf = false;
+                        return
+                    end
+                catch
+                    break
+                end
+            end
+            d = ast('binop', '-', {a, b}).simplify();
+            if ast.is_zero(d)
+                tf = true;
+                return
+            end
+            if ast.node_count(d) <= 256
+                d = d.clear_denominators().expand().simplify();
+            end
+            tf = ast.is_zero(d);
         end % function
 
         function [ok, fname, P, coef, rest, unit_root] = split_call_terms(o, x)

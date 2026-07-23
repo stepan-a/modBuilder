@@ -60,6 +60,15 @@ assert(has && cancels, 'c^(-sigma) factors out of the static Euler condition');
 [has, cancels] = ast('chi*h^phi - (1-alpha)*(y/h)*c^(-sigma)').staticise().check_factor('h');
 assert(has && ~cancels, 'mixed powers of h must not report a common factor');
 
+% same_power sees through structurally different writings of the same rational
+% exponent (numeric probe to discard the unequal, exact confirmation on the
+% cleared difference to admit the equal) without ever guessing.
+e1 = ast('alpha/(alpha+phi) + sigma').simplify();
+e2 = ast('(alpha + sigma*(alpha+phi))/(alpha+phi)').simplify();
+assert( ast.same_power(e1, e2), 'two writings of the same rational exponent must compare equal');
+e3 = ast('alpha/(alpha+phi) + sigma + 1/1000').simplify();
+assert(~ast.same_power(e1, e3), 'a nearby but different exponent must compare unequal');
+
 % STEADY_STATE(x) is not the same as x: variable does not match
 [has, cancels] = ast('STEADY_STATE(x) + alpha').check_factor('x');
 assert(~has && ~cancels, 'STEADY_STATE(x) does not match dynamic x');
