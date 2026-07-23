@@ -31,7 +31,7 @@ assert(~ismember('h', allvars), 'calibrated h must be a known constant, not a bl
 
 % The same non-local swap is rejected by the declaration-pairing path.
 threw = false;
-try, m.steady_plan(); catch e, threw = strcmp(e.identifier, 'modBuilder:steady_plan'); end
+try, m.steady_plan(); catch e, threw = strcmp(e.identifier, 'modBuilder:steady_plan:nonLocalSwap'); end
 assert(threw, 'a non-local swap must be rejected without Match');
 
 fprintf('steady-plan/t27: non-local calibration swap triangularises under Match\n');
