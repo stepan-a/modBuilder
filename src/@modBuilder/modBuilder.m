@@ -1865,6 +1865,26 @@ classdef modBuilder < handle
             warning(varargin{:});
         end % function
 
+        function rethrow_unless(err, prefixes)
+        % Rethrow err unless its identifier starts with one of the given prefixes.
+        %
+        % INPUTS:
+        % - err       [MException]   exception caught by the caller
+        % - prefixes  [cell]         identifier prefixes marking expected failures
+        %
+        % REMARKS:
+        % - Guard for the try/catch fences around the symbolic-closure machinery
+        %   and the calibration/anchor trial loops: deliberate refusals carry
+        %   structured identifiers (ast:* from the recognisers and the evaluator,
+        %   modBuilder:* from the trial validation) and are ordinary control flow
+        %   for those callers. Anything else is a programming error: swallowing it
+        %   would silently degrade steady-state plans to "no closed form" and hide
+        %   regressions from the test suite.
+            if ~any(cellfun(@(p) strncmp(err.identifier, p, numel(p)), prefixes))
+                rethrow(err)
+            end
+        end % function
+
         function check_knife_edge(coefs, values, eqname, vname)
         % Warn when one of the pinning coefficients collected by ast.isolate
         % evaluates to a numerical zero at the calibration: the closed form is
@@ -1890,7 +1910,8 @@ classdef modBuilder < handle
                 c = coefs{k};
                 try
                     v = c.eval(values);
-                catch
+                catch err
+                    modBuilder.rethrow_unless(err, {'ast:'});
                     continue
                 end
                 if ~(isnumeric(v) && isscalar(v) && isfinite(v) && isreal(v))
@@ -1904,7 +1925,8 @@ classdef modBuilder < handle
                         s = s + abs(terms{tt}.eval(values));
                     end
                     scale = max(1, s);
-                catch
+                catch err
+                    modBuilder.rethrow_unless(err, {'ast:'});
                 end
                 if abs(v) <= 1e-9 * scale
                     modBuilder.warn_silent('modBuilder:steady_plan:calibrationUnitRoot', 'Equation "%s" pins %s only on a knife edge: the coefficient %s evaluates to %.3g at the calibration, so its closed form divides by a numerical zero -- a unit root at this calibration. Fix the level of %s by other means or move the calibration off the knife edge.', eqname, vname, c.string(), v, vname);
@@ -2431,7 +2453,8 @@ classdef modBuilder < handle
                             break
                         end
                     end
-                catch
+                catch err
+                    modBuilder.rethrow_unless(err, {'ast:'});
                     okhom = true;
                 end
                 if okhom
@@ -7599,7 +7622,8 @@ classdef modBuilder < handle
                             try
                                 dv = ast.symbolic_det(A_mat).eval(calib_values);
                                 regular = isfinite(dv) && abs(dv) > 1e-9;
-                            catch
+                            catch err
+                                modBuilder.rethrow_unless(err, {'ast:'});
                             end
                             if regular
                                 scale_free = false;
@@ -7649,7 +7673,8 @@ classdef modBuilder < handle
                                     if isnumeric(dv) && isscalar(dv) && isfinite(dv) && isreal(dv) && abs(dv) <= 1e-9 * max(1, ma^n_var)
                                         modBuilder.warn_silent('modBuilder:steady_plan:calibrationUnitRoot', 'The block {%s} is singular at the calibration: its determinant evaluates to %.3g, so the levels are jointly undetermined -- a unit root at this calibration. Fix one level or move the calibration off the knife edge.', strjoin(vars_block, ', '), dv);
                                     end
-                                catch
+                                catch err
+                                    modBuilder.rethrow_unless(err, {'ast:'});
                                 end
                             end
                         end
@@ -7705,10 +7730,11 @@ classdef modBuilder < handle
                                 cf = cf_ratio;
                             end
                         end
-                      catch
+                      catch err
                         % A block whose closed form cannot be derived (e.g. an AST shape
                         % the linear / elimination recognisers do not support) stays
                         % reported as simultaneous with no closed form, for a numerical solve.
+                        modBuilder.rethrow_unless(err, {'ast:'});
                         cf = struct('var', {}, 'expr', {});
                       end
                     end
@@ -7751,7 +7777,8 @@ classdef modBuilder < handle
                         if isnumeric(vv) && isscalar(vv) && isfinite(vv) && isreal(vv)
                             calib_values.(cf(jj).var) = vv;
                         end
-                    catch
+                    catch err
+                        modBuilder.rethrow_unless(err, {'ast:'});
                     end
                 end
             end
@@ -7881,7 +7908,8 @@ classdef modBuilder < handle
                                         gv = hit{gg};
                                         try
                                             rhs_g = r.isolate(gv);
-                                        catch
+                                        catch err
+                                            modBuilder.rethrow_unless(err, {'ast:'});
                                             rhs_g = [];
                                         end
                                         if isempty(rhs_g), continue, end
@@ -7962,7 +7990,8 @@ classdef modBuilder < handle
                                 all_res = [resid2, cons2];
                                 try
                                     [elim_cf, closed_all] = modBuilder.rematch_eliminate(all_res, unknowns2, param_names);
-                                catch
+                                catch err
+                                    modBuilder.rethrow_unless(err, {'ast:'});
                                     elim_cf = struct('var', {}, 'expr', {}); closed_all = false;
                                 end
                                 if ~closed_all, continue, end
@@ -8030,7 +8059,8 @@ classdef modBuilder < handle
                         if ~okres, continue, end
                         try
                             cf_ratio = modBuilder.ratio_parametrise(residuals, vars_block, param_names, g, calib_values);
-                        catch
+                        catch err
+                            modBuilder.rethrow_unless(err, {'ast:'});
                             cf_ratio = struct('var', {}, 'expr', {});
                         end
                         used_ratio = numel(cf_ratio) == numel(vars_block) - 1;
@@ -8105,7 +8135,8 @@ classdef modBuilder < handle
                             end
                             try
                                 rhs_g = r.isolate(g);
-                            catch
+                            catch err
+                                modBuilder.rethrow_unless(err, {'ast:'});
                                 rhs_g = [];
                             end
                             if isempty(rhs_g), continue, end
@@ -8210,7 +8241,8 @@ classdef modBuilder < handle
                         try
                             m_copy.calibrate(endo, target, p);
                             new_blocks = m_copy.steady_plan();
-                        catch
+                        catch err
+                            modBuilder.rethrow_unless(err, {'ast:', 'modBuilder:'});
                             continue
                         end
                         new_total = modBuilder.total_residual_count(new_blocks);
@@ -8330,7 +8362,8 @@ classdef modBuilder < handle
                     anchors = [options.Keep, candidates(~ismember(candidates, trial_drop))];
                     try
                         [nres, ~] = modBuilder.anchor_residual(o, anchors, trial_drop, options.PropagateKnown);
-                    catch
+                    catch err
+                        modBuilder.rethrow_unless(err, {'ast:', 'modBuilder:'});
                         continue
                     end
                     if nres <= current
