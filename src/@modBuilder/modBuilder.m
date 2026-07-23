@@ -2499,22 +2499,34 @@ classdef modBuilder < handle
                 % Translate back: inline the auxiliary ratio names, emit the gauge, then
                 % each original variable as ratio*gauge.
                 names = {elim.var}; exprs = {elim.expr};
+                % Hoist the loop-invariant name -> position lookups, guard each
+                % substitution on membership (refreshed after a hit, since inlining a
+                % ratio expression can introduce other ratio names the unconditional
+                % loop would have substituted later), and stop after an identity pass.
+                ridx = zeros(1, numel(rnames));
+                for i = 1:numel(rnames)
+                    pos = find(strcmp(names, rnames{i}), 1);
+                    if ~isempty(pos), ridx(i) = pos; end
+                end
                 for pass = 1:nb
+                    any_hit = false;
                     for a = 1:numel(exprs)
+                        syms_a = exprs{a}.symbol_names();
                         for i = 1:numel(rnames)
-                            ri = find(strcmp(names, rnames{i}), 1);
-                            if ~isempty(ri)
-                                exprs{a} = exprs{a}.substitute(rnames{i}, exprs{ri}, param_names);
+                            if ridx(i) && ismember(rnames{i}, syms_a)
+                                exprs{a} = exprs{a}.substitute(rnames{i}, exprs{ridx(i)}, param_names);
+                                syms_a = exprs{a}.symbol_names();
+                                any_hit = true;
                             end
                         end
                     end
+                    if ~any_hit, break, end
                 end
                 gi = find(strcmp(names, gauge), 1);
                 cf(1).var = gauge; cf(1).expr = exprs{gi}.simplify().string();
                 for i = 1:numel(others)
-                    ri = find(strcmp(names, rnames{i}), 1);
                     cf(end+1).var = others{i}; %#ok<AGROW>
-                    cf(end).expr = sprintf('(%s)*%s', exprs{ri}.simplify().string(), gauge);
+                    cf(end).expr = sprintf('(%s)*%s', exprs{ridx(i)}.simplify().string(), gauge);
                 end
                 return
             end
@@ -2601,20 +2613,32 @@ classdef modBuilder < handle
             names = {elim.var}; exprs = {elim.expr};
             % Validation on the fully inlined chain: every ratio must close and be
             % free of the gauge (otherwise the block is not scale-free in this gauge).
+            % Loop-invariant name -> position lookups hoisted; each substitution is
+            % guarded on membership (refreshed after a hit, since inlining can
+            % introduce other ratio names) and the pass loop stops once a full pass
+            % changes nothing.
+            ridx = zeros(1, numel(rnames));
+            for i = 1:numel(rnames)
+                pos = find(strcmp(names, rnames{i}), 1);
+                if ~isempty(pos), ridx(i) = pos; end
+            end
             inlined = exprs;
             for pass = 1:numel(rnames)
+                any_hit = false;
                 for a = 1:numel(inlined)
+                    syms_a = inlined{a}.symbol_names();
                     for i = 1:numel(rnames)
-                        ri = find(strcmp(names, rnames{i}), 1);
-                        if ~isempty(ri)
-                            inlined{a} = inlined{a}.substitute(rnames{i}, inlined{ri}, param_names);
+                        if ridx(i) && ismember(rnames{i}, syms_a)
+                            inlined{a} = inlined{a}.substitute(rnames{i}, inlined{ridx(i)}, param_names);
+                            syms_a = inlined{a}.symbol_names();
+                            any_hit = true;
                         end
                     end
                 end
+                if ~any_hit, break, end
             end
             for i = 1:numel(others)
-                ri = find(strcmp(names, rnames{i}), 1);
-                if isempty(ri) || ismember(gauge, inlined{ri}.simplify().symbol_names())
+                if ~ridx(i) || ismember(gauge, inlined{ridx(i)}.simplify().symbol_names())
                     cf = struct('var', {}, 'expr', {});
                     return
                 end
@@ -2626,8 +2650,12 @@ classdef modBuilder < handle
             for a = 1:numel(names)
                 oi = find(strcmp(rnames, names{a}), 1);
                 e = exprs{a};
+                syms_e = e.symbol_names();
                 for i = 1:numel(rnames)
-                    e = e.substitute(rnames{i}, ast(sprintf('%s/%s', others{i}, gauge)), param_names);
+                    if ismember(rnames{i}, syms_e)
+                        e = e.substitute(rnames{i}, ast(sprintf('%s/%s', others{i}, gauge)), param_names);
+                        syms_e = e.symbol_names();
+                    end
                 end
                 full = ast('binop', '*', {e, gauge_ref}).simplify();
                 cf(end+1).var = others{oi}; %#ok<AGROW>
@@ -2952,10 +2980,21 @@ classdef modBuilder < handle
                 unmatched_vars = candidates(:);
                 return
             end
+            % symbol_names prefilter: its reach (sym + tsym + ss) is a superset of
+            % check_factor's has-reach (sym + tsym), so a candidate absent from the
+            % name set cannot have has=true — n cheap walks replace n×m structural
+            % check_factor probes on the pairs that cannot match.
+            eqnames_set = cell(n, 1);
+            for i = 1:n
+                eqnames_set{i} = eqasts{i}.symbol_names();
+            end
             contains_eq = false(n, m);
             for j = 1:m
                 v = candidates{j};
                 for i = 1:n
+                    if ~any(strcmp(v, eqnames_set{i}))
+                        continue
+                    end
                     [has, cancels] = eqasts{i}.check_factor(v);
                     if has && ~cancels
                         contains_eq(i, j) = true;
