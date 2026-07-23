@@ -5982,6 +5982,7 @@ classdef modBuilder < handle
             p.tags = o.tags;
             p.tables_dirty = o.tables_dirty;
             p.symbol_map = o.symbol_map;
+            p.symbol_map_dirty = o.symbol_map_dirty;
         end % function
 
         function b = eq(o, p)
