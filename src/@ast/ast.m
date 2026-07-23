@@ -235,36 +235,42 @@ classdef ast
             end
         end % function
 
-        function o = staticise(o)
+        function [o, changed] = staticise(o)
         % Collapse all time subscripts to plain symbols (static version of the equation).
         %
         % INPUTS:
-        % - o   [ast]   tree to staticise
+        % - o        [ast]      tree to staticise
         %
         % OUTPUTS:
-        % - o   [ast]   same tree with every 'tsym' node replaced by a 'sym' node carrying
-        %               the same name (the lag is dropped)
+        % - o        [ast]      same tree with every 'tsym' node replaced by a 'sym' node
+        %                       carrying the same name (the lag is dropped)
+        % - changed  [logical]  true iff any node was rewritten; when false the tree is
+        %                       byte-identical to the input and its skey/canon caches are
+        %                       preserved instead of being invalidated
         %
         % REMARKS:
         % - Used to obtain the static version of a dynamic equation before checking whether
         %   a candidate endogenous variable cancels out (see check_factor).
         % - Other node types ('num', 'sym', 'ss', 'call', 'binop', 'uminus') are recursed
         %   into but otherwise unchanged.
+            changed = false;
             if strcmp(o.type, 'tsym')
                 % tsym is the only leaf that knows about time; replace it with
                 % a plain sym carrying the same name, dropping the lag.
                 o = ast('sym', o.value{1}, {});
+                changed = true;
             else
                 % Other leaves have no children to recurse into (loop is a no-op);
                 % internal nodes propagate the transformation to every child.
                 for i = 1:numel(o.children)
-                    o.children{i} = o.children{i}.staticise();
+                    [o.children{i}, ci] = o.children{i}.staticise();
+                    changed = changed || ci;
                 end
-                if ~isempty(o.children), o.skey = ast.build_key(o); o.canon = false; end
+                if changed, o.skey = ast.build_key(o); o.canon = false; end
             end
         end % function
 
-        function o = substitute(o, target_name, replacement, parameter_names)
+        function [o, changed] = substitute(o, target_name, replacement, parameter_names)
         % Replace every occurrence of a symbol by an AST subtree, lag-aware.
         %
         % INPUTS:
@@ -280,6 +286,9 @@ classdef ast
         %
         % OUTPUTS:
         % - o                [ast]        new tree with the substitution applied
+        % - changed          [logical]    true iff any match was inlined; when false the
+        %                                 tree is byte-identical to the input and its
+        %                                 skey/canon caches are preserved
         %
         % REMARKS:
         % - Matches both 'sym' and 'tsym' nodes carrying target_name. The match is
@@ -293,14 +302,17 @@ classdef ast
         %   lag before being inlined: substituting mc by w/mpl into pi - beta*mc(-1)
         %   produces pi - beta*(w(-1)/mpl(-1)). Names listed in parameter_names are
         %   skipped (kept time-invariant), and 'num' / 'ss' leaves are never shifted.
-        % - 'ss' nodes (STEADY_STATE) in the host tree are leaves and are left
-        %   untouched: the dynamic variable name they carry is not a substitution target.
+        % - 'ss' nodes (STEADY_STATE) carry an expression child that IS recursed into:
+        %   substituting x rewrites STEADY_STATE(x) as well. symbol_names shares this
+        %   reach, which is why it (and not count_occurrences, which treats ss as
+        %   opaque) must be used to pre-filter substitution call sites.
             arguments
                 o
                 target_name
                 replacement
                 parameter_names = {}
             end
+            changed = false;
             if ischar(replacement) || isstring(replacement)
                 replacement = ast(char(replacement));
             end
@@ -309,24 +321,27 @@ classdef ast
                     if strcmp(o.value, target_name)
                         % Lag 0: inline the replacement as-is.
                         o = replacement;
+                        changed = true;
                     end
                 case 'tsym'
                     if strcmp(o.value{1}, target_name)
                         % Shift the replacement by this match's lag, leaving any
                         % parameter (and num / ss) inside it time-invariant.
                         o = replacement.shift_lag(o.value{2}, parameter_names);
+                        changed = true;
                     end
                 otherwise
-                    % All other node types either have no children (num, ss) — loop is
-                    % a no-op — or carry expression children we recurse into.
+                    % 'num' has no children (loop is a no-op); 'ss' and the other
+                    % compound node types carry expression children we recurse into.
                     for i = 1:numel(o.children)
-                        o.children{i} = o.children{i}.substitute(target_name, replacement, parameter_names);
+                        [o.children{i}, ci] = o.children{i}.substitute(target_name, replacement, parameter_names);
+                        changed = changed || ci;
                     end
-                    if ~isempty(o.children), o.skey = ast.build_key(o); o.canon = false; end
+                    if changed, o.skey = ast.build_key(o); o.canon = false; end
             end
         end % function
 
-        function o = shift_lag(o, k, parameter_names)
+        function [o, changed] = shift_lag(o, k, parameter_names)
         % Shift every time-varying variable's lag by k.
         %
         % INPUTS:
@@ -338,6 +353,8 @@ classdef ast
         %
         % OUTPUTS:
         % - o                [ast]      new tree with every sym/tsym variable shifted by k
+        % - changed          [logical]  true iff any node was rewritten; when false the
+        %                               skey/canon caches are preserved
         %
         % REMARKS:
         % - 'num' and 'ss' leaves are time-invariant and never shifted.
@@ -352,6 +369,7 @@ classdef ast
                 k
                 parameter_names = {}
             end
+            changed = false;
             if k == 0
                 return
             end
@@ -361,6 +379,7 @@ classdef ast
                 case 'sym'
                     if ~ismember(o.value, parameter_names)
                         o = ast('tsym', {o.value, k}, {});
+                        changed = true;
                     end
                 case 'tsym'
                     if ~ismember(o.value{1}, parameter_names)
@@ -372,14 +391,16 @@ classdef ast
                         else
                             o = ast('tsym', {o.value{1}, new_lag}, {});
                         end
+                        changed = true;
                     end
                 case 'ss'
                     % steady-state values are time-invariant
                 otherwise
                     for i = 1:numel(o.children)
-                        o.children{i} = o.children{i}.shift_lag(k, parameter_names);
+                        [o.children{i}, ci] = o.children{i}.shift_lag(k, parameter_names);
+                        changed = changed || ci;
                     end
-                    if ~isempty(o.children), o.skey = ast.build_key(o); o.canon = false; end
+                    if changed, o.skey = ast.build_key(o); o.canon = false; end
             end
         end % function
 
@@ -533,7 +554,7 @@ classdef ast
             o = ast.replace_subtree_helper(o, target, replacement);
         end % function
 
-        function o = rename(o, oldname, newname)
+        function [o, changed] = rename(o, oldname, newname)
         % Rename every reference to a symbol, preserving lag for tsym and the
         % steady-state operator wrapping for ss.
         %
@@ -543,7 +564,9 @@ classdef ast
         % - newname    [char]   1×m array, replacement name
         %
         % OUTPUTS:
-        % - o          [ast]    new tree with every matching leaf renamed
+        % - o          [ast]      new tree with every matching leaf renamed
+        % - changed    [logical]  true iff any leaf matched; when false the skey/canon
+        %                         caches are preserved
         %
         % REMARKS:
         % - Matches 'sym' (sym(oldname) → sym(newname)), 'tsym' (the lag is
@@ -554,26 +577,30 @@ classdef ast
         %   rename only swaps a name and is the right tool when the user wants
         %   to relabel a variable everywhere it appears.
         % - Function-call names (e.g. 'exp', 'log') are not touched.
+            changed = false;
             switch o.type
                 case 'sym'
                     if strcmp(o.value, oldname)
                         o = ast('sym', newname, {});
+                        changed = true;
                     end
                 case 'tsym'
                     if strcmp(o.value{1}, oldname)
                         o = ast('tsym', {newname, o.value{2}}, {});
+                        changed = true;
                     end
                 otherwise
                     % 'ss' falls here too: rename recurses into the STEADY_STATE(...)
                     % child, so STEADY_STATE(oldname) → STEADY_STATE(newname).
                     for i = 1:numel(o.children)
-                        o.children{i} = o.children{i}.rename(oldname, newname);
+                        [o.children{i}, ci] = o.children{i}.rename(oldname, newname);
+                        changed = changed || ci;
                     end
-                    if ~isempty(o.children), o.skey = ast.build_key(o); o.canon = false; end
+                    if changed, o.skey = ast.build_key(o); o.canon = false; end
             end
         end % function
 
-        function o = at_steady_state(o, names)
+        function [o, changed] = at_steady_state(o, names)
         % Replace every variable leaf whose name is in `names` with its steady-state node, so the
         % tree renders with the ^{\star} superscript (and powers of it via to_latex's invisible
         % delimiters). Both 'sym' (current period) and 'tsym' (any lead/lag) collapse to the same
@@ -585,42 +612,52 @@ classdef ast
         % - names  [cell]   variable names to mark as steady state
         %
         % OUTPUTS:
-        % - o      [ast]    new tree with the matching leaves turned into 'ss' nodes
+        % - o        [ast]      new tree with the matching leaves turned into 'ss' nodes
+        % - changed  [logical]  true iff any leaf matched; when false the skey/canon
+        %                       caches are preserved
+            changed = false;
             switch o.type
                 case 'sym'
                     if ismember(o.value, names)
                         o = ast('ss', [], {ast('sym', o.value, {})});
+                        changed = true;
                     end
                 case 'tsym'
                     if ismember(o.value{1}, names)
                         % Drop the lag: at the steady state x(-k) = x.
                         o = ast('ss', [], {ast('sym', o.value{1}, {})});
+                        changed = true;
                     end
                 case {'num', 'ss'}
                     % num is a leaf; an existing 'ss' is already at the steady state,
                     % so it is left untouched (no double STEADY_STATE(STEADY_STATE(·))).
                 otherwise
                     for i = 1:numel(o.children)
-                        o.children{i} = o.children{i}.at_steady_state(names);
+                        [o.children{i}, ci] = o.children{i}.at_steady_state(names);
+                        changed = changed || ci;
                     end
-                    if ~isempty(o.children), o.skey = ast.build_key(o); o.canon = false; end
+                    if changed, o.skey = ast.build_key(o); o.canon = false; end
             end
         end % function
 
-        function o = strip_ss(o)
+        function [o, changed] = strip_ss(o)
         % Replace every STEADY_STATE(expr) node by its argument expression. At the
         % steady state the operator is the identity, and the stripped tree prints as
         % plain MATLAB — string() would otherwise emit STEADY_STATE(...), which is
         % not a callable function. Used by the steady-state block helpers generated
         % by modBuilder.apply_steady_plan, whose residuals are evaluated at the
-        % steady state by construction.
+        % steady state by construction. The second output is true iff any node was
+        % stripped; when false the skey/canon caches are preserved.
             if strcmp(o.type, 'ss')
                 o = o.children{1}.strip_ss();
+                changed = true;
             else
+                changed = false;
                 for i = 1:numel(o.children)
-                    o.children{i} = o.children{i}.strip_ss();
+                    [o.children{i}, ci] = o.children{i}.strip_ss();
+                    changed = changed || ci;
                 end
-                if ~isempty(o.children), o.skey = ast.build_key(o); o.canon = false; end
+                if changed, o.skey = ast.build_key(o); o.canon = false; end
             end
         end % function
 
@@ -2108,17 +2145,22 @@ classdef ast
             end
         end % function
 
-        function o = replace_subtree_helper(o, target, replacement)
+        function [o, changed] = replace_subtree_helper(o, target, replacement)
         % Recursive walk used by replace_subtree; assumes target and o are already
         % in canonical form so that ast.ast_equal captures commutative equivalence.
+        % The second output is true iff a match was replaced; when false the
+        % skey/canon caches are preserved.
             if ast.ast_equal(o, target)
                 o = replacement;
+                changed = true;
                 return
             end
+            changed = false;
             for i = 1:numel(o.children)
-                o.children{i} = ast.replace_subtree_helper(o.children{i}, target, replacement);
+                [o.children{i}, ci] = ast.replace_subtree_helper(o.children{i}, target, replacement);
+                changed = changed || ci;
             end
-            if ~isempty(o.children), o.skey = ast.build_key(o); o.canon = false; end
+            if changed, o.skey = ast.build_key(o); o.canon = false; end
         end % function
 
         function operands = flatten(o, op)
