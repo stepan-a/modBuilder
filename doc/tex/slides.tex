@@ -152,7 +152,7 @@
 
 \title{modBuilder}
 \author[]{\texttt{stephane.adjemian@univ-lemans.fr}}
-\date{May,  2026}
+\date{July,  2026}
 
 \begin{frame}
   \titlepage{}
@@ -173,9 +173,10 @@
   \item Facilitates consistency checks, error detection, and modular
     model development.\newline
 
-  \item Also provides tools for computing the steady state.\newline
+  \item Also provides tools for computing the steady state: solving equations
+    one at a time, or deriving the whole steady state structurally.\newline
 
-  \item Export the model to a \verb+.mod+ file ready to run.\newline
+  \item Export the model to a \verb+.mod+ file ready to run, or to LaTeX.\newline
 
   \item Code available in a public \href{https://git.dynare.org/stepan-a/modbuilder}{Git repository} (not part of Dynare).
 
@@ -620,6 +621,468 @@ style=Matlab-editor
   numbers=left,
   style=Matlab-editor
   ]{../models/rbc13.m}}
+
+\end{frame}
+
+
+%==============================================================================
+% Steady state: declaring the solution
+%==============================================================================
+
+\begin{frame}[c,fragile]
+  \frametitle{Steady state -- declare the solution --}
+
+  \begin{itemize}
+
+  \item The \verb+steady+ method attaches a steady-state expression to an
+    endogenous variable. The expression may reference parameters and the steady
+    state of other variables.\newline
+
+  \item \verb+steady_aux+ declares an intermediate quantity that is not a model
+    variable (a ratio, a scale), \verb+steady_call+ registers a call assigning
+    several variables at once.\newline
+
+  \item \verb+checksteady+ validates the declarations and returns them in
+    dependency order, refusing unknown symbols and circular definitions.\newline
+
+  \item \verb+write+ emits them as a \verb+steady_state_model+ block, so that
+    Dynare runs no numerical solve at all.
+
+  \end{itemize}
+
+  \begin{lstlisting}[style=MatlabConsole]
+
+    >> model.steady('a', '0');
+    >> model.steady('k', 'alpha*y/(1/beta-1+delta)');
+    >> model.write('rbc', steady_state_model=true);
+  \end{lstlisting}
+
+\end{frame}
+
+
+%==============================================================================
+% Steady state: deriving the solution
+%==============================================================================
+
+\begin{frame}[c,fragile]
+  \frametitle{Steady state plan -- the idea --}
+
+  \begin{itemize}
+
+  \item Writing the steady state by hand is the tedious part of building a
+    model. The \verb+steady_plan+ method derives it instead.\newline
+
+  \item Three steps:
+    \begin{itemize}
+    \item[--] pair each equation with the variable it pins, by bipartite
+      matching on the \textbf{static} residuals (option \verb+Match+);
+    \item[--] decompose the dependency graph into strongly connected components,
+      in topological order;
+    \item[--] close each block symbolically: isolation for a single equation,
+      elimination or Cramer for a small simultaneous block.
+    \end{itemize}
+
+  \item What comes out is a \textbf{cascade of closed forms}, in evaluation
+    order, and the list of variables (if any) that resisted.
+
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Steady state plan -- a small model --}
+
+  \lstinputlisting[
+  style=Matlab-editor,
+  firstline=1,
+  lastline=18,
+  basicstyle=\tiny\mlttfamily,
+  frame=none,
+  numbers=left
+  ]{../models/rbc14.m}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Steady state plan -- deriving it --}
+
+  \lstinputlisting[
+  style=Matlab-editor,
+  firstline=1,
+  lastline=10,
+  basicstyle=\scriptsize\mlttfamily,
+  frame=none,
+  numbers=left
+  ]{../models/rbc15.m}
+
+  \medskip
+
+  \begin{itemize}
+
+  \item \verb+PropagateKnown+ inlines what is already known -- here $a=0$ --
+    before the recognisers run.\newline
+
+  \item \verb+calibrate+ swaps a role: hours are fixed at $1/3$, $\theta$
+    becomes an unknown.
+
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Steady state plan -- the plan --}
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\scriptsize]
+Steady-state plan: 5 block(s)
+
+  Block 1 [anchor]
+    vars: a
+    closed form: a = 0
+
+  Block 2 [simultaneous, 2 vars]
+    vars: y, k
+    depends on (already solved): a
+    external constants: h, alpha, delta, beta
+    closed form: k = ((-1 + delta + beta ^ -1) / alpha * h ^ (-(1 - alpha))) ^ ((-1 + alpha) ^ -1)
+    closed form: y = h ^ (1 - alpha) * k ^ alpha
+
+  Block 3 [trivial]
+    vars: i
+    closed form: i = -(-k + k * (1 - delta))
+
+  Block 5 [trivial]
+    vars: theta
+    closed form: theta = y * (1 - alpha) / c * h ^ (-1 - psi)
+  \end{lstlisting}
+
+  $\Rightarrow$ The calibration of $\theta$ consistent with $h^{\star}=1/3$ is
+  derived, not searched for.
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Steady state plan -- options --}
+
+  \begin{itemize}
+
+  \item \verb+Match+ recomputes the equation/variable pairing instead of using
+    the declaration order. A large simultaneous block usually falls apart into
+    singletons.\newline
+
+  \item \verb+Anchors+ lists the variables whose level the modeller fixes -- a
+    normalisation, a scale, a calibration constant. Each anchor frees one
+    equation, which becomes a consistency condition.\newline
+
+  \item \verb+PropagateKnown+ inlines every value already known, including the
+    calibrated levels of the exogenous processes.\newline
+
+  \item \verb+MaxBlockSize+ caps the size of the blocks the symbolic machinery
+    attempts. Elimination cost grows quickly with block size.\newline
+
+  \item \verb+suggest_anchors+ and \verb+suggest_calibrations+ propose the
+    anchors, or the role swaps, that would close what resisted.
+
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Steady state plan -- writing it out --}
+
+  \verb+apply_steady_plan+ turns the plan into steady-state declarations, which
+  \verb+write+ emits as an analytical block:
+
+  \bigskip
+
+  \begin{lstlisting}[language=Dynare,basicstyle=\footnotesize\ttfamily,numbers=none]
+steady_state_model;
+
+	a = 0;
+	h = 0.333333333333333;
+	k = ((-1 + delta + beta ^ -1) / alpha * h ^ (-(1 - alpha))) ^ ((-1 + alpha) ^ -1);
+	y = h ^ (1 - alpha) * k ^ alpha;
+	i = -(-k + k * (1 - delta));
+	c = -(i - y);
+	theta = y * (1 - alpha) / c * h ^ (-1 - psi);
+
+end;
+  \end{lstlisting}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Steady state plan -- blocks that resist --}
+
+  \begin{itemize}
+
+  \item Not every steady state closes in closed form. When an elimination
+    stalls, the plan reports the \textbf{reduced system} -- the open variables
+    and their residuals, with every closed form substituted in.\newline
+
+  \item \verb+apply_steady_plan(GenerateHelpers=true)+ then writes that system
+    to a self-contained MATLAB routine, called from the
+    \verb+steady_state_model+ block: analytic prologue, small numerical solve,
+    analytic epilogue.\newline
+
+  \item The generated routine differentiates by \textbf{complex step},
+    $f'(x)=\Im\left(f(x+\imath h)\right)/h$ with $h=10^{-20}$, exact to machine
+    precision. Option \verb+Jacobian+ selects \verb+auto+, \verb+complex-step+
+    or \verb+symbolic+.\newline
+
+  \item Option \verb+Solver+ selects the damped Newton written into the file
+    (\verb+newton+) or the solvers shipped with Dynare (\verb+dynare+).
+
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Steady state plan -- homogeneous blocks --}
+
+  \begin{itemize}
+
+  \item A block can pin the \textbf{ratios} of its variables without pinning
+    their level: the Calvo price and wage recursions are the textbook case.\newline
+
+  \item Solving it as it stands would land on the trivial all-zero point.
+    Instead the block is re-parametrised in one gauge, and the gauge is isolated
+    from a consistency equation left over by the anchors.\newline
+
+  \item This is the hand technique of solving in ratios and backing the level
+    out of a discarded equation -- aggregate production for output,
+    labour-market clearing for the wage recursions.\newline
+
+  \item Reported in the plan as \verb+backout+, with the gauge and the equation
+    that pinned it.
+
+  \end{itemize}
+
+\end{frame}
+
+
+%==============================================================================
+% LaTeX output
+%==============================================================================
+
+\begin{frame}[c,fragile]
+  \frametitle{LaTeX -- the model --}
+
+  \begin{lstlisting}[style=MatlabConsole]
+
+    >> model.tex_model('rbcmodel.tex');
+  \end{lstlisting}
+
+  \medskip
+
+  Uses the \verb+texname+ metadata declared with each symbol:
+
+  \medskip
+
+  \scalebox{0.85}{$
+    \begin{aligned}
+      a_t &= \rho\,a_{t-1} + \varepsilon_t \\
+      y_t &= e^{a_t}\,k_{t-1}^{\alpha}\,h_t^{1 - \alpha} \\
+      k_t &= \left(1 - \delta\right)\,k_{t-1} + i_t \\
+      y_t &= c_t + i_t \\
+      \frac{1}{\beta} &= \frac{c_t}{c_{t+1}}\,\left(\frac{\alpha\,y_{t+1}}{k_t} + 1 - \delta\right) \\
+      \theta\,c_t\,h_t^{\psi} &= \frac{\left(1 - \alpha\right)\,y_t}{h_t}
+    \end{aligned}$}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{LaTeX -- the steady state --}
+
+  \begin{itemize}
+
+  \item \verb+tex_steady_state_system+ renders the static system, every level
+    starred.\newline
+
+  \item \verb+tex_steady_state_plan+ renders the derivation itself: the blocks,
+    in order, with what each one closes.\newline
+
+  \item \verb+tex_linearise+ renders the model linearised around the steady
+    state.
+
+  \end{itemize}
+
+  \medskip
+
+  \scalebox{0.85}{$
+    \begin{aligned}
+      &y^{\star} - e^{a^{\star}}\,\left. h^{\star} \right.^{1 - \alpha}\,\left. k^{\star} \right.^{\alpha} = 0 \\
+      &\delta - 1 - \frac{\alpha\,y^{\star}}{k^{\star}} + \frac{1}{\beta} = 0 \\
+      &c^{\star}\,\theta\,\left. h^{\star} \right.^{\psi} - \frac{y^{\star}\,\left(1 - \alpha\right)}{h^{\star}} = 0
+    \end{aligned}$}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{LaTeX -- the linearised model --}
+
+  \begin{lstlisting}[style=MatlabConsole]
+
+    >> vars = {'a','y','k','i','c','h'};
+    >> model.tex_linearise(vars, LevelVars={'a'}, Evaluate=true);
+  \end{lstlisting}
+
+  \medskip
+
+  \scalebox{0.75}{$
+    \begin{aligned}
+      \left(a_t - a^{\star}\right) &= 0.95\,\left(a_{t-1} - a^{\star}\right) \\
+      \hat{y}_t &= \left(a_t - a^{\star}\right) + 0.36\,\hat{k}_{t-1} + 0.64\,\hat{h}_t \\
+      \hat{k}_t &= 0.975\,\hat{k}_{t-1} + 0.025\,\hat{i}_t \\
+      \hat{i}_t &= 3.9001\,\hat{y}_t - 2.9001\,\hat{c}_t \\
+      \hat{c}_t &= -0.03475\,\hat{y}_{t+1} + 0.03475\,\hat{k}_t + \hat{c}_{t+1} \\
+      \hat{h}_t &= 0.5\,\hat{y}_t - 0.5\,\hat{c}_t
+    \end{aligned}$}
+
+  \medskip
+
+  \begin{itemize}
+
+  \item Each row is normalised on the variable its equation pins, so the
+    coefficients read as elasticities.\newline
+
+  \item \verb+LevelVars+ marks the variables entering as $x_t-x^{\star}$ rather
+    than $\hat{x}_t$, for a zero or negative steady state. \verb+Evaluate=false+
+    keeps the coefficients symbolic: $\hat{k}_t =
+    \left(1-\delta\right)\hat{k}_{t-1} +
+    \frac{i^{\star}}{k^{\star}}\,\hat{i}_t$.
+
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{LaTeX -- the linearised model, symbolically --}
+
+  \begin{lstlisting}[style=MatlabConsole]
+
+    >> model.tex_linearise(vars, LevelVars={'a'});
+  \end{lstlisting}
+
+  \medskip
+
+  \scalebox{0.72}{$
+    \begin{aligned}
+      \left(a_t - a^{\star}\right) &= \rho\,\left(a_{t-1} - a^{\star}\right) \\
+      \hat{y}_t &= \frac{e^{a^{\star}}\,\left. h^{\star} \right.^{1 - \alpha}\,\left. k^{\star} \right.^{\alpha}}{y^{\star}}\,\left(a_t - a^{\star}\right)
+                 + \frac{\alpha\,e^{a^{\star}}\,\left. h^{\star} \right.^{1 - \alpha}\,\left. k^{\star} \right.^{\alpha}}{y^{\star}}\,\hat{k}_{t-1}
+                 + \frac{e^{a^{\star}}\,\left(1 - \alpha\right)\,\left. h^{\star} \right.^{1 - \alpha}\,\left. k^{\star} \right.^{\alpha}}{y^{\star}}\,\hat{h}_t \\
+      \hat{k}_t &= \left(1 - \delta\right)\,\hat{k}_{t-1} + \frac{i^{\star}}{k^{\star}}\,\hat{i}_t \qquad
+      \hat{i}_t = \frac{y^{\star}}{i^{\star}}\,\hat{y}_t - \frac{c^{\star}}{i^{\star}}\,\hat{c}_t \\
+      \hat{c}_t &= -\frac{\alpha\,y^{\star}}{k^{\star}\,\left(1 - \delta + \frac{\alpha\,y^{\star}}{k^{\star}}\right)}\,\hat{y}_{t+1}
+                 + \frac{\alpha\,y^{\star}}{k^{\star}\,\left(1 - \delta + \frac{\alpha\,y^{\star}}{k^{\star}}\right)}\,\hat{k}_t + \hat{c}_{t+1} \\
+      \hat{h}_t &= \frac{y^{\star}\,\left(1 - \alpha\right)\,\left. h^{\star} \right.^{-2}}{y^{\star}\,\left(1 - \alpha\right)\,\left. h^{\star} \right.^{-2} + c^{\star}\,\psi\,\theta\,\left. h^{\star} \right.^{\psi - 1}}\,\hat{y}_t
+                 - \frac{c^{\star}\,\theta\,\left. h^{\star} \right.^{\psi - 1}}{y^{\star}\,\left(1 - \alpha\right)\,\left. h^{\star} \right.^{-2} + c^{\star}\,\psi\,\theta\,\left. h^{\star} \right.^{\psi - 1}}\,\hat{c}_t
+    \end{aligned}$}
+
+  \medskip
+
+  $\Rightarrow$ Exact, but written in steady-state levels: the coefficients of
+  the $\hat{y}_t$ row are $1$, $\alpha$ and $1-\alpha$, and nothing says so.
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{LaTeX -- elasticities in the deep parameters --}
+
+  \verb+Substitute=true+ inlines the declared steady state into each coefficient
+  and reduces it:
+
+  \begin{lstlisting}[style=MatlabConsole]
+
+    >> model.tex_linearise(vars, LevelVars={'a'}, Substitute=true);
+  \end{lstlisting}
+
+  \medskip
+
+  \scalebox{0.78}{$
+    \begin{aligned}
+      \left(a_t - a^{\star}\right) &= \rho\,\left(a_{t-1} - a^{\star}\right) \\
+      \hat{y}_t &= \left(a_t - a^{\star}\right) + \alpha\,\hat{k}_{t-1} + \left(1 - \alpha\right)\,\hat{h}_t \\
+      \hat{k}_t &= \left(1 - \delta\right)\,\hat{k}_{t-1} + \delta\,\hat{i}_t \\
+      \hat{i}_t &= \frac{1 - \beta + \beta\,\delta}{\alpha\,\beta\,\delta}\,\hat{y}_t
+                 - \frac{1 - \beta - \alpha\,\beta\,\delta + \beta\,\delta}{\alpha\,\beta\,\delta}\,\hat{c}_t \\
+      \hat{c}_t &= -\left(1 - \beta + \beta\,\delta\right)\,\hat{y}_{t+1} + \left(1 - \beta + \beta\,\delta\right)\,\hat{k}_t + \hat{c}_{t+1} \\
+      \hat{h}_t &= \frac{1}{1 + \psi}\,\hat{y}_t - \frac{1}{1 + \psi}\,\hat{c}_t
+    \end{aligned}$}
+
+  \medskip
+
+  $\Rightarrow$ The investment share is $\delta$, the Euler coefficient
+  $1-\beta\left(1-\delta\right)$, the labour elasticity $1/(1+\psi)$: the
+  textbook coefficients, derived. Among the algebraically equal forms of each
+  coefficient, the one printed is the one \verb+ast.complexity+ scores as the
+  simplest to read.
+
+\end{frame}
+
+
+%==============================================================================
+% Examples
+%==============================================================================
+
+\begin{frame}[c,fragile]
+  \frametitle{Examples -- Smets-Wouters --}
+
+  \begin{itemize}
+
+  \item \verb+examples/sw+ builds the nonlinear Smets-Wouters model: 78
+    equations, 78 endogenous variables, 17 shock processes generated rather than
+    typed.\newline
+
+  \item \verb+sw.m+ writes the steady state by hand. Its companion
+    \verb+sw_from_anchors.m+ derives it instead, from \textbf{seven} declared
+    anchors -- two normalisations, the efficient Tobin's $Q$, capacity
+    utilisation and its efficient twin, the inverse markup, the hours
+    scale.\newline
+
+  \item The other 54 expressions are derived, gauge backout included; the 17
+    shock levels are identified without being declared.\newline
+
+  \item The script then executes the emitted cascade and checks every equation
+    at the recovered point.
+
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Examples -- two countries --}
+
+  \begin{itemize}
+
+  \item \verb+examples/two-country+ is the other end: two RBC economies with
+    perfect risk sharing, whose steady state is only \textbf{conditionally}
+    analytical.\newline
+
+  \item The technology processes close, the coupled world core does not: the
+    world resource constraint reduces to a sum of powers whose composite
+    exponents defeat the recognisers.\newline
+
+  \item One variable is left open and handed to a generated routine; the other
+    nine are closed conditional on it. Dynare then computes the steady state
+    without a global numerical solve.\newline
+
+  \item Both examples carry a \verb+README+, and neither commits a generated
+    artefact: running them regenerates everything.
+
+  \end{itemize}
 
 \end{frame}
 
