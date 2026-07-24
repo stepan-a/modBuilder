@@ -1527,6 +1527,24 @@ classdef modBuilder < handle
 
     methods(Static, Access = private)
 
+        function [props, meths, mlist] = class_name_lists()
+        % Cached property / method name lists (and the method metadata array) of
+        % the class. The class definition is fixed for the MATLAB session, so the
+        % metaclass enumeration -- which subsref and numArgumentsFromSubscript
+        % would otherwise repay on every dotted access, the most executed path in
+        % interactive use -- is done once per session.
+            persistent p m ml
+            if isempty(p)
+                mc = ?modBuilder;
+                p = {mc.PropertyList.Name};
+                ml = mc.MethodList;
+                m = {ml.Name};
+            end
+            props = p;
+            meths = m;
+            mlist = ml;
+        end % function
+
         function kinds = symbol_kinds()
         % Descriptor for the three symbol tables so code that treats parameters, exogenous and endogenous variables uniformly loops over one list instead of repeating three near-identical blocks.
         %
@@ -9296,14 +9314,14 @@ classdef modBuilder < handle
                 % unrelated error inside the catch's feval probe, conflating "no such
                 % name" with "method exists and threw".
                 name = S(1).subs;
-                mc = metaclass(o);
-                if ismember(name, {mc.PropertyList.Name})
+                [props, meths] = modBuilder.class_name_lists();
+                if ismember(name, props)
                     p = o.(name);
                     S = modBuilder.shiftS(S, 1);
                 elseif o.issymbol(name)
                     p = o.get_value(name);
                     S = modBuilder.shiftS(S, 1);
-                elseif ismember(name, {mc.MethodList.Name})
+                elseif ismember(name, meths)
                     method_call = true;
                     if isscalar(S)
                         [varargout{1:nout}] = feval(name, o);
@@ -9374,14 +9392,13 @@ classdef modBuilder < handle
         % we need to return the actual nargout of the method. For other indexing
         % operations, we return 1.
 
+            [props, meths, mlist] = modBuilder.class_name_lists();
             if indexingContext == matlab.mixin.util.IndexingContext.Statement ...
                     && isequal(s(1).type, '.') ...
-                    && ~ismember(s(1).subs, {metaclass(o).PropertyList.Name})
+                    && ~ismember(s(1).subs, props)
                 % Dot reference that is not a property — could be a method or symbol.
                 % Check if it is a method with multiple outputs.
-                mc = metaclass(o);
-                mlist = mc.MethodList;
-                idx = strcmp(s(1).subs, {mlist.Name});
+                idx = strcmp(s(1).subs, meths);
                 if any(idx)
                     mdef = mlist(idx);
                     nouts = numel(mdef.OutputNames);
