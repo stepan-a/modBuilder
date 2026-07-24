@@ -8261,12 +8261,21 @@ classdef modBuilder < handle
             end
         end % function
 
-        function suggestions = suggest_calibrations(o, blocks)
+        function suggestions = suggest_calibrations(o, blocks, options)
         % Scan candidate calibration role swaps that would close a residual sub-block.
         %
         % INPUTS:
         % - o        [modBuilder]
-        % - blocks   [struct array]   optional; if omitted, computed by o.steady_plan().
+        % - blocks   [struct array]   optional; if omitted, computed by o.steady_plan()
+        %                             with the options below. When blocks IS supplied,
+        %                             pass the SAME planning options that produced it:
+        %                             each trial re-plans with these options, and a
+        %                             baseline counted under a different regime (e.g.
+        %                             Match=true blocks scored against default-plan
+        %                             trials) makes the comparison meaningless.
+        % - options                   steady_plan planning options, forwarded to every
+        %                             trial re-plan (Match, Anchors, PropagateKnown,
+        %                             MaxBlockSize; same defaults as steady_plan).
         %
         % OUTPUTS:
         % - suggestions  [struct array]  one entry per candidate that strictly shrinks
@@ -8295,9 +8304,14 @@ classdef modBuilder < handle
             arguments
                 o
                 blocks = []
+                options.Match (1,1) logical = false
+                options.Anchors (1,:) cell = {}
+                options.PropagateKnown (1,1) logical = false
+                options.MaxBlockSize (1,1) double {mustBeInteger, mustBePositive} = 8
             end
+            opts = namedargs2cell(options);
             if isempty(blocks)
-                blocks = o.steady_plan();
+                blocks = o.steady_plan(opts{:});
             end
             suggestions = struct('endo', {}, 'param', {}, 'residual', {});
             if ~isempty(o.calibration_swaps)
@@ -8339,7 +8353,7 @@ classdef modBuilder < handle
                         if isnan(target), target = 0; end
                         try
                             m_copy.calibrate(endo, target, p);
-                            new_blocks = m_copy.steady_plan();
+                            new_blocks = m_copy.steady_plan(opts{:});
                         catch err
                             modBuilder.rethrow_unless(err, {'ast:', 'modBuilder:'});
                             continue
@@ -8493,12 +8507,19 @@ classdef modBuilder < handle
             end
         end % function
 
-        function print_steady_plan(o, blocks)
+        function print_steady_plan(o, blocks, options)
         % Render the structural steady-state plan as a human-readable summary.
         %
         % INPUTS:
         % - o        [modBuilder]
-        % - blocks   [struct array]   optional; if omitted, computed by o.steady_plan().
+        % - blocks   [struct array]   optional; if omitted, computed by o.steady_plan()
+        %                             with the options below. When blocks IS supplied,
+        %                             pass the SAME planning options that produced it,
+        %                             so the calibration-swap suggestions below re-plan
+        %                             under the regime the displayed counts came from.
+        % - options                   steady_plan planning options (Match, Anchors,
+        %                             PropagateKnown, MaxBlockSize), forwarded to
+        %                             steady_plan and suggest_calibrations.
         %
         % REMARKS:
         % - Each block is shown with its kind, its variable(s), the already-solved endogenous
@@ -8508,9 +8529,14 @@ classdef modBuilder < handle
             arguments
                 o
                 blocks = []
+                options.Match (1,1) logical = false
+                options.Anchors (1,:) cell = {}
+                options.PropagateKnown (1,1) logical = false
+                options.MaxBlockSize (1,1) double {mustBeInteger, mustBePositive} = 8
             end
+            opts = namedargs2cell(options);
             if isempty(blocks)
-                blocks = o.steady_plan();
+                blocks = o.steady_plan(opts{:});
             end
 
             modBuilder.dprintf('Steady-state plan: %d block(s)', numel(blocks));
@@ -8552,7 +8578,7 @@ classdef modBuilder < handle
             % calibration swap, scan candidate (endo, param) pairs and surface them
             % as a ranked menu. Full-closure candidates appear first.
             if isempty(o.calibration_swaps) && modBuilder.total_residual_count(blocks) > 0
-                suggestions = o.suggest_calibrations(blocks);
+                suggestions = o.suggest_calibrations(blocks, opts{:});
                 if ~isempty(suggestions)
                     modBuilder.dprintf('Suggested calibration swaps:');
                     for s = 1:numel(suggestions)
