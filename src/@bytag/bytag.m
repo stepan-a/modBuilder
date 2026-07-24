@@ -34,6 +34,16 @@ classdef bytag
                 error('bytag:badPair', 'Arguments must be name-value pairs.')
             end
             if nargin > 0
+                names = varargin(1:2:end);
+                % struct() would silently keep the LAST value of a duplicated tag
+                % name and raise a raw MATLAB error on an invalid field name;
+                % validate both here so the diagnostics carry bytag identifiers.
+                if numel(unique(names)) ~= numel(names)
+                    error('bytag:duplicateTag', 'Duplicated tag name in the selector.')
+                end
+                if ~all(cellfun(@isvarname, names))
+                    error('bytag:badTagName', 'Tag names must be valid identifiers.')
+                end
                 o.criteria = struct(varargin{:});
             end
         end

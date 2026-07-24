@@ -1485,10 +1485,10 @@ classdef modBuilder < handle
 
             % Warn about potentially unintended operators
             if contains(equation, '++')
-                warning('Equation contains "++". This may be unintended. Equation: "%s"', equation)
+                warning('modBuilder:validate_equation_syntax:suspiciousOperator', 'Equation contains "++". This may be unintended. Equation: "%s"', equation)
             end
             if contains(equation, '--')
-                warning('Equation contains "--". This may be unintended. Equation: "%s"', equation)
+                warning('modBuilder:validate_equation_syntax:suspiciousOperator', 'Equation contains "--". This may be unintended. Equation: "%s"', equation)
             end
         end % function
 
@@ -4974,7 +4974,7 @@ classdef modBuilder < handle
         %   recogniser pipeline.
         % - endo_name must currently be an endogenous variable; param_name must
         %   currently be a parameter; neither may already appear in another
-        %   calibration swap. Errors with id 'modBuilder:calibrate' otherwise.
+        %   calibration swap. Errors with id 'modBuilder:calibrate:*' otherwise.
         % - Captures the typical DSGE manoeuvre: pin hours h to 1/3 and solve for the
         %   labour-disutility weight theta; or pin the K/Y ratio and solve for the
         %   depreciation rate. With h fixed, the labour FOC becomes linear in theta —
@@ -4988,17 +4988,17 @@ classdef modBuilder < handle
             end
 
             if ~o.isendogenous(endo_name)
-                error('modBuilder:calibrate', '"%s" must be an endogenous variable.', endo_name);
+                error('modBuilder:calibrate:notEndogenous', '"%s" must be an endogenous variable.', endo_name);
             end
             if ~o.isparameter(param_name)
-                error('modBuilder:calibrate', '"%s" must be a parameter.', param_name);
+                error('modBuilder:calibrate:notParameter', '"%s" must be a parameter.', param_name);
             end
             if ~isempty(o.calibration_swaps)
                 if any(strcmp(endo_name, o.calibration_swaps(:, 1)))
-                    error('modBuilder:calibrate', 'Endogenous "%s" is already in a calibration swap.', endo_name);
+                    error('modBuilder:calibrate:duplicateSwap', 'Endogenous "%s" is already in a calibration swap.', endo_name);
                 end
                 if any(strcmp(param_name, o.calibration_swaps(:, 3)))
-                    error('modBuilder:calibrate', 'Parameter "%s" is already in a calibration swap.', param_name);
+                    error('modBuilder:calibrate:duplicateSwap', 'Parameter "%s" is already in a calibration swap.', param_name);
                 end
             end
             o.refresh_tables();
@@ -5008,7 +5008,7 @@ classdef modBuilder < handle
             % and is re-checked there by steady_plan; steady_plan(Match=true) resolves
             % non-local swaps by re-running matchequations on the swapped unknown set.
             if ~isfield(o.T.params, param_name) || isempty(o.T.params.(param_name))
-                error('modBuilder:calibrate', ...
+                error('modBuilder:calibrate:unusedParameter', ...
                       'Parameter "%s" does not appear in any equation, so it cannot be solved for.', param_name);
             end
 
@@ -9476,11 +9476,13 @@ classdef modBuilder < handle
                     error('modBuilder:subsasgn:badType', 'Can only assign a real scalar number using dot notation. Use o(''var'') = ''equation'' to change equations.')
                 end
 
-                try
-                    o.set_value(S(1).subs, B);
-                catch
+                % Explicit symbol check rather than try/catch on set_value: a blanket
+                % catch would relabel ANY internal set_value failure as an unknown
+                % symbol, misdiagnosing genuine errors.
+                if ~o.issymbol(S(1).subs)
                     error('modBuilder:subsasgn:unknownSymbol', 'Unknown symbol ''%s''. Cannot assign to non-existent symbol.', S(1).subs);
                 end
+                o.set_value(S(1).subs, B);
 
             elseif isequal(S(1).type, '()')
                 % Parentheses notation: o('endovar') = 'equation'
@@ -9489,9 +9491,10 @@ classdef modBuilder < handle
                     error('modBuilder:subsasgn:badIndex', 'Wrong assignment (index must be a character array, a variable name).')
                 end
 
-                try
-                    [type, ~] = typeof(o, S(1).subs{1});
-                catch
+                % Explicit lookup rather than try/catch on typeof (same rationale as
+                % the dot branch above).
+                [found, type] = o.lookup_symbol(S(1).subs{1});
+                if ~found
                     error('modBuilder:subsasgn:unknownSymbol', 'Wrong index (unknown symbol).')
                 end
 

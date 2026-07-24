@@ -21,9 +21,13 @@ file2 = fileread(f2);
 lines1 = splitlines(file1);
 lines2 = splitlines(file2);
 
-% Count and check the number of lines in each file.
+% Count and check the number of lines in each file. Report the mismatch
+% explicitly: files differing only in trailing empty lines produce no
+% per-line difference below, and the test would otherwise fail with no
+% diagnostic at all.
 if not(length(lines1)==length(lines2))
     b = false;
+    fprintf('Line-count mismatch: %d lines in %s, %d lines in %s.\n', length(lines1), f1, length(lines2), f2);
 end
 
 n = max(length(lines1), length(lines2));
