@@ -2277,7 +2277,7 @@ classdef ast
                 end
                 return
             end
-            if strcmp(op, '*') && strcmp(o.type, 'binop') && strcmp(o.value, '^') && ast.is_neg_one(o.children{2}) && strcmp(o.children{1}.type, 'binop') && strcmp(o.children{1}.value, '*')
+            if strcmp(op, '*') && strcmp(o.type, 'binop') && strcmp(o.value, '^') && strcmp(o.children{2}.type, 'num') && o.children{2}.value == -1 && strcmp(o.children{1}.type, 'binop') && strcmp(o.children{1}.value, '*')
                 inner = ast.flatten(o.children{1}, '*');
                 operands = cell(1, numel(inner));
                 for i = 1:numel(inner)
@@ -2358,13 +2358,34 @@ classdef ast
         % Remove inverse pairs from a flat operand list of a '+' or '*' chain.
         % A linear scan with one-shot pairing per element; commutativity is exploited
         % by treating the operand list as a multiset.
+        % - is_inverse_pair is inlined here (it is one of the most-called functions in
+        %   the class and its body is three type tests): the tests on operand i are
+        %   hoisted out of the inner loop instead of being repeated for every j.
             n = numel(operands);
+            plus_op = strcmp(op, '+');
+            if ~plus_op && ~strcmp(op, '*')
+                return
+            end
             canceled = false(1, n);
             for i = 1:n
                 if canceled(i), continue; end
+                x = operands{i};
+                x_um = strcmp(x.type, 'uminus');
+                x_inv = ~plus_op && strcmp(x.type, 'binop') && strcmp(x.value, '^') && ...
+                        strcmp(x.children{2}.type, 'num') && x.children{2}.value == -1;
                 for j = i+1:n
                     if canceled(j), continue; end
-                    if ast.is_inverse_pair(operands{i}, operands{j}, op)
+                    y = operands{j};
+                    if plus_op
+                        hit = (strcmp(y.type, 'uminus') && ast.ast_equal(x, y.children{1})) || ...
+                              (x_um && ast.ast_equal(y, x.children{1}));
+                    else
+                        hit = (strcmp(y.type, 'binop') && strcmp(y.value, '^') && ...
+                               strcmp(y.children{2}.type, 'num') && y.children{2}.value == -1 && ...
+                               ast.ast_equal(x, y.children{1})) || ...
+                              (x_inv && ast.ast_equal(y, x.children{1}));
+                    end
+                    if hit
                         canceled(i) = true;
                         canceled(j) = true;
                         break
@@ -2464,8 +2485,16 @@ classdef ast
             if n < 2, return; end
             coefs = zeros(1, n);
             monomials = cell(1, n);
+            % decompose_term inlined (it is a thin wrapper called once per operand):
+            % the num(1) monomial is built once and shared instead of per operand.
+            one = ast('num', 1, {});
             for i = 1:n
-                [coefs(i), monomials{i}] = ast.decompose_term(operands{i});
+                [coefs(i), mf] = ast.decompose_factors(operands{i});
+                if isempty(mf)
+                    monomials{i} = one;
+                else
+                    monomials{i} = ast.product_of(mf);
+                end
             end
             used = false(1, n);
             new_operands = {};
@@ -2513,8 +2542,19 @@ classdef ast
             exps = cell(1, n);
             sgns = ones(1, n);
             cores = cell(1, n);
+            % power_components inlined (one call per operand, and its non-power
+            % branch built a fresh num(1) every time): the unit exponent is built
+            % once and shared.
+            one = ast('num', 1, {});
             for i = 1:n
-                [bases{i}, exps{i}] = ast.power_components(operands{i});
+                oi = operands{i};
+                if strcmp(oi.type, 'binop') && strcmp(oi.value, '^')
+                    bases{i} = oi.children{1};
+                    exps{i} = oi.children{2};
+                else
+                    bases{i} = oi;
+                    exps{i} = one;
+                end
                 cores{i} = bases{i};
                 if strcmp(exps{i}.type, 'num') && exps{i}.value == round(exps{i}.value)
                     [sgns(i), cores{i}] = ast.sign_split(bases{i});
@@ -2546,9 +2586,9 @@ classdef ast
                     end
                 end
                 total_s = total.simplify();
-                if ast.is_zero(total_s)
+                if strcmp(total_s.type, 'num') && total_s.value == 0
                     continue
-                elseif ast.is_one(total_s)
+                elseif strcmp(total_s.type, 'num') && total_s.value == 1
                     new_operands{end+1} = cores{i}; %#ok<AGROW>
                 else
                     new_operands{end+1} = ast('binop', '^', {cores{i}, total_s}); %#ok<AGROW>
