@@ -4040,6 +4040,10 @@ classdef ast
                     % (2/sqrt(pi))*exp(-x^2).
                     coef = ast('binop', '/', {two, ast('call', 'sqrt', {ast('num', pi, {})})});
                     outer = ast('binop', '*', {coef, ast('call', 'exp', {ast('uminus', [], {ast('binop', '^', {arg, two})})})});
+                case 'erfc'
+                    % -(2/sqrt(pi))*exp(-x^2).
+                    coef = ast('binop', '/', {two, ast('call', 'sqrt', {ast('num', pi, {})})});
+                    outer = ast('uminus', [], {ast('binop', '*', {coef, ast('call', 'exp', {ast('uminus', [], {ast('binop', '^', {arg, two})})})})});
                 otherwise
                     error('ast:diff_ast:noRule', 'No differentiation rule for function "%s".', fname);
             end

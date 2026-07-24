@@ -15,5 +15,5 @@ function names = dynare_reserved_function_names()
 % - The list includes STEADY_STATE. The ast parser handles STEADY_STATE
 %   with a dedicated branch before the membership test, so it never produces
 %   a 'call' node for it.
-    names = {'log', 'log10', 'ln', 'exp', 'sqrt', 'cbrt', 'abs', 'sign', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh', 'min', 'max', 'normcdf', 'normpdf', 'erf', 'diff', 'adl', 'EXPECTATIONS', 'STEADY_STATE'};
+    names = {'log', 'log10', 'ln', 'exp', 'sqrt', 'cbrt', 'abs', 'sign', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh', 'min', 'max', 'normcdf', 'normpdf', 'erf', 'erfc', 'diff', 'adl', 'EXPECTATIONS', 'STEADY_STATE'};
 end
