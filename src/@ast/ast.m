@@ -1883,6 +1883,35 @@ classdef ast
             o = num.simplify();
         end % function
 
+        function o = single_fraction(o)
+        % Rewrite o as ONE quotient N/D: the same rational normalisation as
+        % clear_denominators, but keeping the denominator instead of dropping it.
+        %
+        % INPUTS:
+        % - o   [ast]    tree to normalise
+        %
+        % OUTPUTS:
+        % - o   [ast]    N/D in canonical form, or o unchanged when it has no denominator
+        %
+        % REMARKS:
+        % - A sum of fractions is put over the common denominator (the multiset lcm of the
+        %   term denominators, as in clear_denominators), so 1/(a·b) - 1 - 1/a + 1/b reads
+        %   as a single quotient rather than four terms each carrying its own \frac.
+        % - Value-preserving, unlike clear_denominators, which only preserves the ROOTS of
+        %   o = 0. Use this one whenever the expression is a quantity rather than a residual.
+        % - The same size cap applies: cross-multiplying a deep quotient tower explodes.
+            o = o.canonicalise();
+            [nfac, dfac] = ast.rational_split(o);
+            if isempty(dfac)
+                return
+            end
+            num = ast.product_of(nfac);
+            if ast.node_count(num) > 8192
+                return
+            end
+            o = ast('binop', '/', {num.simplify(), ast.product_of(dfac).simplify()}).simplify();
+        end % function
+
     end % methods
 
     methods (Static)
@@ -3566,6 +3595,87 @@ classdef ast
                 for i = 1:numel(node.children)
                     stack{end+1} = node.children{i}; %#ok<AGROW>
                 end
+            end
+        end % function
+
+        function s = complexity(o, texname_map)
+        % Cost of an expression AS RENDERED, for choosing between algebraically equal
+        % forms. Node count is the wrong measure for that: 1/(abc) - 1 - 1/(ac) + 1/a
+        % counts 26 nodes and (1 - b - abc + bc)/(abc) counts 27, though the second is
+        % plainly the one to print.
+        %
+        % INPUTS:
+        % - o             [ast]      tree to score
+        % - texname_map   [struct]   optional, as to_latex (affects nothing but the glyphs)
+        %
+        % OUTPUTS:
+        % - s             [double]   cost, lower is simpler
+        %
+        % REMARKS:
+        % - The measure is the GLYPH count of the LaTeX rendering, not its character
+        %   count: every control sequence counts as one (\alpha is one glyph, not six),
+        %   and grouping braces, spacing macros and \left/\right count as none. Raw
+        %   character length would make the score depend on how a parameter was named.
+        % - LaTeX is two-dimensional and a string is not, so fractions cost more than their
+        %   glyphs: each one is penalised (three \frac side by side read worse than one of
+        %   the same width) and each level of NESTING is penalised again (a fraction of
+        %   fractions is worse still). A last penalty applies when the rendering leads with
+        %   a minus sign.
+        % - Being defined on the rendering, the measure moves with the renderer -- which
+        %   is the point: it scores what the reader will see.
+            if nargin < 2, texname_map = struct(); end
+            str = o.to_latex(texname_map);
+            str = regexprep(str, '\\left|\\right|\\,|\\;|\\quad|\\!', '');
+            str = regexprep(str, '\\[a-zA-Z]+', 'X');
+            str = regexprep(str, '[{}\s]', '');
+            [nfrac, dfrac] = ast.fraction_stats(o);
+            s = numel(str) + 3*dfrac + 2*nfrac + 2*(~isempty(str) && str(1) == '-');
+        end % function
+
+        function [n, d] = fraction_stats(o)
+        % Number of \frac the RENDERER emits for o, and their deepest nesting.
+        %
+        % Counting quotient nodes on the tree would be wrong: canonical form stores
+        % N/(a·b·c) as N·a^(-1)·b^(-1)·c^(-1), six quotient nodes at depth three, which
+        % latex_binop gathers into ONE \frac. This walks the tree the way the renderer
+        % does, so the score matches the page.
+            n = 0; d = 0;
+            if strcmp(o.type, 'binop') && strcmp(o.value, '*')
+                factors = ast.flatten(o, '*');
+                inverse = false(1, numel(factors));
+                for i = 1:numel(factors)
+                    fi = factors{i};
+                    inverse(i) = strcmp(fi.type, 'binop') && strcmp(fi.value, '^') && ast.latex_is_inverse(fi.children{2});
+                end
+                if any(inverse)
+                    % One fraction over the product of the inverse bases.
+                    parts = factors;
+                    for i = find(inverse)
+                        parts{i} = factors{i}.children{1};
+                    end
+                    [n, d] = ast.fraction_stats_over(parts);
+                    n = n + 1; d = d + 1;
+                    return
+                end
+            elseif strcmp(o.type, 'binop') && strcmp(o.value, '/')
+                [n, d] = ast.fraction_stats_over(o.children);
+                n = n + 1; d = d + 1;
+                return
+            elseif strcmp(o.type, 'binop') && strcmp(o.value, '^') && ast.latex_is_inverse(o.children{2})
+                [n, d] = ast.fraction_stats(o.children{1});
+                n = n + 1; d = d + 1;
+                return
+            end
+            [n, d] = ast.fraction_stats_over(o.children);
+        end % function
+
+        function [n, d] = fraction_stats_over(nodes)
+        % fraction_stats summed (count) and maxed (depth) over a list of subtrees.
+            n = 0; d = 0;
+            for i = 1:numel(nodes)
+                [ni, di] = ast.fraction_stats(nodes{i});
+                n = n + ni;
+                d = max(d, di);
             end
         end % function
 

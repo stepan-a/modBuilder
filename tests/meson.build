@@ -100,6 +100,7 @@ listoftests = [
   'ast/t35',
   'ast/t36',
   'ast/t37',
+  'ast/t38',
   'ss-expr/t01.m',
   'eliminate/t01',
   'foc/t01',
