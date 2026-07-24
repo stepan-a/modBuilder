@@ -1179,7 +1179,7 @@ classdef modBuilder < handle
                       'The value equation "%s" must have the form W = u + ... .', value_eqname);
             end
             vrhs = ast(strtrim(LHSRHS{2}));
-            M = vrhs.diff_ast(value_eqname, 1).simplify();
+            M = vrhs.diff_ast(value_eqname, 1);
             u = vrhs.replace_subtree(ast([value_eqname '(+1)']), ast('num', 0, {})).simplify();
 
             % Lagrangian density: u + Σ_c mult_c · g_c, with a fresh multiplier per constraint.
@@ -9009,7 +9009,12 @@ classdef modBuilder < handle
             fprintf(fid, 'J = zeros(%d, %d);\n', nv, nv);
             for i2 = 1:nv
                 for j2 = 1:nv
-                    d = res{i2}.diff_ast(outvars{j2}).simplify();
+                    % Simplify=false: the emitted Jacobian is machine read, and the
+                    % full simplify costs an order of magnitude more than
+                    % canonicalise for a tree of the same size. The second
+                    % simplify() this call used to carry was a no-op anyway --
+                    % diff_ast already returns a normalised tree.
+                    d = res{i2}.diff_ast(outvars{j2}, 0, Simplify=false);
                     if ~ast.is_zero(d)
                         fprintf(fid, 'J(%d, %d) = %s;\n', i2, j2, d.string());
                     end
