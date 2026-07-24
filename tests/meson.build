@@ -114,6 +114,7 @@ listoftests = [
   'tex-plan/t01',
   'tex-linearise/t01',
   'tex-linearise/t02',
+  'tex-linearise/t03',
   'solvers/t00.m',
   'solvers/t01.m',
   'solvers/t02.m',

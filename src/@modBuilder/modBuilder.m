@@ -5898,6 +5898,12 @@ classdef modBuilder < handle
         % - Evaluate   [logical] false (default) keeps the coefficients symbolic, as steady-state
         %                        expressions (k^{\star} etc.); true substitutes the numeric steady
         %                        state (which must already be solved/set). Default false.
+        % - Substitute [logical] true inlines the DECLARED steady-state expressions into the
+        %                        coefficients and reduces them, so each elasticity comes out as a
+        %                        function of the deep parameters (i^{\star}/k^{\star} becomes
+        %                        \delta) instead of a ratio of steady-state levels. Requires a
+        %                        declared steady state; ignored when Evaluate is true. Default
+        %                        false.
         % - filename   [char]    path to write the LaTeX to; if omitted nothing is written.
         %
         % OUTPUTS:
@@ -5917,11 +5923,13 @@ classdef modBuilder < handle
         % tex = m.tex_linearise();                                  % all endogenous, symbolic
         % tex = m.tex_linearise({'y','c','k'}, 'Evaluate', true);   % subset, numeric coefficients
         % tex = m.tex_linearise({'y','pi','i'}, 'LevelVars', {'pi','i'});
+        % tex = m.tex_linearise('Substitute', true);                % elasticities in deep parameters
             arguments
                 o
                 varlist                cell = {}
                 options.LevelVars      cell = {}
                 options.Evaluate (1,1) logical = false
+                options.Substitute (1,1) logical = false
                 options.filename (1,:) char = ''
             end
             if isempty(varlist)
@@ -5935,6 +5943,29 @@ classdef modBuilder < handle
                 vals = o.steady_values_struct();
             else
                 vals = struct();
+            end
+            % Substitute: the declared steady state, fully inlined in dependency order, so a
+            % coefficient can be rewritten in the deep parameters alone. Built once here;
+            % multi-output call rows (steady_call) have no expression to inline and are skipped,
+            % leaving the variables they assign as starred symbols in the coefficients.
+            subs_names = {}; subs_asts = {}; param_names_l = {};
+            if options.Substitute && ~options.Evaluate
+                if isempty(o.steady_state)
+                    error('modBuilder:tex_linearise:steadyStateRequired', 'Substitute=true needs a declared steady state; declare one (steady/apply_steady_plan) or use Evaluate=false without Substitute.');
+                end
+                if ~isempty(o.params), param_names_l = o.params(:, modBuilder.COL_NAME)'; end
+                [~, ss_rows] = o.checksteady();
+                for ri = 1:numel(ss_rows)
+                    nm = o.steady_state{ss_rows(ri), modBuilder.SS_COL_NAME};
+                    if ~ischar(nm)
+                        continue
+                    end
+                    ex = ast(o.steady_state{ss_rows(ri), modBuilder.SS_COL_EXPR}).staticise();
+                    for si = 1:numel(subs_names)
+                        ex = ex.substitute(subs_names{si}, subs_asts{si}, param_names_l);
+                    end
+                    subs_names{end+1} = nm; subs_asts{end+1} = ex.simplify(); %#ok<AGROW>
+                end
             end
 
             neq = numel(varlist);
@@ -5968,6 +5999,7 @@ classdef modBuilder < handle
                         % readable 1 - delta rather than staying wrapped in a unary minus.
                         ratio = ast('binop', '/', {coef_ast(v, k, ismember(v, options.LevelVars)), den}).simplify();
                         c = ast('binop', '-', {ast('num', 0, {}), ratio}).simplify();
+                        c = deep_form(c);
                         [sgn, coefpart, skip] = render_coef(c);
                         if skip
                             continue
@@ -5994,6 +6026,58 @@ classdef modBuilder < handle
                     g = ast('binop', '*', {g, ast('sym', v, {})});
                 end
                 g = g.staticise();
+            end
+
+            function c = deep_form(c)
+                % Rewrite a coefficient in the deep parameters: inline the whole steady state,
+                % then reduce. Two reductions are tried because neither dominates -- factoring
+                % alone keeps a shared factor visible (1/(1+psi)), while distributing first is
+                % what collapses a ratio whose numerator is a sum (c^{\star}/i^{\star}). The
+                % smaller tree wins, ties going to the un-expanded form.
+                if isempty(subs_names)
+                    return
+                end
+                for si = 1:numel(subs_names)
+                    c = c.substitute(subs_names{si}, subs_asts{si}, param_names_l);
+                end
+                c = c.simplify();
+                % Three reductions, none of which dominates: factoring alone keeps a shared
+                % factor visible (1/(1+psi)); distributing first is what collapses a ratio
+                % whose numerator is a sum; and the single-fraction form beats both when the
+                % coefficient is a sum of fractions, which would otherwise print one \frac
+                % per term. The smallest tree wins, ties going to the earliest listed.
+                folded = reduce_coef(c, false);
+                spread = reduce_coef(c, true);
+                % The single-fraction form is tried on the REDUCED candidates, not on the raw
+                % substituted coefficient: cross-multiplying the inlined steady state before
+                % it has collapsed produces a numerator nothing can tidy afterwards.
+                candidates = {folded, spread, reduce_coef(folded.single_fraction(), false), reduce_coef(spread.single_fraction(), false)};
+                best = 1;
+                best_cost = ast.complexity(candidates{1}, map);
+                for ci = 2:numel(candidates)
+                    cost = ast.complexity(candidates{ci}, map);
+                    if cost < best_cost
+                        best = ci; best_cost = cost;
+                    end
+                end
+                c = candidates{best};
+            end
+
+            function g = reduce_coef(g, distribute)
+                % Factor (optionally after distributing) to a fixed point. Both rewrites shrink
+                % the tree or leave it alone, so the loop converges; the cap is a backstop.
+                previous = '';
+                for it = 1:8
+                    if distribute
+                        g = g.expand();
+                    end
+                    g = g.factor().simplify();
+                    k_g = ast.sort_key(g);
+                    if strcmp(k_g, previous)
+                        break
+                    end
+                    previous = k_g;
+                end
             end
 
             function [sgn, coefpart, skip] = render_coef(c)
