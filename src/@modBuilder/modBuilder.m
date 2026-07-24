@@ -797,7 +797,7 @@ classdef modBuilder < handle
         end % function
 
         function q = merge_symbol_tables(o, p, q)
-        % Merge symbol tables from two models
+        % Merge the symbol-table state that survives the rebuild
         %
         % INPUTS:
         % - o   [modBuilder]   First model
@@ -805,27 +805,21 @@ classdef modBuilder < handle
         % - q   [modBuilder]   Target merged model
         %
         % OUTPUTS:
-        % - q   [modBuilder]   Updated model with merged symbol tables
+        % - q   [modBuilder]   Updated model with merged T.equations and tags
         %
         % REMARKS:
-        % - Merges T.params, T.varexo, T.var, T.equations
-        % - Removes exogenous variables that became endogenous
+        % - Only T.equations (the per-equation symbol lists) and the tags need
+        %   merging: merge() calls updatesymboltables() right after, which rebuilds
+        %   T.params / T.varexo / T.var from scratch out of T.equations and the
+        %   declaration tables, so merging those three here would be dead work
+        %   (this method used to do it, exogenous-to-endogenous cleanup included,
+        %   only for the rebuild to discard the result).
             arguments
                 o
                 p (1,1) modBuilder
                 q (1,1) modBuilder
             end
 
-            q.T.params = modBuilder.mergeStructs(o.T.params, p.T.params);
-            q.T.varexo = modBuilder.mergeStructs(o.T.varexo, p.T.varexo);
-            fnames = fields(q.T.varexo);
-            remvarexo = not(ismember(fnames, q.varexo(:,modBuilder.COL_NAME)));
-            for i=1:length(remvarexo)
-                if remvarexo(i)
-                    q.T.varexo = rmfield(q.T.varexo, fnames{i});
-                end
-            end
-            q.T.var = modBuilder.mergeStructs(o.T.var, p.T.var);
             q.T.equations = modBuilder.mergeStructs(o.T.equations, p.T.equations);
             q.tags = modBuilder.mergeStructs(o.tags, p.tags);
         end % function
@@ -979,23 +973,22 @@ classdef modBuilder < handle
                 residuals(i) = fhandles{i}(v);
             end
 
-            % Compute Jacobian column by column using AD (COO → sparse)
+            % Compute Jacobian column by column using AD (COO → sparse). The
+            % zero-seed dual vector is built once; each column only swaps its own
+            % seeded entry in and out (O(n) constructions instead of O(n^2)).
             nnzJ = nnz(incidence);
             II = zeros(nnzJ, 1);
             JJ = zeros(nnzJ, 1);
             VV = zeros(nnzJ, 1);
             idx = 0;
+            v_ad = cell(n, 1);
+            for k = 1:n
+                v_ad{k} = autoDiff1(x0(k), 0.0);
+            end
             for j = 1:n
                 affected = find(incidence(:, j));
                 if isempty(affected), continue; end
-                v_ad = cell(n, 1);
-                for k = 1:n
-                    if k == j
-                        v_ad{k} = autoDiff1(x0(k), 1.0);
-                    else
-                        v_ad{k} = autoDiff1(x0(k), 0.0);
-                    end
-                end
+                v_ad{j} = autoDiff1(x0(j), 1.0);
                 for ii = affected'
                     r = fhandles{ii}(v_ad);
                     idx = idx + 1;
@@ -1003,6 +996,7 @@ classdef modBuilder < handle
                     JJ(idx) = j;
                     VV(idx) = r.dx;
                 end
+                v_ad{j} = autoDiff1(x0(j), 0.0);
             end
             J = sparse(II, JJ, VV, m, n);
         end % function
@@ -4495,10 +4489,12 @@ classdef modBuilder < handle
             % issymbol cellfun below sees current state instead of a stale cached copy.
             o.symbol_map_dirty = true;
 
-            o.T.equations.(varname) = symbols_in_eq;
-            o.symbols = horzcat(o.symbols, o.T.equations.(varname));
-            o.T.equations.(varname) = setdiff(o.T.equations.(varname), varname);
-            o.symbols = setdiff(o.symbols, o.symbols(cellfun(@o.issymbol, o.symbols)));
+            o.T.equations.(varname) = setdiff(symbols_in_eq, varname);
+            % Only the NEW equation's tokens need a type check: the accumulated pool
+            % already holds untyped names only, and the sole pre-existing entry this
+            % add can type is varname itself (now endogenous), removed explicitly.
+            new_untyped = symbols_in_eq(~cellfun(@o.issymbol, symbols_in_eq));
+            o.symbols = setdiff(unique([o.symbols, new_untyped]), {varname});
             o.tags.(varname).name = varname;
 
             o.mark_dirty();
@@ -5075,6 +5071,21 @@ classdef modBuilder < handle
                 adj{i} = [];
             end
 
+            % Name -> providing-row lookup, built once. The previous per-symbol
+            % find(cellfun(@(p) ismember(sym, p), provides)) rescanned every row for
+            % every symbol of every expression -- quadratic in the table size.
+            % find(..., 1) kept the FIRST providing row, so duplicates keep the
+            % earliest row here too.
+            provider_of = configureDictionary("string", "double");
+            for r = 1:n
+                for pp = 1:numel(provides{r})
+                    nm_p = string(provides{r}{pp});
+                    if ~isKey(provider_of, nm_p)
+                        provider_of(nm_p) = r;
+                    end
+                end
+            end
+
             for i = 1:n
                 expr = o.steady_state{i, modBuilder.SS_COL_EXPR};
                 if ~ischar(o.steady_state{i, modBuilder.SS_COL_NAME})
@@ -5095,8 +5106,8 @@ classdef modBuilder < handle
                     % intermediate added by steady_aux, or an output of a block call),
                     % record the dependency edge. Otherwise it must be a declared model
                     % symbol — error if it isn't.
-                    node_idx = find(cellfun(@(p) ismember(sym, p), provides), 1);
-                    if ~isempty(node_idx)
+                    if isKey(provider_of, sym)
+                        node_idx = provider_of(sym);
                         % Edge: node_idx → i (sym must be computed before node i);
                         % a self-reference builds the loop edge i → i and surfaces
                         % as a circular-dependency error below, as before.
@@ -5195,9 +5206,6 @@ classdef modBuilder < handle
                 return;
             end
 
-            % Clear symbol_map so typeof() uses linear search (safe during deletions)
-            o.symbol_map_dirty = true;
-
             ide = ismember(o.equations(:,modBuilder.EQ_COL_NAME), eqname);
 
             if not(any(ide))
@@ -5215,10 +5223,6 @@ classdef modBuilder < handle
 
             for i=1:length(o.T.equations.(eqname))
                 symname = o.T.equations.(eqname){i};
-
-                % Each deletion shifts row indices; force the map to rebuild
-                % from the current arrays at the top of every iteration.
-                o.symbol_map_dirty = true;
 
                 % Skip unknown symbols (they're in symbols list and will be cleaned up elsewhere)
 
@@ -5241,6 +5245,11 @@ classdef modBuilder < handle
                       otherwise
                         % We should not attain this part of the code.
                     end % switch
+
+                    % The deletion shifted the row indices after id: invalidate the
+                    % map so the next lookup rebuilds it from the current arrays.
+                    % Iterations that delete nothing keep the map valid.
+                    o.symbol_map_dirty = true;
                 end % if
             end
 
@@ -5596,7 +5605,7 @@ classdef modBuilder < handle
             end
 
             %
-            % Print list of fprintf
+            % Print list of parameters
             %
             if all(cellfun(@(x) isempty(x), o.params(:,modBuilder.COL_LONG_NAME))) && all(cellfun(@(x) isempty(x), o.params(:,modBuilder.COL_TEX_NAME)))
                 fprintf(fid, 'parameters%s\n\n', modBuilder.printlist(o.params(:,modBuilder.COL_NAME)));
@@ -6427,7 +6436,7 @@ classdef modBuilder < handle
                     end
 
                     for i=1:n
-                        equation = o.equations(strcmp(eqnames{i}, o.equations(:,modBuilder.EQ_COL_NAME)),2);
+                        equation = o.equations(strcmp(eqnames{i}, o.equations(:,modBuilder.EQ_COL_NAME)),modBuilder.EQ_COL_EXPR);
                         modBuilder.skipline()
                         modBuilder.dprintf('[%s]\t\t%s', o.tags.(eqnames{i}).name, equation{1});
                     end
@@ -7207,14 +7216,7 @@ classdef modBuilder < handle
             % Do we need to remove some symbols (parameters or exogenous variables)?
             list_of_symbols_potentially_to_be_removed = setdiff(otokens, ntokens);
 
-            % Clear symbol_map so typeof() uses linear search (safe during deletions)
-            o.symbol_map_dirty = true;
-
             for i=1:length(list_of_symbols_potentially_to_be_removed)
-                % Each deletion shifts row indices; force the map to rebuild
-                % from the current arrays at the top of every iteration.
-                o.symbol_map_dirty = true;
-
                 if not(o.appear_in_more_than_one_equation(list_of_symbols_potentially_to_be_removed{i}))
                     % Remove parameter/variable if it does not appear in another equation.
                     [type, id] = o.typeof(list_of_symbols_potentially_to_be_removed{i});
@@ -7223,9 +7225,13 @@ classdef modBuilder < handle
                       case 'parameter'
                         o.params(id,:) = [];
                         o.T.params = rmfield(o.T.params, list_of_symbols_potentially_to_be_removed{i});
+                        % The deletion shifted the row indices after id: rebuild the
+                        % map lazily on the next lookup.
+                        o.symbol_map_dirty = true;
                       case 'exogenous'
                         o.varexo(id,:) = [];
                         o.T.varexo = rmfield(o.T.varexo, list_of_symbols_potentially_to_be_removed{i});
+                        o.symbol_map_dirty = true;
                       otherwise
                         % Nothing to be done here.
                     end
@@ -7749,13 +7755,7 @@ classdef modBuilder < handle
                 delsyms = setdiff(o.T.equations.(eqname), Symbols); % Deleted symbols in updated equation
 
                 if ~isempty(delsyms)
-                    % Clear symbol_map so typeof() uses linear search (safe during deletions)
-                    o.symbol_map_dirty = true;
-
                     for j=1:length(delsyms)
-                        % Each deletion shifts row indices; force the map to rebuild
-                        % from the current arrays at the top of every iteration.
-                        o.symbol_map_dirty = true;
                         [type, id] = o.typeof(delsyms{j});
 
                         if ~o.appear_in_more_than_one_equation(delsyms{j})
@@ -7771,8 +7771,9 @@ classdef modBuilder < handle
                                 modBuilder.dprintf('Endogenous variable %s will be removed.', delsyms{j})
                                 o.var(id,:) = [];
                             end
-                        else
-                            %
+                            % The deletion shifted the row indices after id: rebuild
+                            % the map lazily on the next lookup.
+                            o.symbol_map_dirty = true;
                         end
                     end
                 end
@@ -9542,17 +9543,16 @@ function J = eval_jacobian(fhandles, incidence, x, n)
     JJ = zeros(nnzJ, 1);
     VV = zeros(nnzJ, 1);
     idx = 0;
+    % Zero-seed dual vector built once; each column swaps its own seeded entry
+    % in and out (O(n) constructions instead of O(n^2)).
+    v_ad = cell(n, 1);
+    for k = 1:n
+        v_ad{k} = autoDiff1(x(k), 0.0);
+    end
     for j = 1:n
         affected = find(incidence(:, j));
         if isempty(affected), continue; end
-        v_ad = cell(n, 1);
-        for k = 1:n
-            if k == j
-                v_ad{k} = autoDiff1(x(k), 1.0);
-            else
-                v_ad{k} = autoDiff1(x(k), 0.0);
-            end
-        end
+        v_ad{j} = autoDiff1(x(j), 1.0);
         for i = affected'
             r = fhandles{i}(v_ad);
             idx = idx + 1;
@@ -9560,6 +9560,7 @@ function J = eval_jacobian(fhandles, incidence, x, n)
             JJ(idx) = j;
             VV(idx) = r.dx;
         end
+        v_ad{j} = autoDiff1(x(j), 0.0);
     end
     J = sparse(II, JJ, VV, m, n);
 end
@@ -9601,15 +9602,23 @@ function J = eval_analytical_jacobian(rows, use_ad, base, snames, fhandles, inci
     JJ = zeros(nnzJ, 1);
     VV = zeros(nnzJ, 1);
     idx = 0;
+    % Zero-seed dual vector for the AD-fallback rows, built once; each entry
+    % swaps its own seed in and out (O(n) constructions instead of O(n) per
+    % Jacobian entry).
+    v_ad = {};
+    if any(use_ad)
+        v_ad = cell(n, 1);
+        for k = 1:n
+            v_ad{k} = autoDiff1(x(k), 0.0);
+        end
+    end
     for i = 1:m
         if use_ad(i)
             affected = find(incidence(i, :));
             for j = affected
-                v_ad = cell(n, 1);
-                for k = 1:n
-                    v_ad{k} = autoDiff1(x(k), double(k == j));
-                end
+                v_ad{j} = autoDiff1(x(j), 1.0);
                 r = fhandles{i}(v_ad);
+                v_ad{j} = autoDiff1(x(j), 0.0);
                 idx = idx + 1;
                 II(idx) = i;
                 JJ(idx) = j;
