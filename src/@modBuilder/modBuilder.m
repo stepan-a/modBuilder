@@ -7378,9 +7378,23 @@ classdef modBuilder < handle
             % Apply the substitution per equation, splitting on '=' so that LHS and RHS
             % parse as independent ast trees. The dispatch on target_is_symbol picks
             % between lag-aware symbol substitution and structural subtree matching.
+            % Equations where the target cannot appear -- the symbol (or, for an
+            % expression target, one of its symbols) is absent from the equation's
+            % symbol set -- are skipped outright: no parse, no rewrite, and their
+            % text keeps the user's original formatting.
+            row_of = dictionary(string(o.equations(:, modBuilder.EQ_COL_NAME)), (1:size(o.equations, 1))');
+            target_syms = target_ast.symbol_names();
             for i = 1:numel(eqnames)
                 nm = eqnames{i};
-                ide = strcmp(nm, o.equations(:, modBuilder.EQ_COL_NAME));
+                eq_syms = [o.T.equations.(nm), {nm}];
+                if target_is_symbol
+                    if ~ismember(expr1, eq_syms)
+                        continue
+                    end
+                elseif ~isempty(target_syms) && ~all(ismember(target_syms, eq_syms))
+                    continue
+                end
+                ide = row_of(nm);
                 eq_str = o.equations{ide, modBuilder.EQ_COL_EXPR};
                 LHSRHS = strsplit(eq_str, '=');
                 if length(LHSRHS) == 2
