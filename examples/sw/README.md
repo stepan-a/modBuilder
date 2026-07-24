@@ -15,12 +15,18 @@ closed form.
 | script | what it does | needs Dynare |
 |---|---|---|
 | `sw.m` | builds the model and writes `sw.mod` (equations, calibration, shocks, analytical steady state) | no — only to *run* the produced `sw.mod` |
-| `sw_from_anchors.m` | rebuilds the model, then lets `steady_plan` **derive** the 78 closed forms from a handful of declared anchors instead of reading the hand-written steady state | no |
+| `sw_from_anchors.m` | rebuilds the model, then lets `steady_plan` **derive** 54 of the 78 steady-state expressions from 7 declared anchors, instead of reading the hand-written steady state (the remaining 17 are the shock levels, identified without being told) | no |
 
 Start with `sw.m` to see the model itself, then `sw_from_anchors.m` for what
 `steady_plan(Match=true, Anchors=..., PropagateKnown=true)` can do on a model
 of this size — including the gauge backout that recovers the level of the
 scale-free Calvo price and wage recursions from a consistency equation.
+
+The seven anchors are the table at the top of that script. One of them is worth
+a look: capacity utilisation is anchored, not the capital return rate a hand
+derivation would write down, because the utilisation FOC pins it only through an
+exponential times a linear factor. Its script header explains why that has no
+closed form, and why the anchor belongs on the variable the modeller normalised.
 
 ```matlab
 cd examples/sw

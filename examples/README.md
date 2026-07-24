@@ -23,8 +23,10 @@ Read **`sw/`** for what a realistic model looks like written this way — 78
 equations that stay readable because each is named after the variable it pins,
 shock processes generated rather than typed, and a fully analytical steady
 state. Its companion `sw_from_anchors.m` is the interesting one: it throws the
-hand-written steady state away and lets `steady_plan` *derive* all 78 closed
-forms from a handful of declared anchors, gauge backout included.
+hand-written steady state away and lets `steady_plan` *derive* 54 of the 78
+expressions from seven declared anchors — each one a normalisation, a markup or
+a calibration constant — identifying the 17 shock levels on its own, gauge
+backout included, and checking every equation at the point it recovers.
 
 ## The two routes to a steady state
 
