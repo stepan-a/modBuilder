@@ -3382,6 +3382,157 @@ classdef ast
             end
         end % function
 
+        function [names, defs, out] = factor_common(trees, prefix, minsize, reserved)
+        % Common-subexpression elimination over a set of trees.
+        %
+        % INPUTS:
+        % - trees     [cell]      1×m cell of ast, rewritten JOINTLY so a subexpression
+        %                         shared between two trees is hoisted once
+        % - prefix    [char]      stem of the generated names
+        % - minsize   [double]    smallest subtree (node count) worth a name
+        % - reserved  [cell]      names the generated ones must not collide with
+        %
+        % OUTPUTS:
+        % - names     [cell]      1×k generated names
+        % - defs      [cell]      1×k ast definitions, INDEPENDENT of one another, so
+        %                         they can be emitted in any order
+        % - out       [cell]      the input trees with every hoisted subtree replaced
+        %                         by its name
+        %
+        % REMARKS:
+        % - Symbolic differentiation writes the same subexpression many times: the
+        %   derivative of a large residual is a tree where the algebra's shared
+        %   structure has been flattened out. Hoisting the repeats recovers that DAG,
+        %   which shrinks the emitted code AND the arithmetic per evaluation.
+        % - Repeats are found by keying every node: the key is a full serialisation,
+        %   so structurally equal subtrees always collide. It is NOT injective (the
+        %   documented sym('x_1') / tsym('x',1) ambiguity), hence the ast_equal
+        %   confirmation before a group is accepted.
+        % - The keys are computed here rather than read from the skey cache: build_key
+        %   gives up above 512 characters, which is exactly the size range worth
+        %   hoisting.
+        % - Only MAXIMAL repeats are hoisted -- once a subtree is taken, the nodes of
+        %   its occurrences are marked, so nothing nested inside them is hoisted
+        %   again. That keeps the definitions independent of each other (no ordering
+        %   constraint at emission) at the cost of a few missed nested repeats.
+        % - Every walk here is iterative: canonicalise left-associates chains, so the
+        %   trees are deep and a recursive pass would exhaust the MATLAB stack.
+            names = {}; defs = {}; out = trees;
+            if isempty(trees)
+                return
+            end
+
+            % 1. Index every node of every tree: nodes{i}, kids{i}, and the tree each
+            %    node belongs to. A child always receives a larger index than its
+            %    parent, which gives the bottom-up order for free.
+            cap = 0;
+            for t = 1:numel(trees)
+                cap = cap + ast.node_count(trees{t});
+            end
+            nodes = cell(1, cap); kids = cell(1, cap);
+            nn = 0;
+            for t = 1:numel(trees)
+                stack = {trees{t}}; parents = 0;
+                while ~isempty(stack)
+                    node = stack{end}; stack(end) = [];
+                    p = parents(end); parents(end) = [];
+                    nn = nn + 1;
+                    nodes{nn} = node; kids{nn} = [];
+                    if p > 0, kids{p}(end+1) = nn; end
+                    for i = 1:numel(node.children)
+                        stack{end+1} = node.children{i}; %#ok<AGROW>
+                        parents(end+1) = nn; %#ok<AGROW>
+                    end
+                end
+            end
+            nodes = nodes(1:nn); kids = kids(1:nn);
+
+            % 2. Bottom-up keys and subtree sizes.
+            keys = strings(1, nn); sizes = zeros(1, nn);
+            for i = nn:-1:1
+                nd = nodes{i};
+                switch nd.type
+                  case 'num'
+                    base = sprintf('n%.17g', nd.value);
+                  case 'sym'
+                    base = ['s' nd.value];
+                  case 'tsym'
+                    base = sprintf('t%s@%d', nd.value{1}, nd.value{2});
+                  otherwise
+                    if isempty(nd.value)
+                        base = [nd.type '|'];
+                    else
+                        base = [nd.type '|' char(string(nd.value))];
+                    end
+                end
+                keys(i) = base + "(" + strjoin(cellstr(keys(kids{i}))', ",") + ")";
+                sizes(i) = 1 + sum(sizes(kids{i}));
+            end
+
+            % 3. Repeated subtrees, largest first, skipping anything already inside a
+            %    hoisted one.
+            [~, ~, grp] = unique(keys);
+            counts = accumarray(grp, 1)';
+            cand = find(counts >= 2);
+            if isempty(cand)
+                return
+            end
+            csize = zeros(1, numel(cand));
+            for c = 1:numel(cand)
+                csize(c) = sizes(find(grp == cand(c), 1));
+            end
+            [~, order] = sort(csize, 'descend');
+
+            covered = false(1, nn);
+            chosen = {};
+            for c = order
+                if csize(c) < minsize, break, end
+                occ = find(grp == cand(c));
+                occ = occ(~covered(occ));
+                if numel(occ) < 2, continue, end
+                % Key equality is necessary, not sufficient: confirm structurally.
+                keep = occ(1);
+                for k = 2:numel(occ)
+                    if ast.ast_equal(nodes{occ(1)}, nodes{occ(k)})
+                        keep(end+1) = occ(k); %#ok<AGROW>
+                    end
+                end
+                if numel(keep) < 2, continue, end
+                chosen{end+1} = nodes{keep(1)}; %#ok<AGROW>
+                for o = keep
+                    st = o(:);
+                    while ~isempty(st)
+                        q = st(end); st(end) = [];
+                        covered(q) = true;
+                        st = [st; kids{q}(:)]; %#ok<AGROW>
+                    end
+                end
+            end
+            if isempty(chosen)
+                return
+            end
+
+            % 4. Names that cannot collide with the symbols already in scope.
+            suffix = '';
+            while any(ismember(strcat(prefix, suffix, arrayfun(@(i) sprintf('%d', i), ...
+                        1:numel(chosen), 'UniformOutput', false)), reserved))
+                suffix = [suffix '_']; %#ok<AGROW>
+            end
+            names = arrayfun(@(i) sprintf('%s%s%d', prefix, suffix, i), 1:numel(chosen), ...
+                             'UniformOutput', false);
+            defs = chosen;
+
+            % 5. Substitute, largest first: a smaller hoisted subtree may sit inside a
+            %    larger one, and replacing the larger first leaves the smaller's own
+            %    occurrences (outside it) intact.
+            for k = 1:numel(chosen)
+                repl = ast('sym', names{k}, {});
+                for t = 1:numel(out)
+                    out{t} = out{t}.replace_subtree(chosen{k}, repl);
+                end
+            end
+        end % function
+
         function names = nonanalytic_calls(o)
         % Function names in the tree that rule out complex-step differentiation.
         %

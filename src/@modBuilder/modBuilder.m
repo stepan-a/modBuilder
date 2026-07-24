@@ -9082,27 +9082,44 @@ classdef modBuilder < handle
                     fprintf(fid, 'r(%d) = %s;\n', j, res{j}.string());
                 end
             else
+                % Residuals and Jacobian entries are factored TOGETHER: symbolic
+                % differentiation writes the same subexpression over and over, both
+                % inside one derivative and between a residual and its derivatives,
+                % so hoisting the repeats once for the whole block recovers the
+                % sharing the algebra had and that the tree form lost.
+                % Simplify=false on diff_ast: the emitted Jacobian is machine read,
+                % and the full simplify costs an order of magnitude more than
+                % canonicalise for a tree of the same size.
+                trees = res(:)';
+                slots = cell(1, nv);   % slots{k} = [] for a residual, [i j] for J(i,j)
+                for j = 1:nv
+                    slots{j} = [];
+                end
+                for i2 = 1:nv
+                    for j2 = 1:nv
+                        d = res{i2}.diff_ast(outvars{j2}, 0, Simplify=false);
+                        if ~ast.is_zero(d)
+                            trees{end+1} = d; %#ok<AGROW>
+                            slots{end+1} = [i2 j2]; %#ok<AGROW>
+                        end
+                    end
+                end
+                [tnames, tdefs, trees] = ast.factor_common(trees, 'cse', 8, [outvars(:)', argnames(:)']);
+
                 fprintf(fid, 'function [r, J] = block_system(x%s)\n', sprintf(', %s', argnames{:}));
                 for j = 1:nv
                     fprintf(fid, '%s = x(%d);\n', outvars{j}, j);
                 end
+                for k = 1:numel(tnames)
+                    fprintf(fid, '%s = %s;\n', tnames{k}, tdefs{k}.string());
+                end
                 fprintf(fid, 'r = zeros(%d, 1);\n', nv);
                 for j = 1:nv
-                    fprintf(fid, 'r(%d) = %s;\n', j, res{j}.string());
+                    fprintf(fid, 'r(%d) = %s;\n', j, trees{j}.string());
                 end
                 fprintf(fid, 'J = zeros(%d, %d);\n', nv, nv);
-                for i2 = 1:nv
-                    for j2 = 1:nv
-                        % Simplify=false: the emitted Jacobian is machine read, and the
-                        % full simplify costs an order of magnitude more than
-                        % canonicalise for a tree of the same size. The second
-                        % simplify() this call used to carry was a no-op anyway --
-                        % diff_ast already returns a normalised tree.
-                        d = res{i2}.diff_ast(outvars{j2}, 0, Simplify=false);
-                        if ~ast.is_zero(d)
-                            fprintf(fid, 'J(%d, %d) = %s;\n', i2, j2, d.string());
-                        end
-                    end
+                for k = nv+1:numel(trees)
+                    fprintf(fid, 'J(%d, %d) = %s;\n', slots{k}(1), slots{k}(2), trees{k}.string());
                 end
             end
             fprintf(fid, 'end\n');
