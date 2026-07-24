@@ -21,3 +21,5 @@ doc:
   artifacts:
     paths:
       - doc/slides.pdf
+      - doc/ast.pdf
+      - doc/steadystate.pdf
