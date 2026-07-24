@@ -1707,7 +1707,7 @@ classdef ast
                             terms{i} = ast.product_of(factors);
                         end
                     end
-                    o = ast.sum_of(terms).simplify();
+                    o = ast.sum_of(terms).canonicalise();
                     return
                 end
             end
@@ -1721,7 +1721,7 @@ classdef ast
                     for i = 1:numel(terms)
                         products{i} = ast('binop', '*', {terms{i}, R}).expand();
                     end
-                    o = ast.sum_of(products).simplify();
+                    o = ast.sum_of(products).canonicalise();
                     return
                 end
                 if strcmp(R.type, 'binop') && strcmp(R.value, '+')
@@ -1730,7 +1730,7 @@ classdef ast
                     for i = 1:numel(terms)
                         products{i} = ast('binop', '*', {L, terms{i}}).expand();
                     end
-                    o = ast.sum_of(products).simplify();
+                    o = ast.sum_of(products).canonicalise();
                     return
                 end
             end
