@@ -99,6 +99,13 @@ function [x, fval, iter, flag] = newton(f, x0, tol, maxit)
         r    = trial;                 % reuse residual at accepted point
     end
 
+    % The convergence test runs at the top of each iteration, so a step accepted
+    % on the LAST allowed iteration that drives the residual below tolerance
+    % would otherwise be reported as a max-iteration failure.
+    if flag == 1 && isfinite(r.x) && abs(r.x) < tol
+        flag = 0;
+    end
+
     x    = x_ad.x;
     fval = r.x;
 end

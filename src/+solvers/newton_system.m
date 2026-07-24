@@ -129,5 +129,12 @@ function [x, fval, iter, flag] = newton_system(residual_fn, jacobian_fn, x0, tol
         fx = fx_try;     % reuse: skip one residual_fn call next iteration
     end
 
+    % The convergence test runs at the top of each iteration, so a step accepted
+    % on the LAST allowed iteration that drives the residual below tolerance
+    % would otherwise be reported as a max-iteration failure.
+    if flag == 1 && all(isfinite(fx)) && norm(fx, inf) < tol
+        flag = 0;
+    end
+
     fval = fx;
 end
