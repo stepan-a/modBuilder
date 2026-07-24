@@ -119,7 +119,7 @@ inflation_target_rho1            = .0000;   % SW2003 (inflation objective; persi
 taylor_rho1                      = .1500;   % SW2007 (monetary policy)
 public_spending_rho1             = .9700;   % SW2007 (government spending)
 habit_rho1                       = .9800;   % sw (habit is a parameter in SW; this is a shock on it)
-preference_rho1                  = .9000;   % sw (additive preference shifter; SW2003 pref. shock is risk_premium)
+preference_rho1                  = .9000;   % sw (multiplicative preference shifter; SW2003 pref. shock is risk_premium)
 
 % Unconditional standard deviations. SW estimates are rescaled by 1/100
 % (sw variables are in levels/ratios, not percent). Disabled shocks are set
@@ -263,13 +263,13 @@ m = modBuilder();
 %% --- Households (Equations 1-11) ---
 
 % Eq 1: Household Consumption FOC → HouseholdLagrangeMultiplier
-m.add('HouseholdLagrangeMultiplier', '(Consumption - eta*HabitShock*Consumption(-1)/ProductionEfficiencyGrowth+log(PreferenceShock))^(-sigmac)*exp(LabourSupplyShock*(sigmac-1)/(1+sigmal)*(HouseholdLabourSupply/household_labour_supply_ss)^(1+sigmal)) - ConsumptionTax*HouseholdLagrangeMultiplier');
+m.add('HouseholdLagrangeMultiplier', 'PreferenceShock*(Consumption - eta*HabitShock*Consumption(-1)/ProductionEfficiencyGrowth)^(-sigmac)*exp(LabourSupplyShock*(sigmac-1)/(1+sigmal)*(HouseholdLabourSupply/household_labour_supply_ss)^(1+sigmal)) - ConsumptionTax*HouseholdLagrangeMultiplier');
 
 % Eq 2: Household Euler equation → NominalInterestFactor
 m.add('NominalInterestFactor', 'beta*RiskPremium*NominalInterestFactor*ProductionEfficiencyGrowth(1)^(-sigmac)*HouseholdLagrangeMultiplier(1)*IncomeTax(1)/InflationFactor(1) - HouseholdLagrangeMultiplier*IncomeTax');
 
 % Eq 3: Household Labour FOC → Consumption
-m.add('Consumption', '(Consumption - eta*HabitShock*Consumption(-1)/ProductionEfficiencyGrowth+log(PreferenceShock))^(1-sigmac)*(LabourSupplyShock/household_labour_supply_ss)*exp(LabourSupplyShock*(sigmac-1)/(1+sigmal)*(HouseholdLabourSupply/household_labour_supply_ss)^(1+sigmal))*(HouseholdLabourSupply/household_labour_supply_ss)^sigmal - HouseholdLagrangeMultiplier*IncomeTax*LabourIncomeTax*HouseholdRealWage');
+m.add('Consumption', 'PreferenceShock*(Consumption - eta*HabitShock*Consumption(-1)/ProductionEfficiencyGrowth)^(1-sigmac)*(LabourSupplyShock/household_labour_supply_ss)*exp(LabourSupplyShock*(sigmac-1)/(1+sigmal)*(HouseholdLabourSupply/household_labour_supply_ss)^(1+sigmal))*(HouseholdLabourSupply/household_labour_supply_ss)^sigmal - HouseholdLagrangeMultiplier*IncomeTax*LabourIncomeTax*HouseholdRealWage');
 
 % Eq 4: Household Investment FOC → TobinQ
 m.add('TobinQ', 'TobinQ*(1-InvestmentCost-Investment/Investment(-1)*ProductionEfficiencyGrowth*dInvestmentCost)+beta*HouseholdLagrangeMultiplier(1)/HouseholdLagrangeMultiplier*ProductionEfficiencyGrowth(1)^(-sigmac)*TobinQ(1)*InvestmentEfficiencyShock(1)/InvestmentEfficiencyShock*(Investment(1)/Investment*ProductionEfficiencyGrowth(1))^2*dInvestmentCost(1) - InvestmentRelativePrice/InvestmentEfficiencyShock');
@@ -439,13 +439,13 @@ end
 if WITH_EFFICIENT_BLOCK
 
     % Eq 60: (Efficient) Household Consumption FOC → EfficientHouseholdLagrangeMultiplier
-    m.add('EfficientHouseholdLagrangeMultiplier', '(EfficientConsumption - eta*HabitShock*EfficientConsumption(-1)/ProductionEfficiencyGrowth+log(PreferenceShock))^(-sigmac)*exp(LabourSupplyShock*(sigmac-1)/(1+sigmal)*(EfficientHouseholdLabourSupply/household_labour_supply_ss)^(1+sigmal)) - ConsumptionTax*EfficientHouseholdLagrangeMultiplier');
+    m.add('EfficientHouseholdLagrangeMultiplier', 'PreferenceShock*(EfficientConsumption - eta*HabitShock*EfficientConsumption(-1)/ProductionEfficiencyGrowth)^(-sigmac)*exp(LabourSupplyShock*(sigmac-1)/(1+sigmal)*(EfficientHouseholdLabourSupply/household_labour_supply_ss)^(1+sigmal)) - ConsumptionTax*EfficientHouseholdLagrangeMultiplier');
 
     % Eq 61: (Efficient) Household Euler equation → EfficientRealInterestFactor
     m.add('EfficientRealInterestFactor', 'beta*RiskPremium*EfficientRealInterestFactor*ProductionEfficiencyGrowth(1)^(-sigmac)*EfficientHouseholdLagrangeMultiplier(1)*IncomeTax(1) - EfficientHouseholdLagrangeMultiplier*IncomeTax');
 
     % Eq 62: (Efficient) Household Labour FOC → EfficientConsumption
-    m.add('EfficientConsumption', '(EfficientConsumption - eta*HabitShock*EfficientConsumption(-1)/ProductionEfficiencyGrowth+log(PreferenceShock))^(1-sigmac)*(LabourSupplyShock/household_labour_supply_ss)*exp(LabourSupplyShock*(sigmac-1)/(1+sigmal)*(EfficientHouseholdLabourSupply/household_labour_supply_ss)^(1+sigmal))*(EfficientHouseholdLabourSupply/household_labour_supply_ss)^sigmal - EfficientHouseholdLagrangeMultiplier*IncomeTax*LabourIncomeTax*EfficientHouseholdRealWage');
+    m.add('EfficientConsumption', 'PreferenceShock*(EfficientConsumption - eta*HabitShock*EfficientConsumption(-1)/ProductionEfficiencyGrowth)^(1-sigmac)*(LabourSupplyShock/household_labour_supply_ss)*exp(LabourSupplyShock*(sigmac-1)/(1+sigmal)*(EfficientHouseholdLabourSupply/household_labour_supply_ss)^(1+sigmal))*(EfficientHouseholdLabourSupply/household_labour_supply_ss)^sigmal - EfficientHouseholdLagrangeMultiplier*IncomeTax*LabourIncomeTax*EfficientHouseholdRealWage');
 
     % Eq 63: (Efficient) Household Investment FOC → EfficientTobinQ
     m.add('EfficientTobinQ', 'EfficientTobinQ*(1-EfficientInvestmentCost-EfficientInvestment/EfficientInvestment(-1)*ProductionEfficiencyGrowth*dEfficientInvestmentCost)+beta*EfficientHouseholdLagrangeMultiplier(1)/EfficientHouseholdLagrangeMultiplier*ProductionEfficiencyGrowth(1)^(-sigmac)*EfficientTobinQ(1)*InvestmentEfficiencyShock(1)/InvestmentEfficiencyShock*(EfficientInvestment(1)/EfficientInvestment*ProductionEfficiencyGrowth(1))^2*dEfficientInvestmentCost(1) - InvestmentRelativePrice/InvestmentEfficiencyShock');

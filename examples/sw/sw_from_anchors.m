@@ -2,10 +2,16 @@
 %
 % Instead of hand-writing the analytical steady_state_model, we declare only the
 % steady-state values a modeller knows a priori -- the symmetric-equilibrium
-% normalisations (all = 1), the unit shock levels, the marginal cost, and the hours
-% scale -- and let steady_plan(Match, Anchors, PropagateKnown) derive EVERYTHING
-% else in closed form. The scale-free Calvo recursion blocks (Z's, H's) are closed
-% by the gauge backout: their ratios come from the block equations, their level
+% normalisations (all = 1), the marginal cost and the hours scale -- and let
+% steady_plan(Match, Anchors, PropagateKnown) derive EVERYTHING else in closed
+% form. Nothing is declared for the exogenous processes: the plan identifies them
+% structurally, makes each an anchor of its own and solves its ARMA equation for
+% the level parameter it carries, before anything downstream is attempted. Those
+% levels stay symbolic in the derived forms, which therefore hold for any
+% calibration of them and not only for unit shocks.
+%
+% The scale-free Calvo recursion blocks (Z's, H's) are closed by the gauge
+% backout: their ratios come from the block equations, their level
 % from a consistency equation absorbed by the anchors (aggregate production for
 % GDP, labour-market clearing for the wage recursions) -- exactly the hand
 % technique of solving in ratios and backing the level out of a discarded equation.
@@ -24,14 +30,9 @@ constants = {'RealMarginalCost','EfficientRealMarginalCost','CapitalReturnRate',
 scale = {'HouseholdLabourSupply'};
 declared = [symmetric, constants, scale];
 
-% Values known a priori: symmetric normalisations and unit shock levels feed the
-% known-value propagation (log(shock) -> 0, x/1 -> x), which is what lets the
-% recognisers close the consumption FOC blocks.
+% Values known a priori, inlined into the residuals by the known-value
+% propagation before the recognisers run.
 for s = symmetric, m.steady(s{1}, '1'); end
-unit_shocks = {'ProductionEfficiencyCycle','ConsumptionTax','LabourIncomeTax','IncomeTax','RiskPremium', ...
-  'InvestmentRelativePrice','InvestmentEfficiencyShock','LabourTax','PriceCostPushShock','WageCostPushShock', ...
-  'TaylorShock','HabitShock','PreferenceShock'};
-for s = unit_shocks, m.steady(s{1}, '1'); end
 m.steady('RealMarginalCost', '(thetaf-1)/thetaf');
 m.steady('EfficientRealMarginalCost', '(thetaf-1)/thetaf');
 m.steady('HouseholdLabourSupply', 'household_labour_supply_ss');

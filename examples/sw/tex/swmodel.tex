@@ -176,8 +176,8 @@ A representative household maximises expected lifetime utility:
 where the period utility function takes the \textbf{non-separable} form:
 \begin{equation}\label{eq:period_utility}
   u(C_t, L_t; \bm{\xi}_t)
-  = \frac{1}{1-\sigma_c}
-    \Bigl(C_t - \eta\,\eta^s_t\,\frac{C_{t-1}}{g_t} + \ln\varsigma_t\Bigr)^{1-\sigma_c}
+  = \frac{\varsigma_t}{1-\sigma_c}
+    \Bigl(C_t - \eta\,\eta^s_t\,\frac{C_{t-1}}{g_t}\Bigr)^{1-\sigma_c}
     \exp\!\Biggl(\frac{(\sigma_c - 1)\,\varepsilon^L_t}{1+\sigma_l}
     \Bigl(\frac{L_t}{L^{\star}}\Bigr)^{1+\sigma_l}\Biggr).
 \end{equation}
@@ -188,8 +188,9 @@ This specification embeds several key features:
     $\tilde C_t = C_t - \eta\,\eta^s_t \, C_{t-1}/g_t$ depends on lagged
     \emph{aggregate} consumption, scaled by the stochastic habit parameter
     $\eta^s_t$ and detrended by the technology growth factor~$g_t$.
-  \item \textbf{Preference shock}: $\ln\varsigma_t$ is an additive preference
-    shifter.
+  \item \textbf{Preference shock}: $\varsigma_t$ scales the period utility, and
+    with it the marginal utility of both arguments. It enters multiplicatively,
+    like every other exogenous process.
   \item \textbf{Non-separability}: when $\sigma_c \neq 1$, the marginal
     utility of consumption depends on labour supply through the exponential
     term. The labour supply shock $\varepsilon^L_t$ and the term
@@ -279,7 +280,7 @@ equations, numbered as in the Dynare code.
 Differentiating with respect to $C_t$:
 \begin{equation}\label{eq:eq1}\tag{Eq.~1}
   \boxed{
-  \bigl(C_t - \eta\,\eta^s_t\,C_{t-1}/g_t + \ln\varsigma_t\bigr)^{-\sigma_c}
+  \varsigma_t\,\bigl(C_t - \eta\,\eta^s_t\,C_{t-1}/g_t\bigr)^{-\sigma_c}
   \exp\!\Bigl(\tfrac{(\sigma_c-1)\varepsilon^L_t}{1+\sigma_l}
   (L_t/L^{\star})^{1+\sigma_l}\Bigr)
   = \tau^C_t\,\lambda_t.}
@@ -306,7 +307,7 @@ Differentiating with respect to $L_t$:
 \begin{equation}\label{eq:eq3}\tag{Eq.~3}
   \boxed{
   \begin{aligned}
-  &\bigl(C_t - \eta\,\eta^s_t\,C_{t-1}/g_t + \ln\varsigma_t\bigr)^{1-\sigma_c}
+  &\varsigma_t\,\bigl(C_t - \eta\,\eta^s_t\,C_{t-1}/g_t\bigr)^{1-\sigma_c}
   \,\frac{\varepsilon^L_t}{L^{\star}}
   \,\Bigl(\frac{L_t}{L^{\star}}\Bigr)^{\!\sigma_l} \\
   &\qquad\times \exp\!\Bigl(\tfrac{(\sigma_c-1)\varepsilon^L_t}{1+\sigma_l}
@@ -1789,7 +1790,7 @@ economy (\Cref{sec:households}), with two modifications:
 
 \paragraph{Equation~60: Efficient consumption FOC.}
 \begin{equation}\tag{Eq.~60}
-  \bigl(C^e_t - \eta\,\eta^s_t\,C^e_{t-1}/g_t + \ln\varsigma_t\bigr)^{-\sigma_c}
+  \varsigma_t\,\bigl(C^e_t - \eta\,\eta^s_t\,C^e_{t-1}/g_t\bigr)^{-\sigma_c}
   \exp\!\Bigl(\tfrac{(\sigma_c-1)\varepsilon^L_t}{1+\sigma_l}
   (L^e_t/L^{\star})^{1+\sigma_l}\Bigr)
   = \tau^C_t\,\lambda^e_t.
