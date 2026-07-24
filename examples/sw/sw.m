@@ -531,9 +531,9 @@ m.parameter('gammaw', gammaw, 'long_name', 'Wage indexation', 'texname', '\gamma
 
 %% Parameters — Monetary authority
 if ~WITH_EFFICIENT_BLOCK
-    m.parameter('ssGDP', GDP_ss, 'texname', '\bar Y');
+    m.parameter('ssGDP', GDP_ss, 'texname', 'Y^{\star}');
 end
-m.parameter('steady_state_nominal_interest_factor', steady_state_nominal_interest_factor, 'long_name', 'Steady-state nominal interest factor', 'texname', '\bar R');
+m.parameter('steady_state_nominal_interest_factor', steady_state_nominal_interest_factor, 'long_name', 'Steady-state nominal interest factor', 'texname', 'R^{\star}');
 m.parameter('nominal_interest_rate_smoothing', nominal_interest_rate_smoothing, 'long_name', 'Interest rate smoothing', 'texname', '\rho_R');
 m.parameter('elasticity_of_nominal_interest_rate_to_inflation', elasticity_of_nominal_interest_rate_to_inflation, 'long_name', 'Taylor rule inflation coefficient', 'texname', 'r_{\pi}');
 m.parameter('elasticity_of_nominal_interest_rate_to_output_gap', elasticity_of_nominal_interest_rate_to_output_gap, 'long_name', 'Taylor rule output gap coefficient', 'texname', 'r_y');

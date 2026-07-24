@@ -179,7 +179,7 @@ where the period utility function takes the \textbf{non-separable} form:
   = \frac{1}{1-\sigma_c}
     \Bigl(C_t - \eta\,\eta^s_t\,\frac{C_{t-1}}{g_t} + \ln\varsigma_t\Bigr)^{1-\sigma_c}
     \exp\!\Biggl(\frac{(\sigma_c - 1)\,\varepsilon^L_t}{1+\sigma_l}
-    \Bigl(\frac{L_t}{\bbar L}\Bigr)^{1+\sigma_l}\Biggr).
+    \Bigl(\frac{L_t}{L^{\star}}\Bigr)^{1+\sigma_l}\Biggr).
 \end{equation}
 
 This specification embeds several key features:
@@ -193,7 +193,7 @@ This specification embeds several key features:
   \item \textbf{Non-separability}: when $\sigma_c \neq 1$, the marginal
     utility of consumption depends on labour supply through the exponential
     term. The labour supply shock $\varepsilon^L_t$ and the term
-    $(L_t/\bbar L)^{1+\sigma_l}$ enter multiplicatively, generating a wealth
+    $(L_t/L^{\star})^{1+\sigma_l}$ enter multiplicatively, generating a wealth
     effect on labour supply.
 \end{itemize}
 
@@ -236,16 +236,16 @@ $S_t = S(I_t, I_{t-1}, g_t)$ captures investment adjustment costs.
 The adjustment cost function depends on the growth rate of investment:
 \begin{equation}\label{eq:adj_cost}
   S_t \equiv S\!\left(\frac{I_t}{I_{t-1}}\,g_t\right)
-  = \frac{\psi}{2}\,(1+\bbar g)^2
-    \left(\frac{I_t}{I_{t-1}}\,\frac{g_t}{1+\bbar g} - 1\right)^{\!2},
+  = \frac{\psi}{2}\,(1+g^{\star})^2
+    \left(\frac{I_t}{I_{t-1}}\,\frac{g_t}{1+g^{\star}} - 1\right)^{\!2},
 \end{equation}
 with derivative
 \begin{equation}\label{eq:adj_cost_deriv}
   S'_t \equiv \frac{\partial S}{\partial (I_t g_t / I_{t-1})}
-  = \psi\,(1+\bbar g)
-    \left(\frac{I_t}{I_{t-1}}\,\frac{g_t}{1+\bbar g} - 1\right).
+  = \psi\,(1+g^{\star})
+    \left(\frac{I_t}{I_{t-1}}\,\frac{g_t}{1+g^{\star}} - 1\right).
 \end{equation}
-At steady state, $I_t/I_{t-1} = 1$ and $g_t = 1+\bbar g$, so
+At steady state, $I_t/I_{t-1} = 1$ and $g_t = 1+g^{\star}$, so
 $S = S' = 0$: there are no adjustment costs along the balanced growth path.
 
 \subsection{Endogenous depreciation}
@@ -253,15 +253,15 @@ $S = S' = 0$: there are no adjustment costs along the balanced growth path.
 The depreciation rate is an increasing, convex function of capacity
 utilisation~$z_t$:
 \begin{equation}\label{eq:depreciation}
-  \delta(z_t) = \bbar\delta \, \exp\!\left(
-    \frac{\bbar\delta'}{\bbar\delta}\,(z_t - \bbar z)\right),
+  \delta(z_t) = \delta^{\star} \, \exp\!\left(
+    \frac{{\delta'}^{\star}}{\delta^{\star}}\,(z_t - z^{\star})\right),
 \end{equation}
-where $\bbar\delta = \delta(\bbar z)$ is the steady-state depreciation rate and
-$\bbar\delta' = \delta'(\bbar z)$ is the steady-state marginal depreciation.
+where $\delta^{\star} = \delta(z^{\star})$ is the steady-state depreciation rate and
+${\delta'}^{\star} = \delta'(z^{\star})$ is the steady-state marginal depreciation.
 The marginal depreciation rate is:
 \begin{equation}\label{eq:depreciation_deriv}
-  \delta'(z_t) = \bbar\delta' \, \exp\!\left(
-    \frac{\bbar\delta'}{\bbar\delta}\,(z_t - \bbar z)\right).
+  \delta'(z_t) = {\delta'}^{\star} \, \exp\!\left(
+    \frac{{\delta'}^{\star}}{\delta^{\star}}\,(z_t - z^{\star})\right).
 \end{equation}
 
 \subsection{First-order conditions}
@@ -281,7 +281,7 @@ Differentiating with respect to $C_t$:
   \boxed{
   \bigl(C_t - \eta\,\eta^s_t\,C_{t-1}/g_t + \ln\varsigma_t\bigr)^{-\sigma_c}
   \exp\!\Bigl(\tfrac{(\sigma_c-1)\varepsilon^L_t}{1+\sigma_l}
-  (L_t/\bbar L)^{1+\sigma_l}\Bigr)
+  (L_t/L^{\star})^{1+\sigma_l}\Bigr)
   = \tau^C_t\,\lambda_t.}
 \end{equation}
 The left-hand side is the marginal utility of consumption. The right-hand side
@@ -307,10 +307,10 @@ Differentiating with respect to $L_t$:
   \boxed{
   \begin{aligned}
   &\bigl(C_t - \eta\,\eta^s_t\,C_{t-1}/g_t + \ln\varsigma_t\bigr)^{1-\sigma_c}
-  \,\frac{\varepsilon^L_t}{\bbar L}
-  \,\Bigl(\frac{L_t}{\bbar L}\Bigr)^{\!\sigma_l} \\
+  \,\frac{\varepsilon^L_t}{L^{\star}}
+  \,\Bigl(\frac{L_t}{L^{\star}}\Bigr)^{\!\sigma_l} \\
   &\qquad\times \exp\!\Bigl(\tfrac{(\sigma_c-1)\varepsilon^L_t}{1+\sigma_l}
-  (L_t/\bbar L)^{1+\sigma_l}\Bigr)
+  (L_t/L^{\star})^{1+\sigma_l}\Bigr)
   = \lambda_t\,\tau^R_t\,\tau^W_t\,w^h_t.
   \end{aligned}}
 \end{equation}
@@ -340,16 +340,16 @@ investment.
 This is the definition~\eqref{eq:depreciation}:
 \begin{equation}\label{eq:eq5}\tag{Eq.~5}
   \boxed{
-  \delta_t = \bbar\delta\,
-  \exp\!\Bigl(\frac{\bbar\delta'}{\bbar\delta}(z_t - \bbar z)\Bigr).}
+  \delta_t = \delta^{\star}\,
+  \exp\!\Bigl(\frac{{\delta'}^{\star}}{\delta^{\star}}(z_t - z^{\star})\Bigr).}
 \end{equation}
 
 \paragraph{Equation~6: Marginal depreciation rate.}
 This is the definition~\eqref{eq:depreciation_deriv}:
 \begin{equation}\label{eq:eq6}\tag{Eq.~6}
   \boxed{
-  \delta'_t = \bbar\delta'\,
-  \exp\!\Bigl(\frac{\bbar\delta'}{\bbar\delta}(z_t - \bbar z)\Bigr).}
+  \delta'_t = {\delta'}^{\star}\,
+  \exp\!\Bigl(\frac{{\delta'}^{\star}}{\delta^{\star}}(z_t - z^{\star})\Bigr).}
 \end{equation}
 
 \paragraph{Equation~7: Capacity utilisation FOC.}
@@ -385,16 +385,16 @@ This restates~\eqref{eq:capital_accum}:
 This restates~\eqref{eq:adj_cost}:
 \begin{equation}\label{eq:eq10}\tag{Eq.~10}
   \boxed{
-  S_t = \frac{\psi}{2}\,(1{+}\bbar g)^2
-    \Bigl(\frac{I_t}{I_{t-1}}\,\frac{g_t}{1{+}\bbar g} - 1\Bigr)^{\!2}.}
+  S_t = \frac{\psi}{2}\,(1{+}g^{\star})^2
+    \Bigl(\frac{I_t}{I_{t-1}}\,\frac{g_t}{1{+}g^{\star}} - 1\Bigr)^{\!2}.}
 \end{equation}
 
 \paragraph{Equation~11: Marginal investment cost.}
 This restates~\eqref{eq:adj_cost_deriv}:
 \begin{equation}\label{eq:eq11}\tag{Eq.~11}
   \boxed{
-  S'_t = \psi\,(1{+}\bbar g)
-    \Bigl(\frac{I_t}{I_{t-1}}\,\frac{g_t}{1{+}\bbar g} - 1\Bigr).}
+  S'_t = \psi\,(1{+}g^{\star})
+    \Bigl(\frac{I_t}{I_{t-1}}\,\frac{g_t}{1{+}g^{\star}} - 1\Bigr).}
 \end{equation}
 
 
@@ -883,7 +883,7 @@ We now derive the linearised Phillips curve implied by the nonlinear
 model, in order to clarify the role of the cost-push shock~$\nu^p_t$.
 For transparency, we work in the CES limit
 ($\psi_f = 0$, $\Lambda^f_t = 1$), with zero trend inflation
-($\bbar\pi = 1$) and a unit growth rate ($g = 1$); the Kimball
+($\bbar\pi^{\star} = 1$) and a unit growth rate ($g^{\star} = 1$); the Kimball
 curvature modifies the slope of the Phillips curve but does not change
 the qualitative conclusions. We denote log-deviations from steady
 state by hats: $\hat x_t = \log(x_t/x^\ss)$.
@@ -1554,7 +1554,7 @@ Taylor rule with interest rate smoothing:
   \boxed{
   R_t = R_{t-1}^{\rho_R}
   \left[
-  \bbar R\,
+  R^{\star}\,
   \left(\frac{\pi_{t-1}}{\bbar\pi_t}\right)^{\!r_\pi}\!
   \mathcal{G}_t^{\,r_y}\,
   \left(\frac{\pi_t/\bbar\pi_t}{\pi_{t-1}/\bbar\pi_{t-1}}\right)^{\!r_{\Delta\pi}}\!
@@ -1565,7 +1565,7 @@ Taylor rule with interest rate smoothing:
 where:
 \begin{itemize}[nosep]
   \item $\rho_R \in [0,1)$ is the interest rate smoothing parameter;
-  \item $\bbar R$ is the steady-state nominal interest rate;
+  \item $R^{\star}$ is the steady-state nominal interest rate;
   \item $r_\pi > 1$ is the response to lagged inflation deviations from target;
   \item $r_y > 0$ is the response to the output gap~$\mathcal{G}_t$;
   \item $r_{\Delta\pi}$ is the response to inflation growth;
@@ -1634,19 +1634,19 @@ linearised Smets--Wouters model.
 By default, each of the 17 exogenous driving forces follows an AR(1)
 process in levels (Section~\ref{sec:arma} generalises this to ARMA$(p,q)$).
 Let $X_t$ denote a generic shock with steady-state value
-$\bbar X$, autocorrelation parameter $\rho_X$, and innovation
+$X^{\star}$, autocorrelation parameter $\rho_X$, and innovation
 $\epsilon_{X,t}$. The law of motion is:%
 \footnote{For the growth-rate shock $g_t$
 (\texttt{ProductionEfficiencyGrowth}), the normalisation uses
-$(1+\bbar g)$ instead of $\bbar g$.}
+$(1+g^{\star})$ instead of $g^{\star}$.}
 \begin{equation}\label{eq:shock_general}\tag{Eq.~43--59}
   \boxed{
-  \frac{X_t}{\bbar X}
-  = \left(\frac{X_{t-1}}{\bbar X}\right)^{\!\rho_X}
+  \frac{X_t}{X^{\star}}
+  = \left(\frac{X_{t-1}}{X^{\star}}\right)^{\!\rho_X}
   \exp(\sigma_X\,\epsilon_{X,t}),
   \qquad \epsilon_{X,t} \sim \mathcal{N}(0,1).}
 \end{equation}
-In log-deviations $\hat x_t = \ln(X_t/\bbar X)$, this is:
+In log-deviations $\hat x_t = \ln(X_t/X^{\star})$, this is:
 \[
   \hat x_t = \rho_X\,\hat x_{t-1} + \sigma_X\,\epsilon_{X,t},
 \]
@@ -1696,7 +1696,7 @@ other active shocks AR(1).}\label{tab:shocks}
 The AR(1) law~\eqref{eq:shock_general} is only the default. Because the model
 is assembled programmatically with \texttt{modBuilder}, any shock can instead be
 declared as an ARMA$(p,q)$ process, the orders $p$ and $q$ being chosen per
-shock. In log deviations $\hat x_t = \ln(X_t/\bbar X)$,
+shock. In log deviations $\hat x_t = \ln(X_t/X^{\star})$,
 \begin{equation}\label{eq:arma}
   \hat x_t = \sum_{i=1}^{p}\phi_i\,\hat x_{t-i}
            + \sigma_\varepsilon\Big(\varepsilon_t
@@ -1705,8 +1705,8 @@ shock. In log deviations $\hat x_t = \ln(X_t/\bbar X)$,
 \end{equation}
 written in the same multiplicative form as~\eqref{eq:shock_general},
 \[
-  \frac{X_t}{\bbar X}
-  = \prod_{i=1}^{p}\Big(\frac{X_{t-i}}{\bbar X}\Big)^{\!\phi_i}
+  \frac{X_t}{X^{\star}}
+  = \prod_{i=1}^{p}\Big(\frac{X_{t-i}}{X^{\star}}\Big)^{\!\phi_i}
     \exp\!\Big(\sigma_\varepsilon\big(\varepsilon_t
       + \textstyle\sum_{j=1}^{q}\theta_j\,\varepsilon_{t-j}\big)\Big).
 \]
@@ -1791,7 +1791,7 @@ economy (\Cref{sec:households}), with two modifications:
 \begin{equation}\tag{Eq.~60}
   \bigl(C^e_t - \eta\,\eta^s_t\,C^e_{t-1}/g_t + \ln\varsigma_t\bigr)^{-\sigma_c}
   \exp\!\Bigl(\tfrac{(\sigma_c-1)\varepsilon^L_t}{1+\sigma_l}
-  (L^e_t/\bbar L)^{1+\sigma_l}\Bigr)
+  (L^e_t/L^{\star})^{1+\sigma_l}\Bigr)
   = \tau^C_t\,\lambda^e_t.
 \end{equation}
 
@@ -1891,37 +1891,37 @@ steady-state relationships include:
   \item The \textbf{discount factor} is pinned down by the Euler
     equation~\eqref{eq:eq2}:
     \[
-      \beta = \frac{\bbar\pi}{\bbar\varepsilon^B\,\bbar R}\,
-      (1+\bbar g)^{\sigma_c}.
+      \beta = \frac{\bbar\pi^{\star}}{{\varepsilon^B}^{\star}\,R^{\star}}\,
+      (1+g^{\star})^{\sigma_c}.
     \]
   \item The \textbf{steady-state capital rental rate} from the capital
     FOC~\eqref{eq:eq8}:
     \[
-      \bbar r^k = \frac{(1+\bbar g)^{\sigma_c} - \beta(1-\bbar\delta)}
-      {\beta\,\bbar\tau^R\,\bbar z}.
+      {r^k}^{\star} = \frac{(1+g^{\star})^{\sigma_c} - \beta(1-\delta^{\star})}
+      {\beta\,{\tau^R}^{\star}\,z^{\star}}.
     \]
   \item The \textbf{capital share} from the production function:
     \[
-      \alpha = 1 - \bbar\tau^L\,\mu_f\,\frac{\bbar w\,\bbar L}{\bbar Y}.
+      \alpha = 1 - {\tau^L}^{\star}\,\mu_f\,\frac{w^{\star}\,L^{\star}}{Y^{\star}}.
     \]
   \item The \textbf{steady-state gross wage}:
     \[
-      \bbar w = \frac{(1-\alpha)}{\bbar\tau^L}\,
+      w^{\star} = \frac{(1-\alpha)}{{\tau^L}^{\star}}\,
       \Bigl(\frac{1}{\mu_f}\,
-      \Bigl(\frac{\alpha}{\bbar r^k}\Bigr)^{\!\alpha}\Bigr)^{\!1/(1-\alpha)}\,
-      \bbar A.
+      \Bigl(\frac{\alpha}{{r^k}^{\star}}\Bigr)^{\!\alpha}\Bigr)^{\!1/(1-\alpha)}\,
+      A^{\star}.
     \]
   \item The \textbf{investment-to-GDP ratio}:
     \[
-      \frac{\bbar I}{\bbar Y}
-      = \frac{\bbar g + \bbar\delta}{\bbar z}\,
-        \frac{(\bbar K/\bbar L)^{1-\alpha}}{\bbar A^{1-\alpha}},
+      \frac{I^{\star}}{Y^{\star}}
+      = \frac{g^{\star} + \delta^{\star}}{z^{\star}}\,
+        \frac{(\bbar K^{\star}/L^{\star})^{1-\alpha}}{\left.A^{\star}\right.^{1-\alpha}},
     \]
-    where $\bbar K/\bbar L = \bbar\tau^L\,\bbar w\,\alpha/[(1-\alpha)\bbar r^k]$.
+    where $\bbar K^{\star}/L^{\star} = {\tau^L}^{\star}\,w^{\star}\,\alpha/[(1-\alpha){r^k}^{\star}]$.
   \item The \textbf{consumption-to-GDP ratio}:
     \[
-      \frac{\bbar C}{\bbar Y}
-      = 1 - \bbar\varepsilon^g - \frac{\bbar I}{\bbar Y}.
+      \frac{C^{\star}}{Y^{\star}}
+      = 1 - {\varepsilon^g}^{\star} - \frac{I^{\star}}{Y^{\star}}.
     \]
 \end{enumerate}
 
