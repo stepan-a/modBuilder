@@ -698,6 +698,14 @@ classdef ast
                     b = o.children{2}.eval(values);
                     v = ast.eval_binop(o.value, a, b);
                 case 'call'
+                    % The time-series operators have no static numeric meaning and
+                    % must not fall through to feval: MATLAB's builtin diff on a
+                    % scalar silently returns [] (which then propagates empties
+                    % through the residual), and adl / EXPECTATIONS die with a raw
+                    % undefined-function error.
+                    if ismember(o.value, {'diff', 'adl', 'EXPECTATIONS'})
+                        error('ast:eval', 'Cannot numerically evaluate the time-series operator "%s".', o.value);
+                    end
                     args = cell(1, numel(o.children));
                     for i = 1:numel(o.children)
                         args{i} = o.children{i}.eval(values);
