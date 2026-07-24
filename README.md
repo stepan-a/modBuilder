@@ -29,7 +29,7 @@ Each equation in a modBuilder model is explicitly associated with one endogenous
 - **Model Operations**: Copy, merge, extract submodels, and more
 - **Symbolic Differentiation**: Analytical partial derivatives and Jacobians via an AST engine (`partial`, `symbolic_jacobian`)
 - **Optimal-Policy FOCs**: Derive the first-order conditions of a recursive optimisation and grow the model into the (square) planner problem (`lagrangian_foc`, `ramsey_foc`, `augment`); substitute auxiliary variables back out symbolically (`eliminate`)
-- **Steady-State Analysis**: Structural block decomposition of the steady state with symbolic closed forms, exogenous-process and normalisation anchors, scale-symmetry diagnostics and unit-root warnings (`steady_plan`, `suggest_anchors`, `scaling_symmetries`)
+- **Steady-State Analysis**: Structural block decomposition of the steady state with symbolic closed forms, exogenous-process and normalisation anchors, calibration role swaps, scale-symmetry diagnostics and unit-root warnings (`steady_plan`, `apply_steady_plan`, `calibrate`, `suggest_anchors`, `suggest_calibrations`, `scaling_symmetries`)
 - **Dynare Export**: Generate syntactically valid `.mod` files ready for simulation
 - **LaTeX Export**: Render the model, its steady-state system (flat or as a recursively-ordered block plan), and its log-linearisation as paper-ready LaTeX (`tex_model`, `tex_steady_state_system`, `tex_steady_state_plan`, `tex_linearise`)
 
@@ -209,6 +209,23 @@ m.steady('Y_$1', 'A_$1*K_$1', {1, 2, 3});
 
 % Replacing an existing expression (preserves row position)
 m.steady('y', 'alpha*k');
+```
+
+#### `steady_aux(name, expression)`
+
+Define an **auxiliary** steady-state quantity that is *not* a model variable — a ratio, a scale, an intermediate reused across several closed forms. It prints in the `steady_state_model` block like a `steady()` entry and takes its place in the dependency order, but `checksteady()`/`write()` do not require it to correspond to an endogenous variable or parameter, and `write()` never counts it among the variables the block must assign.
+
+```matlab
+m.steady_aux('ky_ratio', 'alpha/(1/beta-1+delta)');   % capital–output ratio
+m.steady('k', 'ky_ratio*y');
+```
+
+#### `steady_call(outnames, expression)`
+
+Register a **multi-output call** in the `steady_state_model` block: the row prints as `[outnames{1}, ..., outnames{n}] = expression;`. This is how `apply_steady_plan(GenerateHelpers=true)` hooks a generated block solver into the cascade, and it can be used directly to call a hand-written routine. The argument symbols of `expression` (not the leading function name) are its dependencies for the topological sort.
+
+```matlab
+m.steady_call({'c_1', 'h_1', 'k_1'}, 'mymodel_ssblock_3(A_1, alpha, delta, beta)');
 ```
 
 #### `checksteady()`
@@ -493,7 +510,7 @@ m.summary();
 %   Equations:     10
 ```
 
-For a compact alternative, displaying the object at the prompt (or calling `disp(m)`) prints a one-line description of the model dimensions along with a status flag telling whether the symbol tables are current — a "stale" model is not an error, the tables are rebuilt lazily on the next query that needs them.
+For a compact alternative, displaying the object at the prompt (or calling `disp(m)`) prints a one-line description of the model dimensions along with a status flag telling whether the symbol tables are current — a "stale" model is not an error, the tables are rebuilt lazily on the next query that needs them. `updatesymboltables()` forces that rebuild eagerly; you rarely need to call it, since every method that reads the tables refreshes them first, but it is available after a batch of manual changes.
 
 #### `table(type)`
 
@@ -719,7 +736,7 @@ m.solve('k_ss_eq', 'k_ss', 10);  % Initial guess = 10
 m.solve('k_ss_eq', 'k_ss', 10, 1e-6);
 ```
 
-#### `solve_system(eqnames, snames[, tol, maxit])`
+#### `solve_system(eqnames, snames[, tol, maxit, Method])`
 
 Numerically solve a system of equations for multiple symbols simultaneously using Newton's method. The Jacobian is computed via automatic differentiation, exploiting the known sparsity pattern from the symbol table.
 
@@ -728,6 +745,7 @@ Numerically solve a system of equations for multiple symbols simultaneously usin
 - `snames` — Cell array of symbol names to solve for (can be any mix of parameters, endogenous, and exogenous variables)
 - `tol` (optional) — Convergence tolerance (default: `1e-6`)
 - `maxit` (optional) — Maximum iterations (default: `100`)
+- `Method` (name-value, default `'ad'`) — how the Jacobian is obtained: `'ad'` by automatic differentiation, `'analytical'` from symbolic partials (`diff_ast`), `'numerical'` by finite differences, or `'auto'` to try the analytical Jacobian and fall back to AD when an equation uses an operator with no differentiation rule.
 
 **Remarks:**
 - The system must be square (same number of equations and unknowns).
@@ -797,7 +815,7 @@ m.apply_steady_plan(b);   % write the closed forms into the steady-state block
 
 Render the structural steady-state plan as a human-readable summary: each block with its kind, its variable(s), the already-solved variables it depends on, and its external constants. Singleton blocks with a closed form print as `x = expr`; blocks without one are flagged `needs solver`. If `blocks` is omitted, `steady_plan()` is called with defaults.
 
-#### `apply_steady_plan([blocks][, GenerateHelpers, Basename, Solver, SolveAlgo, Tolerance, MaxIterations])`
+#### `apply_steady_plan([blocks][, GenerateHelpers, Basename, Solver, SolveAlgo, Tolerance, MaxIterations, Jacobian])`
 
 Write the closed-form assignments produced by `steady_plan` into the model's steady-state block, iterating over the plan in topological order and calling `steady(var, expr)` for every block with a complete closed form. Idempotent: `steady` replaces existing entries in place.
 
@@ -809,6 +827,7 @@ Blocks without a symbolic closed form — the per-country or per-sector cores of
 - `Solver` (char, default `'newton'`) — `'newton'` inlines a damped Newton iteration with the analytic Jacobian, making the routine fully self-contained; `'dynare'` delegates to `dynare_solve`, the solver family distributed with Dynare (`fsolve` included, via `solve_algo = 0`), reusing the running session's `options_` with `jacobian_flag` set.
 - `SolveAlgo` (integer, optional) — with `Solver='dynare'`, force `options_.solve_algo` inside the routine; omitted, the session's `solve_algo` applies.
 - `Tolerance` (default `1e-10`) and `MaxIterations` (default `100`) — baked into the generated routine.
+- `Jacobian` (char, default `'auto'`) — how the block Jacobian is obtained inside the generated routine: `'complex-step'` differentiates by complex step, `f'(x) = imag(f(x + i·h))/h` with `h = 1e-20`, exact to machine precision and needing no symbolic derivative; `'symbolic'` inlines the analytic derivative; `'auto'` picks complex-step for a block whose residuals use only complex-analytic operators and falls back to symbolic otherwise.
 
 The initial guess of each routine is the calibration of the block variables at generation time. Multi-output rows are registered through `steady_call(outnames, expression)`, which can also be used directly to hook a hand-written routine into the `steady_state_model` block.
 
@@ -819,11 +838,45 @@ m.write('mymodel', steady_state_model=true);
 % mymodel.mod + mymodel_ssblock_<k>.m, ready for Dynare
 ```
 
+#### `calibrate(endo_name, target_value, param_name)`
+
+Declare a **calibration role swap** for the steady-state analysis: pin an endogenous variable to a target value and free a parameter to be solved for instead, so the plan computes the calibration that makes the pinning consistent with the model. This is the standard DSGE manoeuvre — pin hours `h` to `1/3` and solve for the labour-disutility weight `theta`, or pin the `K/Y` ratio and solve for the depreciation rate.
+
+It is a metadata declaration, not a model rewrite: `var`, `params` and `varexo` are untouched. The swap is count-neutral (one fewer unknown endogenous, one more unknown parameter), so the system stays square; `steady_plan` (and `suggest_calibrations`) consume it, permuting the unknown set before the dependency analysis runs. `endo_name` must currently be endogenous, `param_name` a parameter appearing in at least one equation, and neither may already be in a swap (errors `modBuilder:calibrate:*`).
+
+```matlab
+m.calibrate('h', 1/3, 'theta');          % fix hours, solve for the disutility weight
+b = m.steady_plan(Match=true, PropagateKnown=true);
+% the plan now derives theta = ... rather than treating it as given
+```
+
 #### `suggest_anchors([Candidates, Keep, PropagateKnown])`
 
 Reduce a pool of candidate steady-state anchors to an irreducible subset, by greedy leave-one-out testing swept to a fixed point: a candidate is dropped when the plan closes just as well without its anchor status *and* its declared value. Candidates default to the endogenous variables with a value declared through `steady()`, excluding auto-detected exogenous processes — the method never invents a value, it only reports which of the declared knowns the structural plan actually needs.
 
 **Returns** a struct with fields `anchors` (the irreducible subset), `dropped` (candidates found deducible), `residual` and `open` (number and names of variables left open under the returned set; empty on full closure).
+
+#### `suggest_calibrations([blocks][, Match, Anchors, PropagateKnown, MaxBlockSize])`
+
+The counterpart of `suggest_anchors` for the other route out of a stalled plan: when the recognisers leave a residual block open, scan the `(endogenous, parameter)` role swaps that would shrink it. For each still-open variable, each parameter appearing in its equation is virtually applied (`copy` + `calibrate`, then `steady_plan` re-runs) and the resulting total residual recorded. Pass the **same** planning options that produced `blocks` (each trial re-plans under them), or omit `blocks` to plan with the options given.
+
+**Returns** a struct array, one entry per swap that strictly reduces the residual, sorted with the full closures (`residual = 0`) first:
+- `endo` — the endogenous variable to pin;
+- `param` — the parameter to free;
+- `residual` — variables left open across the whole plan after the swap.
+
+Only swaps that strictly reduce the residual are returned, so a plan that already closes yields an empty array. The menu is algebraic, not economic: a swap can be sound yet meaningless (calibrating output to identify the discount factor). Read it critically, then apply the chosen one with `calibrate` (which also fixes the endogenous value, a target `suggest_calibrations` does not choose for you).
+
+```matlab
+b = m.steady_plan(Match=true);
+s = m.suggest_calibrations(b, Match=true);   % same options that produced b
+if ~isempty(s)
+    % e.g. s(1) = struct('endo','h','param','theta','residual',0)
+    m.calibrate(s(1).endo, target, s(1).param);
+end
+```
+
+`print_steady_plan` calls `suggest_calibrations` for you: when a plan leaves a residual and no swap has been declared, it prints the ranked menu under the block summary.
 
 #### `scaling_symmetries([IncludeParameters])`
 
@@ -952,17 +1005,19 @@ tex = m.tex_steady_state_plan();
 m.tex_steady_state_plan('paper/steady_plan.tex');
 ```
 
-#### `tex_linearise([varlist, LevelVars, Evaluate, filename])`
+#### `tex_linearise([varlist, LevelVars, Evaluate, Substitute, filename])`
 
 Render the log-linearised model as a LaTeX `align` block, each equation normalized on its keyed variable so a row reads `x_hat = ` a sum of elasticities (e.g. `y_hat = (c*/y*) c_hat + (i*/y*) i_hat`). `varlist` is the time-varying variables to linearise (default: all endogenous; the others are held at the steady state). Options:
 
 - `LevelVars` — variables that enter as a **level** deviation `(x_t - x^{\star})` rather than a log deviation `\hat{x}_t`. Use for variables with a zero or negative steady state (rates, Lagrange multipliers). The choice is per **variable**, so the resulting linear system stays consistent. Default `{}` (all log).
-- `Evaluate` — `false` (default) keeps the coefficients symbolic as steady-state expressions (`k^{\star}` etc.); `true` substitutes the numeric steady state (which must already be solved/set).
+- `Evaluate` — `false` (default) keeps the coefficients symbolic as steady-state expressions (`k^{\star}` etc.); `true` substitutes the numeric steady state (which must already be solved/set). Takes precedence over `Substitute`.
+- `Substitute` — `false` (default) leaves each coefficient as a ratio of steady-state levels; `true` inlines the **declared** steady state into every coefficient and reduces it, so an elasticity comes out as a function of the deep parameters (`i^{\star}/k^{\star}` becomes `\delta`, the Euler coefficient becomes `1 - \beta(1-\delta)`, the labour elasticity `1/(1+\psi)`) rather than a ratio of levels. Requires a declared steady state (`steady`/`apply_steady_plan`); of the algebraically equal forms of each coefficient, the one printed is whichever `ast.complexity` scores as the simplest to read.
 
 ```matlab
 tex = m.tex_linearise();                                   % all endogenous, symbolic
 tex = m.tex_linearise({'y','c','k'}, 'Evaluate', true);    % subset, numeric coefficients
 tex = m.tex_linearise({'y','pi','i'}, 'LevelVars', {'pi','i'});
+tex = m.tex_linearise('Substitute', true);                 % elasticities in the deep parameters
 ```
 
 ### Indexing and Access
