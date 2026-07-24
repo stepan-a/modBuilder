@@ -552,9 +552,9 @@ m.endogenous('HouseholdLagrangeMultiplier', [], 'long_name', 'Marginal utility o
 m.endogenous('Investment', [], 'long_name', 'Detrended investment', 'texname', 'I');
 m.endogenous('CapitalStock', [], 'long_name', 'Physical capital stock', 'texname', '\bar K');
 m.endogenous('DepreciationRate', [], 'long_name', 'Depreciation rate', 'texname', '\delta');
-m.endogenous('dDepreciationRate', [], 'long_name', 'Marginal depreciation rate', 'texname', '\delta^\prime');
+m.endogenous('dDepreciationRate', [], 'long_name', 'Marginal depreciation rate', 'texname', '\delta''');
 m.endogenous('InvestmentCost', [], 'long_name', 'Investment adjustment cost', 'texname', 'S');
-m.endogenous('dInvestmentCost', [], 'long_name', 'Marginal investment adj. cost', 'texname', 'S^\prime');
+m.endogenous('dInvestmentCost', [], 'long_name', 'Marginal investment adj. cost', 'texname', 'S''');
 m.endogenous('CapacityUtilizationFactor', [], 'long_name', 'Capacity utilisation rate', 'texname', 'z');
 m.endogenous('CapitalReturnRate', [], 'long_name', 'Real rental rate of capital', 'texname', 'r^k');
 m.endogenous('HouseholdRealWage', [], 'long_name', 'Household real wage', 'texname', 'w^h');
@@ -563,7 +563,7 @@ m.endogenous('RealGrossWage', [], 'long_name', 'Gross real wage', 'texname', 'w'
 m.endogenous('LabourDemand', [], 'long_name', 'Labour demand', 'texname', 'L^d');
 m.endogenous('CapitalDemand', [], 'long_name', 'Effective capital', 'texname', 'K');
 m.endogenous('RealMarginalCost', [], 'long_name', 'Real marginal cost', 'texname', 'mc');
-m.endogenous('OptimalRelativePrice', [], 'long_name', 'Optimal relative price', 'texname', 'p^*');
+m.endogenous('OptimalRelativePrice', [], 'long_name', 'Optimal relative price', 'texname', '\breve p');
 m.endogenous('Z1', [], 'long_name', 'Price recursion variable', 'texname', 'Z_1');
 m.endogenous('Z2', [], 'long_name', 'Price recursion variable', 'texname', 'Z_2');
 m.endogenous('Z3', [], 'long_name', 'Price recursion variable', 'texname', 'Z_3');
@@ -576,7 +576,7 @@ m.endogenous('NablaPrice', [], 'long_name', 'Price recursion variable', 'texname
 m.endogenous('InflationFactor', [], 'long_name', 'Gross inflation', 'texname', '\pi');
 m.endogenous('RealWageGrowthFactor', [], 'long_name', 'Real wage growth', 'texname', '\omega');
 m.endogenous('AveragedRelativeWages', [], 'long_name', 'Average relative wage', 'texname', '\tilde w');
-m.endogenous('OptimalRelativeRealWage', [], 'long_name', 'Optimal relative wage', 'texname', 'w^*');
+m.endogenous('OptimalRelativeRealWage', [], 'long_name', 'Optimal relative wage', 'texname', '\breve w');
 m.endogenous('H1', [], 'long_name', 'Wage recursion variable', 'texname', 'H_1');
 m.endogenous('H2', [], 'long_name', 'Wage recursion variable', 'texname', 'H_2');
 m.endogenous('H3', [], 'long_name', 'Wage recursion variable', 'texname', 'H_3');
