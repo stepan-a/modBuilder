@@ -7113,6 +7113,14 @@ classdef modBuilder < handle
                 return
             end
 
+            % Calibration swaps are model state (copy and saveobj carry them, and
+            % they change steady_plan output), so two models differing only in
+            % their swaps must not compare equal.
+            if not(isequal(o.calibration_swaps, p.calibration_swaps))
+                b = false;
+                return
+            end
+
             if not(modBuilder.isequalsymboltable(o, p, 'params'))
                 b = false;
                 return
