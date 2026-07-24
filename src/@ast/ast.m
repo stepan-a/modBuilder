@@ -2180,6 +2180,16 @@ classdef ast
         % - Useful for round-trip tests and for the cancellation rules in the follow-up
         %   simplify pass that detects identical subtrees (e.g. f - f → 0).
             b = false;
+            % Cached-key prefilter: build_key is a deterministic serialisation, so two
+            % equal trees with cached keys carry identical keys and DIFFERENT keys
+            % prove structural inequality in one string compare -- this is what keeps
+            % the pairwise scans of cancel_pairs / collect_like_terms / collect_powers
+            % and the multiset primitives cheap on long operand lists. Equal keys
+            % prove nothing (the '_' separator is ambiguous inside symbol names, and
+            % sym('x_1') / tsym('x',1) genuinely collide) and fall through to the walk.
+            if ~isempty(a.skey) && ~isempty(c.skey) && ~strcmp(a.skey, c.skey)
+                return
+            end
             if ~strcmp(a.type, c.type), return; end
             if ~isequal(a.value, c.value), return; end
             if numel(a.children) ~= numel(c.children), return; end
