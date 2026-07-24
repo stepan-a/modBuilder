@@ -1,4 +1,6 @@
-project('modBuilder-unit-tests', 'cpp')
+# No language: nothing is compiled, the project only registers MATLAB test
+# runs, and declaring one would make meson require a working toolchain.
+project('modBuilder-unit-tests')
 
 matlab_path = get_option('matlab_path')
 

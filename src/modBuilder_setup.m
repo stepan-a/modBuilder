@@ -35,6 +35,10 @@ function modBuilder_setup()
     addpath(fullfile(here, 'missing', 'math'));
 
     if isempty(which('normcdf')) || isempty(which('normpdf'))
-        addpath(fullfile(here, 'missing', 'stats'));
+        % '-end' so a genuinely installed toolbox implementation keeps precedence
+        % when only ONE of the two functions is missing (an odd partial
+        % installation): the shim directory then fills the gap without shadowing
+        % the canonical function, as promised above.
+        addpath(fullfile(here, 'missing', 'stats'), '-end');
     end
 end

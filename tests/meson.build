@@ -1,4 +1,5 @@
-matlab = find_program(matlab_path, required: true)
+# matlab comes from the root meson.build (find_program there); no need to
+# resolve it a second time.
 
 listoftests = [
   'rbc/rbc1',
@@ -359,6 +360,14 @@ listoffailingtests = [
    'rbc/rbc6'
 ]
 
+# Heavy tests that exceed the default 60 s budget even on an idle machine
+# (steady-plan/t21.m runs suggest_calibrations, ~90 s); a larger per-test
+# timeout lets a bare `meson test` pass without a global timeout multiplier.
+listofslowtests = [
+  'steady-plan/t21.m',
+  'steady-plan/t40.m',
+]
+
 # Generate testlist.txt in the source tree so that AllTests.m (MATLAB
 # unit-testing / coverage wrapper) can read the same list without
 # duplicating it.
@@ -377,7 +386,7 @@ foreach t : listoftests
     matlab,
     args: ['-batch', 'runtest("' + t + '")'],
     workdir: meson.current_source_dir(),
-    timeout: 60
+    timeout: listofslowtests.contains(t) ? 600 : 60
   )
 endforeach
 
