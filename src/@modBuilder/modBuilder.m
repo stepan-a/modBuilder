@@ -8803,6 +8803,16 @@ classdef modBuilder < handle
         % - options.Tolerance        [double]  residual tolerance baked into the helper
         %            (default 1e-10; also passed as tolx to dynare_solve).
         % - options.MaxIterations    [int]     iteration cap baked into the helper (default 100).
+        % - options.Jacobian         [char]    how the generated routine obtains its Jacobian:
+        %            'auto' (default) emits the complex-step form, f'(x) = Im[f(x+ih)]/h with
+        %            h = 1e-20 -- exact to machine precision, since nothing is subtracted and
+        %            no cancellation can occur -- and falls back per block to the inlined
+        %            symbolic Jacobian when a residual calls a function that cannot take a
+        %            complex argument (abs, sign, min, max, normcdf, normpdf, erf, erfc,
+        %            cbrt). 'complex-step' forces the first and errors on an ineligible
+        %            block; 'symbolic' forces the second. Complex-step keeps the emitted
+        %            file small, the symbolic Jacobian of a large reduced residual being
+        %            tens of thousands of nodes; both remain dependency-free at run time.
         %
         % OUTPUTS:
         % - o        [modBuilder]     updated object with steady_state populated for each block
@@ -8835,6 +8845,7 @@ classdef modBuilder < handle
                 options.SolveAlgo double {mustBeScalarOrEmpty} = []
                 options.Tolerance (1,1) double {mustBePositive} = 1e-10
                 options.MaxIterations (1,1) double {mustBeInteger, mustBePositive} = 100
+                options.Jacobian (1,:) char {mustBeMember(options.Jacobian, {'auto', 'complex-step', 'symbolic'})} = 'auto'
             end
             if options.GenerateHelpers && isempty(options.Basename)
                 error('modBuilder:apply_steady_plan:missingBasename', 'GenerateHelpers=true requires the Basename option (it names the generated routines).');
@@ -8887,13 +8898,13 @@ classdef modBuilder < handle
                             res{jj} = f.strip_ss().simplify();
                         end
                     end
-                    argnames = o.generate_ss_helper(fullfile(helper_dir, [funcname '.m']), funcname, outvars, res, options.Solver, options.SolveAlgo, options.Tolerance, options.MaxIterations);
+                    argnames = o.generate_ss_helper(fullfile(helper_dir, [funcname '.m']), funcname, outvars, res, options.Solver, options.SolveAlgo, options.Tolerance, options.MaxIterations, options.Jacobian);
                     o.steady_call(outvars, sprintf('%s(%s)', funcname, strjoin(argnames, ', ')));
                 end
             end
         end % function
 
-        function argnames = generate_ss_helper(o, filepath, funcname, outvars, res, solver, solve_algo, tolf, maxit)
+        function argnames = generate_ss_helper(o, filepath, funcname, outvars, res, solver, solve_algo, tolf, maxit, jacobian)
         % Generate the numerical routine solving one steady-state system; internal,
         % called by apply_steady_plan(GenerateHelpers=true).
         %
@@ -8910,6 +8921,8 @@ classdef modBuilder < handle
         % - solve_algo [double]  [] or the options_.solve_algo to force under 'dynare'
         % - tolf       [double]  residual tolerance baked into the file
         % - maxit      [double]  iteration cap baked into the file
+        % - jacobian   [char]    'auto' (default behaviour of apply_steady_plan),
+        %                        'complex-step' or 'symbolic'; see REMARKS
         %
         % OUTPUTS:
         % - argnames   [cell]    symbols the helper takes as inputs, in signature order:
@@ -8919,12 +8932,54 @@ classdef modBuilder < handle
         %                        steady_state_model scope.
         %
         % REMARKS:
-        % - The Jacobian is derived symbolically (ast.diff_ast), so the generated file
-        %   has no dependency on modBuilder at run time -- and none at all beyond
-        %   dynare_solve in the 'dynare' variant.
+        % - Both Jacobian strategies keep the generated file free of any dependency on
+        %   modBuilder at run time -- and of any dependency at all beyond dynare_solve
+        %   in the 'dynare' variant. The helper is called from the steady_state_model
+        %   block of the .mod file, i.e. from a Dynare session that has no reason to
+        %   carry this class on its path.
+        % - 'complex-step' emits only the residuals and differentiates them at run time
+        %   through f'(x) = Im[f(x+ih)]/h with h = 1e-20. Because no subtraction takes
+        %   place there is no cancellation, so the step can be taken far below the
+        %   finite-difference floor and the derivative is exact to machine precision --
+        %   it agrees with the symbolic Jacobian to the last bit on the two-country
+        %   residual, where a finite difference at its optimal step gives seven digits.
+        % - 'symbolic' inlines ast.diff_ast derivatives. It is the fallback for
+        %   residuals that complex-step cannot handle: MATLAB's abs returns the modulus
+        %   (destroying the imaginary part that carries the derivative), min / max /
+        %   sign are not complex-differentiable, and normcdf / normpdf / erf / erfc /
+        %   cbrt reject complex arguments (see ast.COMPLEX_UNSAFE_FNAMES).
+        % - 'auto' picks complex-step when every residual of the block passes that test
+        %   and falls back to symbolic otherwise. Asking for 'complex-step' explicitly
+        %   on an ineligible block is an error rather than a silent downgrade.
         % - The initial guess is the calibration of the unknowns at generation time
         %   (1 for variables without a finite value).
             nv = numel(outvars);
+
+            % Jacobian strategy. The eligibility test is per BLOCK: complex-step
+            % differentiates the residuals as a system, so a single ineligible
+            % residual sends the whole block to the symbolic path.
+            unsafe = {};
+            for j = 1:nv
+                unsafe = union(unsafe, ast.nonanalytic_calls(res{j}));
+            end
+            switch jacobian
+              case 'auto'
+                use_cstep = isempty(unsafe);
+              case 'complex-step'
+                if ~isempty(unsafe)
+                    error('modBuilder:generate_ss_helper:notAnalytic', ...
+                          ['Jacobian="complex-step" was requested for the block {%s}, but its residuals call %s, ' ...
+                           'which cannot be evaluated at a complex argument. Use Jacobian="auto" to fall back to ' ...
+                           'the symbolic Jacobian on such blocks.'], strjoin(outvars, ', '), strjoin(unsafe, ', '));
+                end
+                use_cstep = true;
+              case 'symbolic'
+                use_cstep = false;
+              otherwise
+                error('modBuilder:generate_ss_helper:badJacobian', ...
+                      'Unknown Jacobian strategy "%s" (expected "auto", "complex-step" or "symbolic").', jacobian);
+            end
+
             argnames = {};
             for j = 1:nv
                 sn = res{j}.symbol_names();
@@ -8998,25 +9053,55 @@ classdef modBuilder < handle
                 fprintf(fid, '%s = x(%d);\n', outvars{j}, j);
             end
             fprintf(fid, 'end\n\n');
-            fprintf(fid, 'function [r, J] = block_system(x%s)\n', sprintf(', %s', argnames{:}));
-            for j = 1:nv
-                fprintf(fid, '%s = x(%d);\n', outvars{j}, j);
-            end
-            fprintf(fid, 'r = zeros(%d, 1);\n', nv);
-            for j = 1:nv
-                fprintf(fid, 'r(%d) = %s;\n', j, res{j}.string());
-            end
-            fprintf(fid, 'J = zeros(%d, %d);\n', nv, nv);
-            for i2 = 1:nv
-                for j2 = 1:nv
-                    % Simplify=false: the emitted Jacobian is machine read, and the
-                    % full simplify costs an order of magnitude more than
-                    % canonicalise for a tree of the same size. The second
-                    % simplify() this call used to carry was a no-op anyway --
-                    % diff_ast already returns a normalised tree.
-                    d = res{i2}.diff_ast(outvars{j2}, 0, Simplify=false);
-                    if ~ast.is_zero(d)
-                        fprintf(fid, 'J(%d, %d) = %s;\n', i2, j2, d.string());
+            if use_cstep
+                % Complex-step Jacobian: J(:,j) = Im[f(x + i*h*e_j)]/h. Exact to
+                % machine precision (no subtraction, hence no cancellation, so h is
+                % taken far below any finite-difference floor), self-contained, and
+                % it spares the generator the symbolic differentiation entirely.
+                fprintf(fid, 'function [r, J] = block_system(x%s)\n', sprintf(', %s', argnames{:}));
+                fprintf(fid, 'r = block_residual(x%s);\n', sprintf(', %s', argnames{:}));
+                fprintf(fid, 'if nargout > 1\n');
+                fprintf(fid, '    %% Complex-step differentiation: f''(x) = imag(f(x + i*h))/h.\n');
+                fprintf(fid, '    %% Nothing is subtracted, so h is far below the finite-difference\n');
+                fprintf(fid, '    %% floor and the derivative is exact to machine precision.\n');
+                fprintf(fid, '    h = 1e-20;\n');
+                fprintf(fid, '    J = zeros(%d, %d);\n', nv, nv);
+                fprintf(fid, '    for j = 1:%d\n', nv);
+                fprintf(fid, '        xp = x;\n');
+                fprintf(fid, '        xp(j) = xp(j) + 1i*h;\n');
+                fprintf(fid, '        J(:, j) = imag(block_residual(xp%s))/h;\n', sprintf(', %s', argnames{:}));
+                fprintf(fid, '    end\n');
+                fprintf(fid, 'end\n');
+                fprintf(fid, 'end\n\n');
+                fprintf(fid, 'function r = block_residual(x%s)\n', sprintf(', %s', argnames{:}));
+                for j = 1:nv
+                    fprintf(fid, '%s = x(%d);\n', outvars{j}, j);
+                end
+                fprintf(fid, 'r = zeros(%d, 1);\n', nv);
+                for j = 1:nv
+                    fprintf(fid, 'r(%d) = %s;\n', j, res{j}.string());
+                end
+            else
+                fprintf(fid, 'function [r, J] = block_system(x%s)\n', sprintf(', %s', argnames{:}));
+                for j = 1:nv
+                    fprintf(fid, '%s = x(%d);\n', outvars{j}, j);
+                end
+                fprintf(fid, 'r = zeros(%d, 1);\n', nv);
+                for j = 1:nv
+                    fprintf(fid, 'r(%d) = %s;\n', j, res{j}.string());
+                end
+                fprintf(fid, 'J = zeros(%d, %d);\n', nv, nv);
+                for i2 = 1:nv
+                    for j2 = 1:nv
+                        % Simplify=false: the emitted Jacobian is machine read, and the
+                        % full simplify costs an order of magnitude more than
+                        % canonicalise for a tree of the same size. The second
+                        % simplify() this call used to carry was a no-op anyway --
+                        % diff_ast already returns a normalised tree.
+                        d = res{i2}.diff_ast(outvars{j2}, 0, Simplify=false);
+                        if ~ast.is_zero(d)
+                            fprintf(fid, 'J(%d, %d) = %s;\n', i2, j2, d.string());
+                        end
                     end
                 end
             end

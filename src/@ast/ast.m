@@ -69,6 +69,18 @@ classdef ast
         % a dedicated branch before the ismember test, so it always produces
         % a dedicated 'ss' node rather than a 'call' node.
         RESERVED_FNAMES = dynare_reserved_function_names()
+
+        % Functions that make a tree unusable for COMPLEX-STEP differentiation
+        % (see ast.nonanalytic_calls). Two distinct reasons:
+        % - abs, sign, min, max are not complex-differentiable, and MATLAB's abs
+        %   returns the modulus, which silently destroys the imaginary part
+        %   carrying the derivative;
+        % - normcdf, normpdf, erf, erfc and cbrt are analytic in principle but
+        %   MATLAB's implementations reject complex arguments.
+        % The time-series operators have no pointwise value at all (ast.eval
+        % refuses them), so they belong here too.
+        COMPLEX_UNSAFE_FNAMES = {'abs', 'sign', 'min', 'max', 'normcdf', 'normpdf', ...
+                                 'erf', 'erfc', 'cbrt', 'diff', 'adl', 'EXPECTATIONS'}
     end
 
     methods
@@ -3366,6 +3378,42 @@ classdef ast
                 if ast.has_denominator_in(o.children{i}, x)
                     tf = true;
                     return
+                end
+            end
+        end % function
+
+        function names = nonanalytic_calls(o)
+        % Function names in the tree that rule out complex-step differentiation.
+        %
+        % INPUTS:
+        % - o      [ast]   tree to inspect
+        %
+        % OUTPUTS:
+        % - names  [cell]  1×k unique names from ast.COMPLEX_UNSAFE_FNAMES found in
+        %                  the tree, {} when the tree is safe to evaluate at a
+        %                  complex argument
+        %
+        % REMARKS:
+        % - Complex-step differentiation, f'(x) = Im[f(x+ih)]/h, is exact to machine
+        %   precision because nothing is subtracted, but it needs f to be analytic
+        %   AND its MATLAB implementation to propagate the imaginary part. This test
+        %   is what lets a caller choose the strategy per residual and fall back to
+        %   the symbolic Jacobian when the expression is not eligible.
+        % - Powers, logs, exps and the trigonometric / hyperbolic families are safe.
+        %   Branch cuts (sqrt or log of a negative real, a fractional power of a
+        %   negative base) are not tested here: they already break the ordinary REAL
+        %   evaluation, so they are not specific to the complex step.
+            names = {};
+            stack = {o};
+            while ~isempty(stack)
+                node = stack{end};
+                stack(end) = [];
+                if strcmp(node.type, 'call') && ismember(node.value, ast.COMPLEX_UNSAFE_FNAMES) ...
+                        && ~ismember(node.value, names)
+                    names{end+1} = node.value; %#ok<AGROW>
+                end
+                for i = 1:numel(node.children)
+                    stack{end+1} = node.children{i}; %#ok<AGROW>
                 end
             end
         end % function
