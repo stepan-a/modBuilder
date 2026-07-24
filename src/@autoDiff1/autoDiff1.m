@@ -315,7 +315,12 @@ classdef autoDiff1
         end % function
 
         function q = normcdf(o, mu, sigma)
-        % Overload the normcdf function.
+        % Overload the normcdf function. MATLAB dispatches here when ANY of the
+        % three arguments is an autoDiff1, so the unknown may be the evaluation
+        % point, the mean or the standard deviation. Computing through the
+        % overloaded arithmetic (0.5*erfc(-z/sqrt(2)), MATLAB's own normcdf
+        % formula) promotes the plain-double arguments and propagates the
+        % correct derivative in every case.
             if nargin<3
                 sigma = 1;
             end
@@ -324,11 +329,14 @@ classdef autoDiff1
                 mu = 0;
             end
 
-            q = autoDiff1(normcdf(o.x, mu, sigma), normpdf(o.x, mu, sigma)*o.dx);
+            z = (o - mu)/sigma;
+            q = 0.5*erfc(-z/sqrt(2));
         end % function
 
         function q = normpdf(o, mu, sigma)
-        % Overload the normpdf function.
+        % Overload the normpdf function. Same dispatch remark as normcdf: the
+        % dual number may sit in any of the three argument slots, so the density
+        % is computed through the overloaded arithmetic.
             if nargin<3
                 sigma = 1;
             end
@@ -337,7 +345,8 @@ classdef autoDiff1
                 mu = 0;
             end
 
-            q = autoDiff1(normpdf(o.x, mu, sigma), -(o.x-mu)*normpdf(o.x, mu, sigma)*o.dx/sigma^2);
+            z = (o - mu)/sigma;
+            q = exp(-0.5*z^2)/(sqrt(2*pi)*sigma);
         end % function
 
         function q = erf(o)
