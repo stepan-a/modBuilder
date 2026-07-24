@@ -5405,6 +5405,21 @@ classdef modBuilder < handle
 
             [type, id] = o.typeof(oldsymbol);
 
+            % Equations that actually reference oldsymbol, captured before the
+            % tables are mutated (for an endogenous variable, T.var seeds each
+            % variable with its own equation, so the defining equation is in the
+            % list). The AST rewrite below is restricted to these rows: the other
+            % equations are neither reparsed nor re-rendered, so their text keeps
+            % the user's original formatting.
+            switch type
+              case 'parameter'
+                affected = o.T.params.(oldsymbol);
+              case 'exogenous'
+                affected = o.T.varexo.(oldsymbol);
+              case 'endogenous'
+                affected = o.T.var.(oldsymbol);
+            end
+
             switch type
               case 'parameter'
                 o.params{id,modBuilder.COL_NAME} = newsymbol;
@@ -5440,10 +5455,15 @@ classdef modBuilder < handle
                 end
             end
 
-            % Rename in every equation via an AST walk: parse each side of '=',
-            % rewrite matching sym / tsym / ss leaves, render back. This avoids
+            % Rename in the affected equations via an AST walk: parse each side of
+            % '=', rewrite matching sym / tsym / ss leaves, render back. This avoids
             % the regex word-boundary edge cases of the previous text-based rewrite.
-            for i=1:o.size('equations')
+            % (When the renamed symbol is endogenous, its own equation was re-keyed
+            % to newsymbol in the switch above, so the affected list is re-keyed too.)
+            affected = modBuilder.replaceincell(affected, oldsymbol, newsymbol);
+            row_of = dictionary(string(o.equations(:, modBuilder.EQ_COL_NAME)), (1:size(o.equations, 1))');
+            for a = 1:numel(affected)
+                i = row_of(affected{a});
                 eq_str = o.equations{i,modBuilder.EQ_COL_EXPR};
                 LHSRHS = strsplit(eq_str, '=');
                 if length(LHSRHS) == 2
@@ -5453,18 +5473,21 @@ classdef modBuilder < handle
                 elseif isscalar(LHSRHS)
                     o.equations{i,modBuilder.EQ_COL_EXPR} = ast(strtrim(LHSRHS{1})).rename(oldsymbol, newsymbol).string();
                 else
-                    error('modBuilder:rename:multipleEquals', 'rename: equation #%d contains more than one "=" symbol.', i)
+                    error('modBuilder:rename:multipleEquals', 'rename: equation "%s" contains more than one "=" symbol.', affected{a})
                 end
                 o.T.equations.(o.equations{i,modBuilder.EQ_COL_NAME}) = modBuilder.replaceincell(o.T.equations.(o.equations{i,modBuilder.EQ_COL_NAME}), oldsymbol, newsymbol);
             end
 
             % Update steady-state expressions (same AST walk; expressions are pure RHS,
-            % no '=' to split on).
+            % no '=' to split on). Expressions not referencing oldsymbol are left as
+            % written.
             for i=1:size(o.steady_state, 1)
                 if strcmp(o.steady_state{i, modBuilder.SS_COL_NAME}, oldsymbol)
                     o.steady_state{i, modBuilder.SS_COL_NAME} = newsymbol;
                 end
-                o.steady_state{i, modBuilder.SS_COL_EXPR} = ast(o.steady_state{i, modBuilder.SS_COL_EXPR}).rename(oldsymbol, newsymbol).string();
+                if ismember(oldsymbol, modBuilder.getsymbols(o.steady_state{i, modBuilder.SS_COL_EXPR}))
+                    o.steady_state{i, modBuilder.SS_COL_EXPR} = ast(o.steady_state{i, modBuilder.SS_COL_EXPR}).rename(oldsymbol, newsymbol).string();
+                end
             end
 
             o.mark_dirty();
