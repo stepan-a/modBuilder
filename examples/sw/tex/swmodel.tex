@@ -1,0 +1,1967 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathrsfs}
+\usepackage{mathtools}
+\usepackage{bm}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{cleveref}
+
+\hypersetup{colorlinks=true,linkcolor=blue!60!black,citecolor=blue!60!black,urlcolor=blue!60!black}
+
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Var}{\mathbb{V}}
+\newcommand{\dd}{\mathrm{d}}
+\newcommand{\bbar}[1]{\bar{#1}}
+\renewcommand{\ss}{\star}
+
+\title{A Smets--Wouters like model}
+\author{Technical Note}
+\date{}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+%% ============================================================
+\section{Overview}
+%% ============================================================
+
+This note derives the equilibrium conditions of a medium-scale New Keynesian
+DSGE model in the tradition of \textsc{Smets and Wouters}~(2003, 2007). The
+model extends the canonical framework with the following features:
+\begin{itemize}[nosep]
+  \item \textbf{Kimball aggregation} for both goods and labour markets (variable demand elasticity);
+  \item \textbf{External habit formation} with a stochastic habit parameter;
+  \item \textbf{Non-separable preferences} between consumption and labour;
+  \item \textbf{Variable capacity utilisation} with endogenous depreciation;
+  \item \textbf{Investment adjustment costs} (Christiano--Eichenbaum--Evans type);
+  \item \textbf{Fiscal instruments}: consumption tax, labour income tax, income tax, employer labour tax;
+  \item \textbf{Calvo pricing and wage setting} with partial indexation;
+  \item A rich set of \textbf{17 structural shocks}.
+\end{itemize}
+All variables are expressed in \emph{detrended} form, i.e.\ divided by the
+stochastic labour-augmenting technology level~$A_t^T$. The gross growth rate of
+technology is $g_t \equiv A_t^T / A_{t-1}^T$, with steady-state value
+$1 + \bbar{g}$.
+
+
+%% ============================================================
+\section{Notation and conventions}
+%% ============================================================
+
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Symbol} & \textbf{Dynare name} & \textbf{Description} \\
+\midrule
+$C_t$         & \texttt{Consumption}          & Detrended consumption \\
+$L_t$         & \texttt{HouseholdLabourSupply} & Household labour supply \\
+$\lambda_t$   & \texttt{HouseholdLagrangeMultiplier} & Marginal utility of wealth \\
+$I_t$         & \texttt{Investment}            & Detrended investment \\
+$\bbar K_t$   & \texttt{CapitalStock}          & Physical (installed) capital stock \\
+$\delta_t$    & \texttt{DepreciationRate}       & Depreciation rate \\
+$\delta'_t$   & \texttt{dDepreciationRate}      & Marginal depreciation rate \\
+$S_t$         & \texttt{InvestmentCost}         & Investment adjustment cost \\
+$S'_t$        & \texttt{dInvestmentCost}        & Marginal investment adj.\ cost \\
+$z_t$         & \texttt{CapacityUtilizationFactor} & Capacity utilisation rate \\
+$r^k_t$       & \texttt{CapitalReturnRate}      & Real rental rate of capital \\
+$w^h_t$       & \texttt{HouseholdRealWage}      & Household real wage \\
+$Q_t$         & \texttt{TobinQ}                 & Tobin's $Q$ \\
+\midrule
+$w_t$         & \texttt{RealGrossWage}          & Gross real wage \\
+$L^d_t$       & \texttt{LabourDemand}           & Labour demand \\
+$K_t$         & \texttt{CapitalDemand}          & Effective capital (services) \\
+$mc_t$        & \texttt{RealMarginalCost}       & Real marginal cost \\
+$\breve p_t$       & \texttt{OptimalRelativePrice}   & Optimal relative price \\
+$Z_{1,t},Z_{2,t},Z_{3,t}$ & \texttt{Z1,Z2,Z3}  & Price recursion variables \\
+$Y_t$         & \texttt{GDP}                    & Detrended output \\
+$\Lambda^f_t$ & \texttt{FinalGoodLagrangeMultiplier} & Kimball price aggregator \\
+$\pi^{np}_t$  & \texttt{NonOptimizingFirmsPriceGrowth} & Non-optimiser price growth \\
+$\tilde p_t$  & \texttt{AveragedRelativePrices} & Average relative price \\
+$\Delta^p_t$  & \texttt{PriceDistorsion}        & Price dispersion \\
+$\nabla^p_t$  & \texttt{NablaPrice}             & Price recursion variable \\
+$\pi_t$       & \texttt{InflationFactor}         & Gross inflation \\
+\midrule
+$\omega_t$    & \texttt{RealWageGrowthFactor}   & Real wage growth \\
+$\tilde w_t$  & \texttt{AveragedRelativeWages}  & Average relative wage \\
+$\breve w_t$       & \texttt{OptimalRelativeRealWage} & Optimal relative wage \\
+$H_{1,t},H_{2,t},H_{3,t}$ & \texttt{H1,H2,H3}  & Wage recursion variables \\
+$\Lambda^s_t$ & \texttt{EmploymentAgencyLagrangeMultiplier} & Kimball wage aggregator \\
+$L^s_t$       & \texttt{EmploymentAgencyLabourSupply} & Employment agency supply \\
+$\omega^{nw}_t$ & \texttt{NonOptimizingUnionsWageGrowth} & Non-optimiser wage growth \\
+$\Delta^w_t$  & \texttt{WageDistorsion}         & Wage dispersion \\
+$\nabla^w_t$  & \texttt{NablaWage}              & Wage recursion variable \\
+\midrule
+$R_t$         & \texttt{NominalInterestFactor}  & Gross nominal interest rate \\
+$G_t$         & \texttt{PublicSpending}          & Government spending \\
+$\mathcal{G}_t$ & \texttt{OutputGap}            & Output gap \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\medskip
+
+\noindent\textbf{Exogenous processes.}
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Symbol} & \textbf{Dynare name} & \textbf{Description} \\
+\midrule
+$g_t$ & \texttt{ProductionEfficiencyGrowth} & Technology growth rate (gross) \\
+$A_t$ & \texttt{ProductionEfficiencyCycle} & Stationary technology level \\
+$\tau^C_t$ & \texttt{ConsumptionTax} & Consumption tax \\
+$\tau^W_t$ & \texttt{LabourIncomeTax} & Labour income tax (employee) \\
+$\tau^R_t$ & \texttt{IncomeTax} & Income tax \\
+$\tau^L_t$ & \texttt{LabourTax} & Labour tax (employer) \\
+$\varepsilon^B_t$ & \texttt{RiskPremium} & Risk premium shock \\
+$\varepsilon^L_t$ & \texttt{LabourSupplyShock} & Labour supply shock \\
+$p^I_t$ & \texttt{InvestmentRelativePrice} & Investment relative price \\
+$\varepsilon^I_t$ & \texttt{InvestmentEfficiencyShock} & Investment efficiency \\
+$\nu^p_t$ & \texttt{PriceCostPushShock} & Price cost-push shock \\
+$\nu^w_t$ & \texttt{WageCostPushShock} & Wage cost-push shock \\
+$\bbar\pi_t$ & \texttt{InflationTarget} & Inflation target \\
+$\varepsilon^R_t$ & \texttt{TaylorShock} & Monetary policy shock \\
+$\varepsilon^g_t$ & \texttt{PublicSpendingShare} & Public spending share \\
+$\eta^s_t$ & \texttt{HabitShock} & Habit shock \\
+$\varsigma_t$ & \texttt{PreferenceShock} & Preference shock \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\noindent\textbf{Key structural parameters.}
+\begin{center}
+\begin{tabular}{lll}
+\toprule
+\textbf{Symbol} & \textbf{Name} & \textbf{Description} \\
+\midrule
+$\beta$ & discount factor & subjective discount factor \\
+$\sigma_c$ & risk aversion & inverse of the intertemporal elasticity of substitution \\
+$\sigma_l$ & labour curvature & inverse of the Frisch elasticity \\
+$\eta$ & habit & degree of external habit formation \\
+$\psi$ & investment cost & investment adjustment cost parameter \\
+$\alpha$ & capital share & capital elasticity in production \\
+$\xi_p$ & price Calvo & probability of \emph{not} re-optimising price \\
+$\xi_w$ & wage Calvo & probability of \emph{not} re-optimising wage \\
+$\gamma_p$ & price indexation & degree of price indexation to past inflation \\
+$\gamma_w$ & wage indexation & degree of wage indexation to current inflation \\
+$\theta_f$ & price elasticity & demand elasticity parameter (goods) \\
+$\psi_f$ & Kimball curvature (goods) & Kimball demand curvature (goods) \\
+$\theta_s$ & wage elasticity & demand elasticity parameter (labour) \\
+$\psi_s$ & Kimball curvature (labour) & Kimball demand curvature (labour) \\
+$\mu_f$ & price markup & steady-state goods markup \\
+$\mu_s$ & wage markup & steady-state wage markup \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+
+%% ============================================================
+\section{Households}
+\label{sec:households}
+%% ============================================================
+
+\subsection{Preferences}
+
+A representative household maximises expected lifetime utility:
+\begin{equation}\label{eq:utility}
+  \E_0 \sum_{t=0}^{\infty} \beta^t \, u(C_t, L_t; \bm{\xi}_t),
+\end{equation}
+where the period utility function takes the \textbf{non-separable} form:
+\begin{equation}\label{eq:period_utility}
+  u(C_t, L_t; \bm{\xi}_t)
+  = \frac{1}{1-\sigma_c}
+    \Bigl(C_t - \eta\,\eta^s_t\,\frac{C_{t-1}}{g_t} + \ln\varsigma_t\Bigr)^{1-\sigma_c}
+    \exp\!\Biggl(\frac{(\sigma_c - 1)\,\varepsilon^L_t}{1+\sigma_l}
+    \Bigl(\frac{L_t}{\bbar L}\Bigr)^{1+\sigma_l}\Biggr).
+\end{equation}
+
+This specification embeds several key features:
+\begin{itemize}[nosep]
+  \item \textbf{External habit formation}: the effective consumption
+    $\tilde C_t = C_t - \eta\,\eta^s_t \, C_{t-1}/g_t$ depends on lagged
+    \emph{aggregate} consumption, scaled by the stochastic habit parameter
+    $\eta^s_t$ and detrended by the technology growth factor~$g_t$.
+  \item \textbf{Preference shock}: $\ln\varsigma_t$ is an additive preference
+    shifter.
+  \item \textbf{Non-separability}: when $\sigma_c \neq 1$, the marginal
+    utility of consumption depends on labour supply through the exponential
+    term. The labour supply shock $\varepsilon^L_t$ and the term
+    $(L_t/\bbar L)^{1+\sigma_l}$ enter multiplicatively, generating a wealth
+    effect on labour supply.
+\end{itemize}
+
+\subsection{Budget constraint}
+
+In each period, the household chooses consumption~$C_t$,
+labour supply~$L_t$, investment~$I_t$, physical capital~$\bbar K_t$, capacity
+utilisation~$z_t$, and bond holdings. The (detrended, real) flow budget
+constraint is:
+\begin{equation}\label{eq:budget}
+  \tau^C_t\, C_t + p^I_t\,I_t
+  + \frac{B_t}{R_t\,P_t}
+  = \tau^R_t\bigl(\tau^W_t\, w^h_t\, L_t
+  + r^k_t\, z_t\, \bbar K_{t-1}/g_t\bigr)
+  + \frac{B_{t-1}}{P_t\,g_t}
+  + \Pi_t + T_t,
+\end{equation}
+where:
+\begin{itemize}[nosep]
+  \item $\tau^C_t$ is the consumption tax;
+  \item $p^I_t$ is the relative price of investment goods;
+  \item $\tau^R_t$ is the income tax (applies to both labour and capital income);
+  \item $\tau^W_t$ is a labour-specific income tax (employee side);
+  \item $w^h_t$ is the household real wage (after the wage markup);
+  \item $r^k_t$ is the rental rate on effective capital;
+  \item $z_t$ is the capacity utilisation rate;
+  \item $\Pi_t$ are profits from firms; $T_t$ are lump-sum transfers.
+\end{itemize}
+
+\noindent The household also faces a \textbf{capital accumulation} equation:
+\begin{equation}\label{eq:capital_accum}
+  \bbar K_t = (1 - \delta_t)\,\frac{\bbar K_{t-1}}{g_t}
+  + \varepsilon^I_t \,(1 - S_t)\, I_t\,,
+\end{equation}
+where $\delta_t = \delta(z_t)$ is the endogenous depreciation rate and
+$S_t = S(I_t, I_{t-1}, g_t)$ captures investment adjustment costs.
+
+\subsection{Investment adjustment cost function}
+
+The adjustment cost function depends on the growth rate of investment:
+\begin{equation}\label{eq:adj_cost}
+  S_t \equiv S\!\left(\frac{I_t}{I_{t-1}}\,g_t\right)
+  = \frac{\psi}{2}\,(1+\bbar g)^2
+    \left(\frac{I_t}{I_{t-1}}\,\frac{g_t}{1+\bbar g} - 1\right)^{\!2},
+\end{equation}
+with derivative
+\begin{equation}\label{eq:adj_cost_deriv}
+  S'_t \equiv \frac{\partial S}{\partial (I_t g_t / I_{t-1})}
+  = \psi\,(1+\bbar g)
+    \left(\frac{I_t}{I_{t-1}}\,\frac{g_t}{1+\bbar g} - 1\right).
+\end{equation}
+At steady state, $I_t/I_{t-1} = 1$ and $g_t = 1+\bbar g$, so
+$S = S' = 0$: there are no adjustment costs along the balanced growth path.
+
+\subsection{Endogenous depreciation}
+
+The depreciation rate is an increasing, convex function of capacity
+utilisation~$z_t$:
+\begin{equation}\label{eq:depreciation}
+  \delta(z_t) = \bbar\delta \, \exp\!\left(
+    \frac{\bbar\delta'}{\bbar\delta}\,(z_t - \bbar z)\right),
+\end{equation}
+where $\bbar\delta = \delta(\bbar z)$ is the steady-state depreciation rate and
+$\bbar\delta' = \delta'(\bbar z)$ is the steady-state marginal depreciation.
+The marginal depreciation rate is:
+\begin{equation}\label{eq:depreciation_deriv}
+  \delta'(z_t) = \bbar\delta' \, \exp\!\left(
+    \frac{\bbar\delta'}{\bbar\delta}\,(z_t - \bbar z)\right).
+\end{equation}
+
+\subsection{First-order conditions}
+
+The household maximises~\eqref{eq:utility} subject to the budget
+constraint~\eqref{eq:budget} and capital accumulation~\eqref{eq:capital_accum}.
+Let $\lambda_t$ denote the Lagrange multiplier on the budget constraint and
+$Q_t\,\lambda_t$ the multiplier on the capital accumulation equation (so that
+$Q_t$ is Tobin's~$Q$). The first-order conditions yield the following
+equations, numbered as in the Dynare code.
+
+\medskip
+
+\paragraph{Equation~1: Consumption FOC.}
+Differentiating with respect to $C_t$:
+\begin{equation}\label{eq:eq1}\tag{Eq.~1}
+  \boxed{
+  \bigl(C_t - \eta\,\eta^s_t\,C_{t-1}/g_t + \ln\varsigma_t\bigr)^{-\sigma_c}
+  \exp\!\Bigl(\tfrac{(\sigma_c-1)\varepsilon^L_t}{1+\sigma_l}
+  (L_t/\bbar L)^{1+\sigma_l}\Bigr)
+  = \tau^C_t\,\lambda_t.}
+\end{equation}
+The left-hand side is the marginal utility of consumption. The right-hand side
+is the shadow cost of one extra unit of consumption, inclusive of the
+consumption tax.
+
+\paragraph{Equation~2: Euler equation.}
+The first-order condition for bond holdings, combined with the risk premium
+shock~$\varepsilon^B_t$, gives:
+\begin{equation}\label{eq:eq2}\tag{Eq.~2}
+  \boxed{
+  \lambda_t\,\tau^R_t
+  = \beta\,\varepsilon^B_t\,R_t\,g_{t+1}^{-\sigma_c}\,
+    \frac{\lambda_{t+1}\,\tau^R_{t+1}}{\pi_{t+1}}.}
+\end{equation}
+This is the standard Euler equation: the marginal cost of saving (left-hand
+side, inclusive of the income tax) equals the discounted marginal benefit. The
+term $g_{t+1}^{-\sigma_c}$ arises from the detrending of the utility function.
+
+\paragraph{Equation~3: Labour supply FOC.}
+Differentiating with respect to $L_t$:
+\begin{equation}\label{eq:eq3}\tag{Eq.~3}
+  \boxed{
+  \begin{aligned}
+  &\bigl(C_t - \eta\,\eta^s_t\,C_{t-1}/g_t + \ln\varsigma_t\bigr)^{1-\sigma_c}
+  \,\frac{\varepsilon^L_t}{\bbar L}
+  \,\Bigl(\frac{L_t}{\bbar L}\Bigr)^{\!\sigma_l} \\
+  &\qquad\times \exp\!\Bigl(\tfrac{(\sigma_c-1)\varepsilon^L_t}{1+\sigma_l}
+  (L_t/\bbar L)^{1+\sigma_l}\Bigr)
+  = \lambda_t\,\tau^R_t\,\tau^W_t\,w^h_t.
+  \end{aligned}}
+\end{equation}
+The left-hand side is the marginal disutility of labour (with a sign
+convention making it positive). The right-hand side is the marginal benefit of
+working one more unit, after all taxes.
+
+\paragraph{Equation~4: Investment FOC.}
+Differentiating with respect to $I_t$, using the capital accumulation
+constraint:
+\begin{equation}\label{eq:eq4}\tag{Eq.~4}
+  \boxed{
+  \begin{aligned}
+  &Q_t\!\left(1 - S_t - \frac{I_t}{I_{t-1}}\,g_t\,S'_t\right)\\
+  &\quad + \beta\,\frac{\lambda_{t+1}}{\lambda_t}\,g_{t+1}^{-\sigma_c}\,
+    Q_{t+1}\,\frac{\varepsilon^I_{t+1}}{\varepsilon^I_t}\,
+    \left(\frac{I_{t+1}}{I_t}\,g_{t+1}\right)^{\!2}\!S'_{t+1}
+  = \frac{p^I_t}{\varepsilon^I_t}.
+  \end{aligned}}
+\end{equation}
+The left-hand side captures the shadow value of an extra unit of investment
+(current marginal value plus the expected future benefit from relaxing
+tomorrow's adjustment cost). The right-hand side is the effective price of
+investment.
+
+\paragraph{Equation~5: Depreciation rate.}
+This is the definition~\eqref{eq:depreciation}:
+\begin{equation}\label{eq:eq5}\tag{Eq.~5}
+  \boxed{
+  \delta_t = \bbar\delta\,
+  \exp\!\Bigl(\frac{\bbar\delta'}{\bbar\delta}(z_t - \bbar z)\Bigr).}
+\end{equation}
+
+\paragraph{Equation~6: Marginal depreciation rate.}
+This is the definition~\eqref{eq:depreciation_deriv}:
+\begin{equation}\label{eq:eq6}\tag{Eq.~6}
+  \boxed{
+  \delta'_t = \bbar\delta'\,
+  \exp\!\Bigl(\frac{\bbar\delta'}{\bbar\delta}(z_t - \bbar z)\Bigr).}
+\end{equation}
+
+\paragraph{Equation~7: Capacity utilisation FOC.}
+Differentiating with respect to $z_t$:
+\begin{equation}\label{eq:eq7}\tag{Eq.~7}
+  \boxed{\tau^R_t\,r^k_t = Q_t\,\delta'_t.}
+\end{equation}
+The household equates the after-tax marginal revenue from utilising capital
+one unit more intensively (left-hand side) to the marginal cost in terms of
+faster depreciation (right-hand side).
+
+\paragraph{Equation~8: Capital stock FOC (Tobin's~$Q$).}
+Differentiating with respect to $\bbar K_t$:
+\begin{equation}\label{eq:eq8}\tag{Eq.~8}
+  \boxed{
+  Q_t = \beta\,\frac{\lambda_{t+1}}{\lambda_t}\,g_{t+1}^{-\sigma_c}
+  \Bigl[Q_{t+1}(1-\delta_{t+1})
+  + \tau^R_{t+1}\,r^k_{t+1}\,z_{t+1}\Bigr].}
+\end{equation}
+Tobin's~$Q$ equals the discounted expected value of capital tomorrow: the
+resale value $(1-\delta_{t+1})Q_{t+1}$ plus the after-tax rental income
+$\tau^R_{t+1}\,r^k_{t+1}\,z_{t+1}$.
+
+\paragraph{Equation~9: Capital accumulation.}
+This restates~\eqref{eq:capital_accum}:
+\begin{equation}\label{eq:eq9}\tag{Eq.~9}
+  \boxed{
+  \bbar K_t = (1-\delta_t)\,\frac{\bbar K_{t-1}}{g_t}
+  + \varepsilon^I_t\,(1-S_t)\,I_t.}
+\end{equation}
+
+\paragraph{Equation~10: Investment cost.}
+This restates~\eqref{eq:adj_cost}:
+\begin{equation}\label{eq:eq10}\tag{Eq.~10}
+  \boxed{
+  S_t = \frac{\psi}{2}\,(1{+}\bbar g)^2
+    \Bigl(\frac{I_t}{I_{t-1}}\,\frac{g_t}{1{+}\bbar g} - 1\Bigr)^{\!2}.}
+\end{equation}
+
+\paragraph{Equation~11: Marginal investment cost.}
+This restates~\eqref{eq:adj_cost_deriv}:
+\begin{equation}\label{eq:eq11}\tag{Eq.~11}
+  \boxed{
+  S'_t = \psi\,(1{+}\bbar g)
+    \Bigl(\frac{I_t}{I_{t-1}}\,\frac{g_t}{1{+}\bbar g} - 1\Bigr).}
+\end{equation}
+
+
+%% ============================================================
+\section{Intermediate goods and price setting}
+\label{sec:prices}
+%% ============================================================
+
+\subsection{Production technology}
+
+A continuum of intermediate goods firms $\iota \in [0,1]$ each produce a
+differentiated variety using capital services $K_t(\iota)$ and effective
+labour $A_t L^d_t(\iota)$:
+\begin{equation}\label{eq:production}
+  y_t(\iota) = K_t(\iota)^{\alpha}\,(A_t\,L^d_t(\iota))^{1-\alpha},
+\end{equation}
+where $\alpha\in(0,1)$ is the capital share and $A_t$ is the stationary
+component of technology.
+
+\subsection{Cost minimisation}
+
+Each intermediate firm minimises its real cost $r^k_t\,K_t(\iota) +
+\tau^L_t\,w_t\,L^d_t(\iota)$ subject to~\eqref{eq:production}, where
+$\tau^L_t$ is the employer-side labour tax (payroll tax).
+
+\paragraph{Equation~13: Factor price frontier.}
+The ratio of factor demands satisfies:
+\begin{equation}\label{eq:eq13}\tag{Eq.~13}
+  \boxed{\frac{\tau^L_t\,w_t\,L^d_t}{r^k_t\,K_t} = \frac{1-\alpha}{\alpha}.}
+\end{equation}
+
+\paragraph{Equation~14: Real marginal cost.}
+Substituting optimal factor demands back into the cost function:
+\begin{equation}\label{eq:eq14}\tag{Eq.~14}
+  \boxed{
+  mc_t = A_t^{\,\alpha-1}\,
+  \Bigl(\frac{r^k_t}{\alpha}\Bigr)^{\!\alpha}\,
+  \Bigl(\frac{\tau^L_t\,w_t}{1-\alpha}\Bigr)^{\!1-\alpha}.}
+\end{equation}
+Note that the marginal cost is identical across firms (since all face the
+same factor prices), even though each firm has a different level of output.
+
+\subsection{Final good production: Kimball aggregation}
+
+A representative final-good firm assembles intermediate varieties using a
+\textbf{Kimball aggregator} (Kimball, 1995). Unlike the standard
+Dixit--Stiglitz CES aggregator, the Kimball aggregator generates a
+\emph{variable} elasticity of demand: firms that raise their price far
+above the market level face a much steeper fall in demand than under CES.
+This strategic complementarity in price setting is an important ingredient
+for matching the empirical persistence of inflation.
+
+\subsubsection{The Kimball aggregation constraint}
+
+The aggregation technology is defined implicitly by:
+\begin{equation}\label{eq:kimball_goods}
+  \int_0^1 G\!\left(\frac{y_t(\iota)}{Y_t};\,\theta_f,\psi_f\right)\dd\iota = 1,
+\end{equation}
+where $y_t(\iota)$ is the output of intermediate firm~$\iota$ and $Y_t$ is
+aggregate output. Following Dotsey and King~(2005) and
+Adjemian, Darracq Pari\`es and Moyen~(2008), the function~$G$ takes the
+explicit form:
+\begin{equation}\label{eq:kimball_G}
+  \boxed{
+  G(x;\theta_f,\psi_f) = \frac{\theta_f}{\theta_f(1+\psi_f)-1}
+  \Bigl[(1+\psi_f)\,x - \psi_f\Bigr]
+    ^{\frac{\theta_f(1+\psi_f)-1}{\theta_f(1+\psi_f)}}
+  - \frac{\theta_f}{\theta_f(1+\psi_f)-1} + 1.}
+\end{equation}
+One can verify that $G(1) = 1$ (normalisation) and $G'(1) = 1$.
+
+The two parameters have the following roles:
+\begin{itemize}[nosep]
+  \item $\theta_f > 1$ controls the \textbf{elasticity of demand} at the
+    symmetric equilibrium. The steady-state goods markup is
+    $\mu_f = \theta_f/(\theta_f-1)$, i.e.\
+    $\theta_f = \mu_f/(\mu_f - 1)$.
+  \item $\psi_f$ controls the \textbf{curvature} of the demand function
+    (how the elasticity varies with the relative price). The Kimball
+    curvature parameter $\varepsilon_f$ is defined by
+    $\psi_f = -\varepsilon_f/\theta_f$.
+    When $\psi_f = 0$, the aggregator reduces to the standard CES
+    (Dixit--Stiglitz) case.
+\end{itemize}
+
+\subsubsection{Demand for variety~$\iota$}
+
+The final-good firm maximises profit
+$Y_t - \int_0^1 p_t(\iota)\,y_t(\iota)\,\dd\iota$ subject
+to~\eqref{eq:kimball_goods}, where $p_t(\iota) = P_t(\iota)/P_t$ is the
+relative price of variety~$\iota$. The first-order condition with respect to
+$y_t(\iota)$ is:
+\begin{equation}\label{eq:kimball_foc}
+  p_t(\iota) = \Lambda^f_t\,G'\!\left(\frac{y_t(\iota)}{Y_t}\right),
+\end{equation}
+where $\Lambda^f_t$ is the Lagrange multiplier on the aggregation
+constraint. Differentiating~\eqref{eq:kimball_G}:
+\[
+  G'(x) = \Bigl[(1+\psi_f)\,x - \psi_f\Bigr]^{-\frac{1}{\theta_f(1+\psi_f)}}.
+\]
+Substituting into~\eqref{eq:kimball_foc} and inverting for $y_t(\iota)/Y_t$:
+\begin{equation}\label{eq:kimball_demand}
+  \frac{y_t(\iota)}{Y_t}
+  = \frac{1}{1+\psi_f}\left[
+    \left(\frac{p_t(\iota)}{\Lambda^f_t}\right)^{\!-\theta_f(1+\psi_f)}
+    + \psi_f\right].
+\end{equation}
+This is the \textbf{Kimball demand function}. When $\psi_f = 0$, it
+reduces to the familiar CES demand $y_t(\iota)/Y_t =
+(p_t(\iota))^{-\theta_f}$ (with $\Lambda^f_t = 1$).
+
+\subsubsection{Variable elasticity of demand}
+
+The price elasticity of demand at variety~$\iota$ is:
+\[
+  \varepsilon_t(\iota)
+  \equiv -\frac{\partial\ln(y_t(\iota)/Y_t)}{\partial\ln p_t(\iota)}
+  = \frac{\theta_f(1+\psi_f)\,
+    (p_t(\iota)/\Lambda^f_t)^{-\theta_f(1+\psi_f)}}
+    {(p_t(\iota)/\Lambda^f_t)^{-\theta_f(1+\psi_f)} + \psi_f}.
+\]
+At the symmetric equilibrium ($p_t(\iota) = \Lambda^f_t = 1$), this
+simplifies to $\varepsilon = \theta_f$, confirming that $\theta_f$ is
+the elasticity at the steady state. When $\psi_f < 0$ (the empirically
+relevant case), the elasticity \emph{increases} as a firm raises its
+price above the market level, discouraging large price deviations and
+generating strategic complementarity.
+
+\subsubsection{Aggregate conditions from the Kimball aggregator}
+
+To derive the aggregate price relationships, define $x(\iota) = y_t(\iota)/Y_t$
+and substitute the demand function~\eqref{eq:kimball_demand} into the
+aggregation constraint~\eqref{eq:kimball_goods}. Integrating over all
+varieties requires tracking three cross-sectional moments of relative
+prices. Under Calvo pricing (where a fraction~$\xi_p$ of firms have
+``inherited'' prices and a fraction~$1-\xi_p$ have the optimal
+price~$\breve p_t$), these moments evolve recursively.
+
+\paragraph{Average relative price $\tilde p_t$.}
+The first moment of relative prices is $\tilde p_t =
+\int_0^1 p_t(\iota)\,\dd\iota$. Under Calvo:
+\begin{equation}\label{eq:eq20}\tag{Eq.~20}
+  \boxed{
+  \tilde p_t = (1-\xi_p)\,\breve p_t
+  + \xi_p\,\frac{\pi^{np}_t}{\pi_t}\,\tilde p_{t-1}.}
+\end{equation}
+Optimising firms contribute $\breve p_t$; non-optimising firms had relative
+price $\tilde p_{t-1}$ on average last period, and their nominal price
+grew by $\pi^{np}_t$ while the aggregate price grew by $\pi_t$, so their
+relative price changes by $\pi^{np}_t/\pi_t$.
+
+\paragraph{Kimball multiplier $\Lambda^f_t$.}
+From the aggregation constraint, the Lagrange multiplier satisfies:
+\begin{equation}\label{eq:eq16}\tag{Eq.~16}
+  \boxed{
+  (\Lambda^f_t)^{1-\theta_f(1+\psi_f)}
+  = (1-\xi_p)\,(\breve p_t)^{1-\theta_f(1+\psi_f)}
+  + \xi_p\,
+    \left(\frac{\pi^{np}_t}{\pi_t}\right)^{\!1-\theta_f(1+\psi_f)}
+    \!(\Lambda^f_{t-1})^{1-\theta_f(1+\psi_f)}.}
+\end{equation}
+This generalises the CES price index. When $\psi_f = 0$,
+$\Lambda^f_t = 1$ always and the equation reduces to the standard
+Dixit--Stiglitz price aggregation.
+
+\paragraph{Aggregate price normalisation.}
+The zero-profit condition of the final-good firm, combined with the
+Kimball aggregation, yields:
+\begin{equation}\label{eq:eq21}\tag{Eq.~21}
+  \boxed{
+  \frac{\psi_f}{1+\psi_f}\,\tilde p_t + \frac{1}{1+\psi_f}\,\Lambda^f_t = 1.}
+\end{equation}
+This links the average relative price and the Kimball multiplier so that
+the aggregate price level is normalised to unity. At steady state,
+$\tilde p = \Lambda^f = 1$.
+
+\subsubsection{Price dispersion}
+
+We now derive the price dispersion index, which measures the resource
+cost of relative price heterogeneity under the Kimball aggregator.
+
+\paragraph{Definition of $\Delta^p_t$.}
+The Kimball demand~\eqref{eq:kimball_demand} implies that the output
+of intermediate firm~$\iota$ relative to aggregate output is:
+\[
+  \frac{y_t(\iota)}{Y_t}
+  = \frac{1}{1+\psi_f}
+  \left[\left(\frac{p_t(\iota)/\Lambda^f_t}{}\right)^{\!-(1+\psi_f)\theta_f}
+    + \psi_f\right].
+\]
+Integrating over all firms $\iota \in [0,1]$:
+\begin{equation}\label{eq:deltap_def}
+  \Delta^p_t
+  \equiv \int_0^1 \frac{y_t(\iota)}{Y_t}\,\dd\iota
+  = \frac{1}{1+\psi_f}
+  \left[(\Lambda^f_t)^{\theta_f(1+\psi_f)}\!
+    \int_0^1 p_t(\iota)^{-\theta_f(1+\psi_f)}\,\dd\iota
+    + \psi_f\right],
+\end{equation}
+where the integral $\int_0^1 p_t(\iota)^{-\theta_f(1+\psi_f)}\,\dd\iota$
+is a ``power mean'' of relative prices that we
+denote~$\nabla^p_t$.
+
+\paragraph{Recursive expression for $\nabla^p_t$.}
+Under the Calvo mechanism, at date~$t$ the price $P_t(\iota)/P_t$ has
+been set optimally $j$ periods earlier with probability
+$(1-\xi_p)\,\xi_p^j$. Since then it has been indexed by the cumulative
+factor $\Gamma_{t,t-j}/\pi_{t-j+1}\cdots\pi_t$. Thus:
+\[
+  \nabla^p_t
+  = \int_0^1 p_t(\iota)^{-\theta_f(1+\psi_f)}\,\dd\iota
+  = (1-\xi_p)\sum_{j=0}^{\infty}\xi_p^j
+    \left(\frac{\Gamma_{t,t-j}\,\breve P_{t-j}}{P_t}\right)^{\!-\theta_f(1+\psi_f)}.
+\]
+This infinite sum can be split into the $j=0$ term (newly optimising
+firms) and the remaining terms ($j\geq 1$, which correspond to
+$\nabla^p_{t-1}$ evaluated at prices deflated by one more period of
+indexation):
+\begin{equation}\label{eq:eq23}\tag{Eq.~23}
+  \boxed{
+  \nabla^p_t = (1-\xi_p)\,(\breve p_t)^{-\theta_f(1+\psi_f)}
+  + \xi_p\,\nabla^p_{t-1}\,
+    \left(\frac{\pi^{np}_t}{\pi_t}\right)^{\!-\theta_f(1+\psi_f)}.}
+\end{equation}
+The ratio $\pi^{np}_t/\pi_t$ captures the erosion of each
+non-optimising firm's relative price: its nominal price grows by
+$\pi^{np}_t$ (indexation) while the aggregate price level grows by
+$\pi_t$.
+
+\paragraph{Equation~22: Price dispersion index $\Delta^p_t$.}
+Substituting the definition of $\nabla^p_t$ back
+into~\eqref{eq:deltap_def}:
+\begin{equation}\label{eq:eq22}\tag{Eq.~22}
+  \boxed{
+  \Delta^p_t = \frac{\psi_f}{1+\psi_f}
+  + \frac{1}{1+\psi_f}\,\nabla^p_t\,
+    (\Lambda^f_t)^{\theta_f(1+\psi_f)}.}
+\end{equation}
+The first term $\psi_f/(1+\psi_f)$ is the contribution of the linear
+part of the Kimball demand (the $+\psi_f$ term). The second term involves
+the power mean of relative prices $\nabla^p_t$ scaled by the Kimball
+multiplier~$\Lambda^f_t$.
+
+In the CES case ($\psi_f = 0$), the expression simplifies to
+$\Delta^p_t = \nabla^p_t = \int_0^1 p_t(\iota)^{-\theta_f}\,\dd\iota$,
+the standard Yun~(1996) price dispersion index.
+
+At steady state, $\breve p=1$, $\pi^{np}=\pi$, $\Lambda^f=1$, so
+$\nabla^p = 1$ and $\Delta^p = 1$: there is no dispersion when all
+firms charge the same price.
+
+\subsection{Calvo pricing and optimal price setting}
+
+In each period, a fraction $(1-\xi_p)$ of intermediate firms can
+re-optimise their price. The remaining fraction~$\xi_p$ adjusts
+mechanically according to an indexation rule.
+
+\paragraph{Equation~12: Price indexation for non-optimising firms.}
+Non-optimising firms set their price growth as a geometric average of
+lagged inflation and the inflation target:
+\begin{equation}\label{eq:eq12}\tag{Eq.~12}
+  \boxed{
+  \pi^{np}_t = \pi_{t-1}^{\gamma_p}\,\bbar\pi_t^{\,1-\gamma_p},}
+\end{equation}
+where $\gamma_p \in [0,1]$ is the degree of backward-looking indexation.
+
+\subsubsection{The firm's profit and the Calvo lottery}
+
+The nominal profit of a firm proposing price~$\mathcal{P}$ at date~$t$
+is:
+\[
+  \Pi_t(\mathcal{P}) =
+  \left(\frac{\mathcal{P}}{P_t} - \nu^p_t\,mc_t\right)
+  \left[\left(\frac{\mathcal{P}/P_t}{\Theta_t}\right)^{\!-(1+\psi_f)\theta_f}
+    + \psi_f\right]
+  \frac{P_t\,Y_t}{1+\psi_f},
+\]
+where the term in square brackets is the Kimball
+demand~\eqref{eq:kimball_demand} evaluated at $\mathcal{P}/P_t$,
+$mc_t$ is the (common) real marginal cost, and $\nu^p_t$ is the
+price cost-push shock ($\nu^p_t > 1$ raises effective marginal cost).
+
+The cost-push shock~$\nu^p_t$ (on the cost side) is the model's
+structural proxy for the Smets and Wouters ``price markup shock.''  It
+enters only~$Z_1$ and therefore affects the Phillips curve without
+distorting the resource constraint; we make this precise in
+Section~\ref{sec:linearised_nkpc}.
+
+The firm is subject to a lottery \`a la Calvo~(1983): at each date it
+receives a signal indicating whether it can or cannot re-optimise its
+price. With probability~$\xi_p$ the signal is unfavourable and the firm
+simply indexes its price according to the \emph{ad hoc} rule:
+\begin{equation}\label{eq:index_rule}
+  P_t(\iota) = \Gamma_t\,P_{t-1}(\iota),
+  \qquad\text{where}\quad
+  \Gamma_t \equiv \pi_{t-1}^{\gamma_p}\,\bbar\pi^{\,1-\gamma_p}.
+\end{equation}
+More generally, if a firm has not re-optimised for $j$ consecutive
+periods, its price has been multiplied by
+$\Gamma_{t+j,t} \equiv \Gamma_{t+1}\,\Gamma_{t+2}\cdots\Gamma_{t+j}$
+(with $\Gamma_{t,t}=1$).
+
+\subsubsection{Value functions and optimality conditions}
+
+Let $\widetilde{\mathcal{V}}_t$ denote the value (in utils) of a firm
+that receives a favourable signal at date~$t$, and
+$\mathcal{V}_t(P_{t-1}(\iota))$ the value of a firm that receives the
+unfavourable signal. A firm receiving the unfavourable signal simply
+follows the indexation rule~\eqref{eq:index_rule}, so its value at
+date~$t$ depends on its inherited price $P_{t-1}(\iota)$. By contrast, a
+firm receiving the favourable signal is purely forward-looking: since all
+such firms share the same expectations, they all choose the same optimal
+price~$\breve P_t$, and the value $\widetilde{\mathcal{V}}_t$ does not
+depend on any endogenous state variable.
+
+The Bellman equation for a firm receiving the favourable signal is:
+\begin{equation}\label{eq:bellman_fav}
+  \widetilde{\mathcal{V}}_t
+  = \max_{\mathbf{P}}\left\{
+    \Pi_t(\mathbf{P})
+    + \beta\,\E_t\!\left[\frac{\Lambda_{t+1}}{\Lambda_t}
+      \Bigl((1-\xi_p)\,\widetilde{\mathcal{V}}_{t+1}
+      + \xi_p\,\mathcal{V}_{t+1}(\mathbf{P})\Bigr)\right]
+  \right\},
+\end{equation}
+where $\Lambda_t$ is the nominal marginal utility of wealth (the
+Lagrange multiplier on the household's budget constraint). The value of a
+firm receiving the unfavourable signal is:
+\begin{equation}\label{eq:bellman_unfav}
+  \mathcal{V}_t\bigl(P_{t-1}(\iota)\bigr)
+  = \Pi_t\!\left(\Gamma_t\,P_{t-1}(\iota)\right)
+  + \beta\,\E_t\!\left[\frac{\Lambda_{t+1}}{\Lambda_t}
+    \Bigl((1-\xi_p)\,\widetilde{\mathcal{V}}_{t+1}
+    + \xi_p\,\mathcal{V}_{t+1}\bigl(\Gamma_t\,P_{t-1}(\iota)\bigr)
+    \Bigr)\right].
+\end{equation}
+
+The first-order condition and the envelope condition for a firm receiving
+the favourable signal give:
+\begin{align}
+  \Pi'_t(\breve P) + \beta\,\xi_p\,\E_t\!\left[
+    \frac{\Lambda_{t+1}}{\Lambda_t}\,\mathcal{V}'_{t+1}(\breve P)\right]
+  &= 0, \label{eq:foc_price}\\[4pt]
+  \frac{\mathcal{V}'_t(P_{t-1}(\iota))}{\Gamma_t}
+  = \Pi'_t\!\left(\Gamma_t\,P_{t-1}(\iota)\right)
+  + \beta\,\xi_p\,\E_t\!\left[
+    \frac{\Lambda_{t+1}}{\Lambda_t}\,
+    \mathcal{V}'_{t+1}\bigl(\Gamma_t\,P_{t-1}(\iota)\bigr)\right].
+    \label{eq:envelope_price}
+\end{align}
+The envelope condition~\eqref{eq:envelope_price} can be iterated forward.
+Writing temporarily $\mathcal{P}$ for an inherited price, one step ahead:
+\[
+  \mathcal{V}'_{t+1}(\mathcal{P})
+  = \Gamma_{t+1}\,\Pi'_{t+1}(\Gamma_{t+1}\,\mathcal{P})
+  + \beta\,\xi_p\,\Gamma_{t+1}\,
+    \E_{t+1}\!\left[\frac{\Lambda_{t+2}}{\Lambda_{t+1}}\,
+    \mathcal{V}'_{t+2}(\Gamma_{t+1}\,\mathcal{P})\right].
+\]
+Iterating to infinity and taking the conditional expectation at~$t$:
+\[
+  \E_t\!\left[\mathcal{V}'_{t+1}(\mathcal{P})\right]
+  = \E_t\!\left[\sum_{j=0}^{\infty}(\beta\,\xi_p)^j\,
+    \Gamma_{t+1+j,t}\,\frac{\Lambda_{t+1+j}}{\Lambda_{t+1}}\,
+    \Pi'_{t+1+j}\bigl(\Gamma_{t+1+j,t}\,\mathcal{P}\bigr)\right].
+\]
+Substituting back into the first-order
+condition~\eqref{eq:foc_price} with $\mathcal{P} = \breve P_t$:
+\begin{equation}\label{eq:optimal_price_sum}
+  \E_t\!\left[\sum_{j=0}^{\infty}(\beta\,\xi_p)^j\,
+  \Gamma_{t+j,t}\,\frac{\Lambda_{t+j}}{\Lambda_t}\,
+  \Pi'_{t+j}\!\left(\Gamma_{t+j,t}\,\breve P_t\right)\right] = 0.
+\end{equation}
+The optimal price~$\breve P_t$ ensures that the sum (discounted and
+probability-weighted) of the marginal profit over all future dates at
+which the firm might still be using this price is zero. It also
+guarantees the nullity of the expected marginal profits in the case
+where the firm cannot re-optimise (by following the indexation
+rule~\eqref{eq:index_rule}).
+
+\subsubsection{Derivation of the $Z$ recursions}
+
+To obtain a recursive formulation, we use the Kimball aggregator
+multiplier $\Theta_t$, which satisfies~\eqref{eq:eq16}. The derivative
+of the profit function with respect to~$\mathcal{P}$ is:
+\[
+  \Pi'_t(\mathcal{P}) =
+  \frac{1-\theta_f(1+\psi_f)}{1+\psi_f}\,
+  \left(\frac{\mathcal{P}}{P_t}\right)^{\!-(1+\psi_f)\theta_f}\!
+  \Theta_t^{(1+\psi_f)\theta_f}\,Y_t
+  + \theta_f\,
+  \left(\frac{\mathcal{P}}{P_t}\right)^{\!-(1+\psi_f)\theta_f-1}\!
+  \Theta_t^{(1+\psi_f)\theta_f}\,\nu^p_t\,mc_t\,Y_t
+  + \frac{\psi_f}{1+\psi_f}\,Y_t.
+\]
+Substituting this expression into~\eqref{eq:optimal_price_sum} and
+dividing through by $P_t^{*\,-(1+\psi_f)\theta_f}$, the infinite sum
+decomposes into three terms that can each be written recursively. Denoting
+by $\breve p_t = \breve P_t/P_t$ the optimal relative price:
+
+\paragraph{Equation~15: Optimal relative price.}
+\begin{equation}\label{eq:eq15}\tag{Eq.~15}
+  \boxed{
+  \breve p_t = \frac{\theta_f(1+\psi_f)}{\theta_f(1+\psi_f)-1}\,
+  \frac{Z_{1,t}}{Z_{2,t}}
+  + \frac{\psi_f}{\theta_f(1+\psi_f)-1}\,
+  (\breve p_t)^{1+\theta_f(1+\psi_f)}\,
+  \frac{Z_{3,t}}{Z_{2,t}}.}
+\end{equation}
+This is an \emph{implicit} equation for $\breve p_t$. The first term captures
+the standard markup channel (marginal cost over revenue), while the
+second term is the \textbf{Kimball correction}: it depends on
+$(\breve p_t)^{1+\theta_f(1+\psi_f)}$ and vanishes when $\psi_f = 0$. In the
+CES case ($\psi_f = 0$), the equation reduces to
+$\breve p_t = [\theta_f/(\theta_f - 1)]\,Z_{1,t}/Z_{2,t}$, the familiar
+constant-markup rule.
+
+The three auxiliary variables $Z_{1,t}$, $Z_{2,t}$, $Z_{3,t}$ arise from
+the three terms in~$\Pi'_t$ and can be represented recursively. Noting
+that $\pi_{t+j}/P_t = \prod_{h=1}^{j}\pi_{t+h}$, the inflation factor
+between $t$ and $t+j$ enters each recursion through the ratio
+$\pi_{t+1}/\pi^{np}_t$ (i.e.\ the erosion of the firm's relative price
+per period).
+
+\paragraph{Equation~17: Recursion for $Z_{1,t}$ (marginal cost component).}
+$Z_{1,t}$ captures the present-value effective marginal cost
+$\nu^p_t\,mc_t$, weighted by the Kimball demand:
+\begin{equation}\label{eq:eq17}\tag{Eq.~17}
+  \boxed{
+  Z_{1,t} = \lambda_t\,mc_t\,\nu^p_t\,(\Lambda^f_t)^{\theta_f(1+\psi_f)}\,Y_t
+  + \beta\,\xi_p\,g_{t+1}^{1-\sigma_c}\,
+    \left(\frac{\pi_{t+1}}{\pi^{np}_t}\right)^{\!\theta_f(1+\psi_f)}\!Z_{1,t+1}.}
+\end{equation}
+The term $(\Lambda^f_t)^{\theta_f(1+\psi_f)}$ arises from the Kimball
+demand evaluated at the aggregate level. The discount factor
+$(\pi_{t+1}/\pi^{np}_t)^{\theta_f(1+\psi_f)}$ reflects the erosion of
+the firm's relative demand as its price drifts away from the optimum
+(only indexed by $\pi^{np}_t$ while the aggregate price grows
+by $\pi_{t+1}$).
+
+\paragraph{Equation~18: Recursion for $Z_{2,t}$ (revenue component).}
+$Z_{2,t}$ captures the present-value revenue, also weighted by Kimball
+demand:
+\begin{equation}\label{eq:eq18}\tag{Eq.~18}
+  \boxed{
+  Z_{2,t} = \lambda_t\,(\Lambda^f_t)^{\theta_f(1+\psi_f)}\,Y_t
+  + \beta\,\xi_p\,g_{t+1}^{1-\sigma_c}\,
+    \left(\frac{\pi_{t+1}}{\pi^{np}_t}\right)^{\!\theta_f(1+\psi_f)-1}\!Z_{2,t+1}.}
+\end{equation}
+The exponent $\theta_f(1+\psi_f)-1$ (rather than $\theta_f(1+\psi_f)$)
+reflects that revenue is price$\,\times\,$quantity: the extra power
+of~$-1$ comes from the price factor in the revenue integrand.
+
+\paragraph{Equation~19: Recursion for $Z_{3,t}$ (Kimball correction).}
+$Z_{3,t}$ is specific to the Kimball aggregator---it captures the
+``linear'' part of the demand function (the $+\psi_f$ term
+in~\eqref{eq:kimball_demand}):
+\begin{equation}\label{eq:eq19}\tag{Eq.~19}
+  \boxed{
+  Z_{3,t} = \lambda_t\,Y_t
+  + \beta\,\xi_p\,g_{t+1}^{1-\sigma_c}\,
+    \frac{\pi^{np}_t}{\pi_{t+1}}\,Z_{3,t+1}.}
+\end{equation}
+Note the simpler discount factor: the ``linear'' component of the
+Kimball demand contributes a term that only depends on the relative
+price to the power~$1$ (not~$\theta_f(1+\psi_f)$), so the erosion
+factor is just $\pi^{np}_t/\pi_{t+1}$.
+
+\medskip
+\noindent\textbf{Interpretation at steady state.}
+At steady state, $Z_{1}/Z_{2} = mc = 1/\mu_f$ and $Z_{3}/Z_{2} = 1$,
+so~\eqref{eq:eq15} reduces to:
+\[
+  1 = \frac{\theta_f(1+\psi_f)}{\theta_f(1+\psi_f)-1}\,\frac{1}{\mu_f}
+  + \frac{\psi_f}{\theta_f(1+\psi_f)-1},
+\]
+which simplifies to $\mu_f = \theta_f/(\theta_f - 1)$, independently
+of~$\psi_f$. The Kimball curvature does not affect the
+\emph{steady-state} markup---it only affects its \emph{dynamics} by
+making demand more elastic for firms that deviate from the average price.
+
+\subsection{Linearised New Keynesian Phillips curve}
+\label{sec:linearised_nkpc}
+
+We now derive the linearised Phillips curve implied by the nonlinear
+model, in order to clarify the role of the cost-push shock~$\nu^p_t$.
+For transparency, we work in the CES limit
+($\psi_f = 0$, $\Lambda^f_t = 1$), with zero trend inflation
+($\bbar\pi = 1$) and a unit growth rate ($g = 1$); the Kimball
+curvature modifies the slope of the Phillips curve but does not change
+the qualitative conclusions. We denote log-deviations from steady
+state by hats: $\hat x_t = \log(x_t/x^\ss)$.
+
+\subsubsection{Log-linearisation of the price index}
+
+In the CES case, the Kimball aggregator reduces to the Dixit--Stiglitz
+price index:
+\[
+  1 = (1-\xi_p)\,(\breve p_t)^{1-\theta_f}
+  + \xi_p\,\bigl(\pi^{np}_t/\pi_t\bigr)^{1-\theta_f}.
+\]
+Log-linearising around $\breve p^\ss = 1$ and ${\pi^{np}}^\ss/\pi^\ss = 1$:
+\begin{equation}\label{eq:pstar_lin}
+  \hat{\breve p}_t = \frac{\xi_p}{1-\xi_p}\,
+  \bigl(\hat\pi_t - \gamma_p\,\hat\pi_{t-1}\bigr),
+\end{equation}
+using $\hat\pi^{np}_t = \gamma_p\,\hat\pi_{t-1}$ from the
+indexation rule~\eqref{eq:eq12}.
+
+\subsubsection{Log-linearisation of the $Z$ recursions}
+
+With $\psi_f = 0$, the three recursions collapse to two (since $Z_3$
+is absent). At steady state ($\nu^p = 1$),
+$Z_1^\ss = \lambda^\ss\,mc^\ss\,Y^\ss/(1-\beta\xi_p)$ and
+$Z_2^\ss = \lambda^\ss\,Y^\ss/(1-\beta\xi_p)$. Log-linearising
+\eqref{eq:eq17} and \eqref{eq:eq18}:
+\begin{align}
+  \hat Z_{1,t} &= (1-\beta\xi_p)\,
+    (\hat\lambda_t + \widehat{mc}_t + \hat\nu^p_t + \hat Y_t)
+  + \beta\xi_p\,
+    \bigl[\theta_f\,(\hat\pi_{t+1} - \gamma_p\hat\pi_t)
+    + \hat Z_{1,t+1}\bigr],
+    \label{eq:Z1lin}\\
+  \hat Z_{2,t} &= (1-\beta\xi_p)\,
+    (\hat\lambda_t + \hat Y_t)
+  + \beta\xi_p\,
+    \bigl[(\theta_f-1)(\hat\pi_{t+1} - \gamma_p\hat\pi_t)
+    + \hat Z_{2,t+1}\bigr].
+    \label{eq:Z2lin}
+\end{align}
+The log-linearised optimal price is
+$\hat{\breve p}_t = \hat Z_{1,t} - \hat Z_{2,t}$ (the constant
+$\log\mu_f$ cancels). Subtracting~\eqref{eq:Z2lin}
+from~\eqref{eq:Z1lin}:
+\begin{equation}\label{eq:pstar_foc}
+  \hat{\breve p}_t = (1-\beta\xi_p)\,
+    (\widehat{mc}_t + \hat\nu^p_t)
+  + \beta\xi_p\,
+    \bigl[\hat\pi_{t+1} - \gamma_p\hat\pi_t
+    + \hat{\breve p}_{t+1}\bigr].
+\end{equation}
+Note that $\hat\lambda_t$ and $\hat Y_t$ cancel in the difference:
+the reset price depends on the effective marginal
+cost $\widehat{mc}_t + \hat\nu^p_t$, not on the level of demand.
+
+\subsubsection{The hybrid New Keynesian Phillips curve}
+
+Substituting~\eqref{eq:pstar_lin} into~\eqref{eq:pstar_foc} and
+simplifying:
+\begin{equation}\label{eq:nkpc}
+  \boxed{
+  \hat\pi_t = \frac{\gamma_p}{1+\beta\gamma_p}\,\hat\pi_{t-1}
+  + \frac{\beta}{1+\beta\gamma_p}\,\E_t\hat\pi_{t+1}
+  + \frac{\kappa}{1+\beta\gamma_p}\,
+    \bigl(\widehat{mc}_t + \hat\nu^p_t\bigr),}
+\end{equation}
+where the slope of the Phillips curve is
+\[
+  \kappa \equiv \frac{(1-\xi_p)(1-\beta\xi_p)}{\xi_p}.
+\]
+
+\subsubsection{Comparison with the Smets--Wouters markup shock}
+\label{sec:comparison_sw}
+
+In the original SW model, which is formulated directly in linearised
+form, the NKPC reads:
+\[
+  \hat\pi_t
+  = \frac{\gamma_p}{1+\beta\gamma_p}\,\hat\pi_{t-1}
+  + \frac{\beta}{1+\beta\gamma_p}\,\hat\pi_{t+1}
+  + \frac{\kappa'}{1+\beta\gamma_p}\,\widehat{mc}_t
+  + \eta^p_t,
+\]
+where $\eta^p_t$ is an exogenous ``price markup shock'' (an AR or
+ARMA process) added directly to the Phillips curve, and $\kappa'$
+may differ from $\kappa$ depending on the normalisation. Two
+important differences with~\eqref{eq:nkpc} emerge:
+\begin{enumerate}[nosep]
+\item \textbf{Coefficient.}
+  In~\eqref{eq:nkpc} the cost-push shock $\hat\nu^p_t$ enters with the
+  \emph{same} slope coefficient $\kappa/(1+\beta\gamma_p)$ as the
+  marginal cost.  This is because it only affects the
+  \emph{contemporaneous} term in the $Z_1$ recursion and therefore
+  picks up the weight $(1-\beta\xi_p)$ that the current period receives
+  in the infinite discounted sum.
+
+  By contrast, a ``true'' markup shock arising from a time-varying
+  elasticity of substitution $\theta_{f,t}$ would enter through the
+  \emph{front coefficient} $\mu_{f,t} = \theta_{f,t}/(\theta_{f,t}-1)$
+  of the reset price equation (outside the infinite sum), yielding a
+  different coefficient in the NKPC. The SW specification, where
+  $\eta^p_t$ enters additively with its own normalisation, is not
+  constrained by $\kappa$, and can therefore match a broader range of
+  dynamics.
+
+\item \textbf{Spillovers to other equations.}
+  The SW markup shock $\eta^p_t$ only enters the Phillips curve.
+  The cost-push shock $\nu^p_t$ enters only~$Z_1$ and therefore
+  \emph{only} affects the Phillips curve as well---it is the
+  closest structural proxy for the SW markup shock, free of
+  side-effects on the resource constraint.
+\end{enumerate}
+
+\paragraph{Where the shocks appear.}
+To confirm that the cost-push shocks act purely as Phillips-curve
+shifters, we trace their appearances across all equilibrium
+conditions:
+
+\begin{center}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{lcc}
+\hline
+\textbf{Equation} & $\nu^p_t$ & $\nu^w_t$ \\
+\hline
+Eq.~\eqref{eq:eq17}: $Z_{1,t}$ (marginal cost, prices)
+  & $\checkmark$ & --- \\
+Eq.~\eqref{eq:eq28}: $H_{1,t}$ (household wage cost)
+  & --- & $\checkmark$ \\
+\hline
+\end{tabular}
+\end{center}
+
+\noindent
+The cost-push shocks $\nu^p_t$ and $\nu^w_t$ each enter a single
+equation ($Z_1$ and $H_1$ respectively), making them pure Phillips-curve
+shifters.  They appear nowhere else---not in the price/wage index
+equations \eqref{eq:eq16}/\eqref{eq:eq27}, the dispersion indices, the
+household's FOCs, the Taylor rule, the resource constraint, or the
+efficient economy block.
+
+In particular, the resource constraint~\eqref{eq:eq42} is
+\textbf{undistorted}:
+\[
+  G_t + C_t + p^I_t\,I_t = Y_t,
+\]
+exactly as in the Smets--Wouters model, where the markup shocks enter
+only the linearised Phillips curve (prices) and the wage equation
+(wages). The cost-push shocks therefore carry no resource-constraint
+side-effects.
+
+\paragraph{Impulse responses.}
+A positive innovation to $\nu^p_t$ (resp.\ $\nu^w_t$) raises inflation
+(resp.\ wage inflation) through the Phillips-curve channel.  Since it
+leaves the resource constraint undistorted, the output contraction
+operates \emph{exclusively} through the interest-rate channel, exactly
+as for the markup shocks in the linearised SW model.
+
+\subsubsection{The Phillips-curve slope under Kimball aggregation}
+\label{sec:kimball_slope}
+
+With $\psi_f \neq 0$, the optimal price~\eqref{eq:eq15} is an
+implicit equation involving $Z_3$.  The log-linearisation of
+\eqref{eq:eq15} around $\breve p^\ss = 1$ gives
+\[
+  \underbrace{\frac{(\theta_f-1)}
+    {\theta_f-1-\theta_f\psi_f}}_{\displaystyle a_1}
+  \,(\hat Z_{1,t} - \hat Z_{2,t})
+  \;+\;
+  \underbrace{\frac{-\psi_f}
+    {\theta_f-1-\theta_f\psi_f}}_{\displaystyle a_2}
+  \,(\hat Z_{2,t} - \hat Z_{3,t})
+  \;=\; \hat{\breve p}_t.
+\]
+The difference $\hat Z_{1,t} - \hat Z_{2,t}$ satisfies the same
+recursion~\eqref{eq:pstar_foc} as in the CES case: the
+$\Lambda^f_t{}^{\varepsilon_f}$ terms in $Z_1$ and $Z_2$ cancel in
+the difference, and the cost-push shock $\hat\nu^p_t$ enters with
+coefficient $(1-\beta\xi_p)$ as before.  The difference
+$\hat Z_{2,t} - \hat Z_{3,t}$ involves only the Kimball multiplier
+$\hat\Lambda^f_t$ ($\nu^p_t$ does not appear, since it only enters
+$Z_1$).  Moreover, combining
+the log-linearised price index~\eqref{eq:eq16} with the aggregate
+price equation~\eqref{eq:eq21} shows that $\hat\Lambda^f_t = 0$
+when starting from steady state, so
+$\hat Z_{2,t} - \hat Z_{3,t}$ contributes only through inflation
+expectations.
+
+The resulting NKPC retains the hybrid form~\eqref{eq:nkpc} with a
+modified slope
+\begin{equation}\label{eq:kappa_kimball}
+  \kappa^K
+  = \frac{(1-\xi_p)(1-\beta\xi_p)}{\xi_p}
+  \times \frac{\theta_f-1}{\theta_f-1-\theta_f\psi_f}
+  = \frac{(1-\xi_p)(1-\beta\xi_p)}
+    {\xi_p\,\bigl(1 + \varepsilon^K_f/(\theta_f-1)\bigr)},
+\end{equation}
+where $\varepsilon^K_f \equiv -\theta_f\psi_f > 0$ is the
+effective Kimball curvature.  Since $\psi_f < 0$, the second factor
+is less than one: the variable elasticity of demand creates
+``strategic complementarity'' that dampens optimal price adjustments
+and flattens the Phillips curve.  The cost-push shock still enters
+with this same (flatter) slope, and the qualitative conclusions above
+remain unchanged.  The same derivation
+applies to the wage Phillips curve, with the analogous correction
+$(\theta_s-1)/(\theta_s-1-\theta_s\psi_s)$.
+
+\paragraph{Quantitative magnitude.}
+With the Smets and Wouters (2007) posterior-mean calibration $\xi_p = 0.66$,
+$\gamma_p = 0.24$, $\beta = 0.9975$ and the Kimball curvature
+$\varepsilon^K_f = 10$, the
+Kimball-corrected slope~\eqref{eq:kappa_kimball} evaluates to
+\[
+  \kappa^K \approx 0.060,
+  \qquad
+  \frac{\kappa^K}{1 + \beta\gamma_p}
+  \approx 0.048.
+\]
+For wages, with $\xi_w = 0.70$, $\gamma_w = 0.58$ and the corresponding Kimball
+curvature $\varepsilon^K_s = 10$:
+\[
+  \kappa^K_w \approx 0.043,
+  \qquad
+  \frac{\kappa^K_w}{1 + \beta\gamma_w}
+  \approx 0.027.
+\]
+These values are consistent with the empirical literature on NKPC
+estimation, which typically finds coefficients of $0.01$--$0.05$.
+
+By contrast, the linearised markup shock in SW enters the NKPC with a
+coefficient of~$1$ (or, equivalently, the shock is defined so that a
+unit innovation raises inflation by its own magnitude).  Therefore,
+\emph{for the cost-push shock $\nu^p_t$ to generate the same impact on
+inflation as the SW markup shock, it would need to be roughly
+$1/0.048 \approx 21$ times as volatile} (for prices) and
+$1/0.027 \approx 37$ times as volatile (for wages).
+
+\subsubsection{Structural interpretation and estimation}
+\label{sec:mc_shock}
+
+The cost-push shock~$\nu^p_t$ (and its wage-side
+counterpart~$\nu^w_t$) has a natural structural interpretation: it
+represents an exogenous increase in firms' input costs (e.g.\ imported
+intermediates, energy prices, indirect taxes) that is orthogonal to
+the quantity of goods produced.
+
+\medskip\noindent
+The cost-push formulation also avoids an identification tension. A
+revenue-side markup proxy would enter two channels with very different
+coefficients---the Phillips curve ($\approx 0.048$) and the resource
+constraint ($\approx 1$)---forcing the estimator to reconcile the
+inflationary signal with the output signal and potentially biasing
+persistence or variance estimates.  The cost-push shock enters only the
+Phillips curve, avoiding this tension by construction.
+
+\subsection{Aggregate output and price distortion}
+
+\paragraph{Equation~41: Aggregate production.}
+Each intermediate firm~$\iota$ produces according to the Cobb--Douglas
+technology:
+\[
+  y_t(\iota) = K^d_t(\iota){}^\alpha\,(A_t\,L^d_t(\iota))^{1-\alpha}.
+\]
+Since all firms face the same factor prices, they all choose the same
+capital--labour ratio (see equation~\eqref{eq:eq11}):
+\[
+  \frac{K^d_t(\iota)}{L^d_t(\iota)} = \frac{K^d_t}{L^d_t}
+  \qquad\text{for all }\iota\in[0,1].
+\]
+Thus we can write the output of firm~$\iota$ as:
+\[
+  y_t(\iota)
+  = \left(\frac{K^d_t}{L^d_t}\right)^{\!\alpha}
+    (A_t)^{1-\alpha}\,L^d_t(\iota)
+  = \frac{K^d_t{}^\alpha\,(A_t\,L^d_t)^{1-\alpha}}{L^d_t}\,L^d_t(\iota).
+\]
+Denoting aggregate potential output $y_t \equiv K^d_t{}^\alpha
+(A_t\,L^d_t)^{1-\alpha}$ (where $K^d_t = \int_0^1
+K^d_t(\iota)\,\dd\iota$ and $L^d_t = \int_0^1
+L^d_t(\iota)\,\dd\iota$), integrating over~$\iota$ and using the
+Kimball demand function~\eqref{eq:kimball_demand}:
+\[
+  \int_0^1 y_t(\iota)\,\dd\iota
+  = y_t\,\underbrace{\int_0^1
+    \frac{L^d_t(\iota)}{L^d_t}\,\dd\iota}_{=1}
+  = y_t.
+\]
+But because the aggregation technology is not linear ($G\neq$
+identity), the sum of intermediate outputs differs from final output
+$Y_t$. The relation is $\int_0^1 y_t(\iota)\,\dd\iota = \Delta^p_t
+\cdot Y_t$ (integrating the demand function over~$\iota$), so:
+\begin{equation}\label{eq:eq41}\tag{Eq.~41}
+  \boxed{
+  Y_t = \frac{K_t^{\alpha}\,(A_t\,L^d_t)^{1-\alpha}}{\Delta^p_t}.}
+\end{equation}
+The price dispersion term $\Delta^p_t \geq 1$ (with equality only at
+the symmetric equilibrium) acts as a ``tax'' on aggregate production:
+heterogeneous relative prices distort the allocation of inputs across
+firms, reducing aggregate output below the level that would obtain if
+all firms produced the same quantity. At the first order of
+approximation (log-linearisation around the symmetric steady state
+where $\Delta^p=1$), this term vanishes, but it matters at higher
+orders.
+
+
+%% ============================================================
+\section{Labour market and wage setting}
+\label{sec:wages}
+%% ============================================================
+
+The labour market mirrors the goods market structure exactly: a Kimball
+aggregator combines differentiated labour varieties, and Calvo
+wage-setting by unions replaces Calvo pricing by firms.  The derivation
+proceeds in the same way as for the price-setting block
+(Section~\ref{sec:prices}), replacing the final good producer by a
+representative employment agency, intermediate goods firms by unions,
+prices by wages, and the goods-market Kimball parameters
+$(\theta_f,\psi_f)$ by their labour-market counterparts
+$(\theta_s,\psi_s)$.  We therefore only state the resulting equations
+and highlight the points where the wage block differs from the price
+block.
+
+\subsection{Employment agency: Kimball aggregation}
+
+A representative \textbf{employment agency} aggregates differentiated
+labour varieties $L_t(\varsigma)$ (supplied by unions $\varsigma\in[0,1]$) into a
+homogeneous labour composite $L^s_t$ using a Kimball aggregator of the
+same form as in the goods market:
+\begin{equation}
+  \int_0^1 G^w\!\left(\frac{L_t(\varsigma)}{L^s_t};\,\theta_s,\psi_s\right)\dd\varsigma = 1,
+\end{equation}
+where the function~$G^w$ has the same functional form as~$G$ in
+equation~\eqref{eq:kimball_G}, with $\theta_s$ and~$\psi_s$ replacing
+$\theta_f$ and~$\psi_f$.  The steady-state wage markup and the
+curvature parameter are:
+\begin{equation}
+  \mu_s = \frac{\theta_s}{\theta_s - 1},
+  \qquad\text{and}\qquad
+  \psi_s = -\frac{\varepsilon_s}{\theta_s}.
+\end{equation}
+
+All aggregate conditions carry over from the price block by direct
+analogy:
+
+\paragraph{Equation~32: Aggregate wage normalisation.}
+\begin{equation}\label{eq:eq32}\tag{Eq.~32}
+  \boxed{
+  \frac{\psi_s}{1+\psi_s}\,\tilde w_t + \frac{1}{1+\psi_s}\,\Lambda^s_t = 1.}
+\end{equation}
+
+\subsubsection{Wage dispersion}
+
+The derivation mirrors the price dispersion case exactly
+(Section~\ref{sec:prices}).
+
+\paragraph{Definition of $\Delta^w_t$.}
+The Kimball labour demand (the wage analogue
+of~\eqref{eq:kimball_demand}) implies that the labour supplied by
+union~$\varsigma$ relative to aggregate labour is:
+\[
+  \frac{l_t(\varsigma)}{L^s_t}
+  = \frac{1}{1+\psi_s}
+  \left[\left(\frac{W_t(\varsigma)/W_t}{\Upsilon_t}\right)^{\!-(1+\psi_s)\theta_s}
+    + \psi_s\right].
+\]
+Integrating over all unions $\varsigma\in[0,1]$:
+\begin{equation}\label{eq:deltaw_def}
+  \Delta^w_t
+  \equiv \int_0^1 \frac{l_t(\varsigma)}{L^s_t}\,\dd\varsigma
+  = \frac{1}{1+\psi_s}
+  \left[(\Lambda^s_t)^{\theta_s(1+\psi_s)}\!
+    \int_0^1
+    \left(\frac{W_t(\varsigma)}{W_t}\right)^{\!-\theta_s(1+\psi_s)}
+    \!\dd\varsigma
+    + \psi_s\right],
+\end{equation}
+where the integral $\int_0^1
+(W_t(\varsigma)/W_t)^{-\theta_s(1+\psi_s)}\,\dd\varsigma$ is the
+power mean of relative wages, denoted~$\nabla^w_t$.
+
+\paragraph{Recursive expression for $\nabla^w_t$.}
+Under the Calvo mechanism, the nominal wage $W_t(\varsigma)$ was set
+optimally $j$ periods earlier with probability
+$(1-\xi_w)\,\xi_w^j$. Since then it has been indexed by the cumulative
+factor $\Omega_{t,t-j}$ (see~\eqref{eq:wage_index_rule}), while the
+aggregate wage has grown by $W_t/W_{t-j}$. Thus:
+\[
+  \nabla^w_t
+  = (1-\xi_w)\sum_{j=0}^{\infty}\xi_w^j
+    \left(\frac{\Omega_{t,t-j}\,\breve W_{t-j}}{W_t}\right)^{\!-\theta_s(1+\psi_s)}.
+\]
+Splitting into $j=0$ (newly optimising unions, with relative wage
+$\breve w_t$) and $j\geq 1$ (which gives $\nabla^w_{t-1}$ eroded by
+one additional period of indexation versus actual wage growth):
+\begin{equation}\label{eq:eq34}\tag{Eq.~34}
+  \boxed{
+  \nabla^w_t = (1-\xi_w)\,(\breve w_t)^{-\theta_s(1+\psi_s)}
+  + \xi_w\,\nabla^w_{t-1}\,
+    \left(\frac{\omega^{nw}_t}{\omega_t\,\pi_t}\right)^{\!-\theta_s(1+\psi_s)}.}
+\end{equation}
+The ratio $\omega^{nw}_t/(\omega_t\,\pi_t)$ captures the erosion of
+each non-optimising union's relative wage: its nominal wage grows by
+$\omega^{nw}_t$ (indexation, see~\eqref{eq:eq24}), while the aggregate
+nominal wage grows by $\omega_t\,\pi_t$ (real wage growth times
+inflation).
+
+\paragraph{Equation~33: Wage dispersion index $\Delta^w_t$.}
+Substituting the definition of $\nabla^w_t$ back
+into~\eqref{eq:deltaw_def}:
+\begin{equation}\label{eq:eq33}\tag{Eq.~33}
+  \boxed{
+  \Delta^w_t = \frac{\psi_s}{1+\psi_s}
+  + \frac{1}{1+\psi_s}\,\nabla^w_t\,
+    (\Lambda^s_t)^{\theta_s(1+\psi_s)}.}
+\end{equation}
+The structure is identical to the price dispersion
+index~\eqref{eq:eq22}: the first term comes from the linear part of
+the Kimball demand, and the second involves the power mean $\nabla^w_t$
+scaled by the Kimball wage multiplier~$\Lambda^s_t$.
+
+At steady state, $\breve w=1$, $\omega^{nw}=\omega\,\pi$, $\Lambda^s=1$,
+so $\nabla^w = 1$ and $\Delta^w = 1$.
+
+\paragraph{Equation~39: Household labour supply and employment agency supply.}
+The wage dispersion creates a wedge between the household's total
+labour~$L_t$ and the effective labour composite $L^s_t$ used by the
+employment agency. Integrating the labour demand of
+union~$\varsigma$ over all unions:
+\[
+  L_t
+  = \int_0^1 l_t(\varsigma)\,\dd\varsigma
+  = L^s_t\!\int_0^1 \frac{l_t(\varsigma)}{L^s_t}\,\dd\varsigma
+  = \Delta^w_t\,L^s_t,
+\]
+so that:
+\begin{equation}\label{eq:eq39}\tag{Eq.~39}
+  \boxed{L^s_t = \frac{L_t}{\Delta^w_t}.}
+\end{equation}
+Since $\Delta^w_t \geq 1$, wage dispersion reduces the effective
+labour available to firms relative to the total hours worked by
+households, just as price dispersion reduces aggregate output relative
+to aggregate inputs in~\eqref{eq:eq41}.
+
+\subsection{Calvo wage setting}
+
+In each period, a fraction $(1-\xi_w)$ of unions can re-optimise their
+wage. The remaining fraction~$\xi_w$ indexes wages mechanically.
+
+\paragraph{Equation~24: Wage indexation for non-optimising unions.}
+Non-optimising unions adjust their nominal wage by:
+\begin{equation}\label{eq:eq24}\tag{Eq.~24}
+  \boxed{
+  \omega^{nw}_t = \pi_t^{\gamma_w}\,\bbar\pi_t^{\,1-\gamma_w},}
+\end{equation}
+where $\gamma_w \in [0,1]$ is the degree of wage indexation to current
+inflation.
+
+\paragraph{Equation~25: Real wage growth.}
+The real wage growth factor $\omega_t$ is defined as:
+\begin{equation}\label{eq:eq25}\tag{Eq.~25}
+  \boxed{\omega_t = \frac{w_t}{w_{t-1}}.}
+\end{equation}
+
+\paragraph{Equation~27: Aggregate Kimball multiplier (wages).}
+\begin{equation}\label{eq:eq27}\tag{Eq.~27}
+  \boxed{
+  (\Lambda^s_t)^{1-\theta_s(1+\psi_s)}
+  = (1-\xi_w)\,(\breve w_t)^{1-\theta_s(1+\psi_s)}
+  + \xi_w\,
+    \left(\frac{\omega^{nw}_t}{\omega_t\,\pi_t}\right)^{\!1-\theta_s(1+\psi_s)}
+    \!(\Lambda^s_{t-1})^{1-\theta_s(1+\psi_s)}.}
+\end{equation}
+
+\paragraph{Equation~31: Average relative wage.}
+\begin{equation}\label{eq:eq31}\tag{Eq.~31}
+  \boxed{
+  \tilde w_t = (1-\xi_w)\,\breve w_t
+  + \xi_w\,\frac{\omega^{nw}_t}{\omega_t\,\pi_t}\,\tilde w_{t-1}.}
+\end{equation}
+
+\subsection{Optimal wage setting}
+
+The derivation of the optimal wage follows the same value function
+approach as for optimal pricing
+(Section~\ref{sec:prices}), with unions replacing intermediate
+firms, the nominal wage replacing the nominal price, and the employment
+agency replacing the final good producer.
+
+\subsubsection{The union's profit and the Calvo lottery}
+
+Unions produce differentiated labour from the homogeneous labour supply
+of households. The profit of a union offering nominal wage
+$\mathcal{W}$ at date~$t$ is:
+\[
+  \mathscr{S}_t(\mathcal{W})
+  = \bigl(\mathcal{W} - \nu^w_t\,W^m_t\bigr)\,
+  \frac{1}{1+\psi_s}
+  \left[\left(\frac{\mathcal{W}/W_t}{\Upsilon_t}\right)^{\!-(1+\psi_s)\theta_s}
+    + \psi_s\right]\mathcal{L}_t,
+\]
+where $W^m_t$ is the nominal household wage, $W_t$ is the aggregate
+nominal wage, $\Upsilon_t$ is the Kimball wage aggregator multiplier
+(analogous to~$\Theta_t$ for prices), $\mathcal{L}_t$ is aggregate
+labour demand, and $\nu^w_t$ is the wage cost-push shock
+($\nu^w_t > 1$ raises the effective cost of labour for the union).
+
+The cost-push shock~$\nu^w_t$ plays the same role on the wage side as
+$\nu^p_t$ does on the price side (see Section~\ref{sec:prices}): it
+enters only~$H_1$, making it a pure wage Phillips-curve shifter with no
+effect on the resource constraint.
+
+Each union is subject to the same Calvo lottery: with
+probability~$\xi_w$ the union cannot re-optimise and indexes its nominal
+wage by:
+\begin{equation}\label{eq:wage_index_rule}
+  W_t(\varsigma) = \Omega_t\,W_{t-1}(\varsigma),
+  \qquad\text{where}\quad
+  \Omega_t \equiv \frac{\mathcal{A}_{T,t}}{\mathcal{A}_{T,t-1}}\,
+    \pi_{t-1}^{\gamma_w}\,\bbar\pi^{\,1-\gamma_w},
+\end{equation}
+i.e.\ a combination of lagged inflation, the inflation target, and the
+growth rate of neutral technology $\mathcal{A}_{T,t}$. More generally,
+$\Omega_{t+j,t} \equiv \Omega_{t+1}\cdots\Omega_{t+j}$ (with
+$\Omega_{t,t}=1$).
+
+\subsubsection{Value functions and optimality conditions}
+
+Let $\widetilde{\mathcal{U}}_t$ denote the value of a union that
+receives a favourable signal at date~$t$, and
+$\mathcal{U}_t(W_{t-1}(\varsigma))$ the value of a union receiving the
+unfavourable signal. As in the price-setting case, the value of an
+optimising union is purely forward-looking, while the value of a
+non-optimising union depends on its inherited wage.
+
+The Bellman equation for a union receiving the favourable signal is:
+\begin{equation}\label{eq:bellman_wage_fav}
+  \widetilde{\mathcal{U}}_t
+  = \max_{\mathbf{W}}\left\{
+    \mathscr{S}_t(\mathbf{W})
+    + \beta\,\E_t\!\left[\frac{\Lambda_{t+1}}{\Lambda_t}
+      \Bigl((1-\xi_w)\,\widetilde{\mathcal{U}}_{t+1}
+      + \xi_w\,\mathcal{U}_{t+1}(\mathbf{W})\Bigr)\right]
+  \right\},
+\end{equation}
+and the value of a union receiving the unfavourable signal is:
+\begin{equation}\label{eq:bellman_wage_unfav}
+  \mathcal{U}_t\bigl(W_{t-1}(\varsigma)\bigr)
+  = \mathscr{S}_t\!\left(\Omega_t\,W_{t-1}(\varsigma)\right)
+  + \beta\,\E_t\!\left[\frac{\Lambda_{t+1}}{\Lambda_t}
+    \Bigl((1-\xi_w)\,\widetilde{\mathcal{U}}_{t+1}
+    + \xi_w\,\mathcal{U}_{t+1}\bigl(\Omega_t\,W_{t-1}(\varsigma)\bigr)
+    \Bigr)\right].
+\end{equation}
+
+The first-order condition and the envelope condition give:
+\begin{align}
+  \mathscr{S}'_t(\breve W) + \beta\,\xi_w\,\E_t\!\left[
+    \frac{\Lambda_{t+1}}{\Lambda_t}\,\mathcal{U}'_{t+1}(\breve W)\right]
+  &= 0, \label{eq:foc_wage}\\[4pt]
+  \frac{\mathcal{U}'_t(W_{t-1}(\varsigma))}{\Omega_t}
+  = \mathscr{S}'_t\!\left(\Omega_t\,W_{t-1}(\varsigma)\right)
+  + \beta\,\xi_w\,\E_t\!\left[
+    \frac{\Lambda_{t+1}}{\Lambda_t}\,
+    \mathcal{U}'_{t+1}\bigl(\Omega_t\,W_{t-1}(\varsigma)\bigr)\right].
+    \label{eq:envelope_wage}
+\end{align}
+Iterating the envelope condition~\eqref{eq:envelope_wage} forward and
+substituting into~\eqref{eq:foc_wage}:
+\begin{equation}\label{eq:optimal_wage_sum}
+  \E_t\!\left[\sum_{j=0}^{\infty}(\beta\,\xi_w)^j\,
+  \Omega_{t+j,t}\,\frac{\Lambda_{t+j}}{\Lambda_t}\,
+  \mathscr{S}'_{t+j}\!\left(\Omega_{t+j,t}\,\breve W_t\right)\right] = 0.
+\end{equation}
+The optimal nominal wage~$\breve W_t$ ensures the nullity of the sum
+(discounted and probability-weighted) of the marginal union profits over
+all future dates at which the union might still be using this wage.
+
+\subsubsection{Derivation of the $H$ recursions}
+
+The derivative of the union's profit with respect to~$\mathcal{W}$ has
+the same three-term structure as in the price case: the cost-push
+shock~$\nu^w_t$ multiplies the household wage in the cost term (yielding
+$H_{1,t}$), while the revenue terms ($H_{2,t}$ and $H_{3,t}$) carry no
+shock. Substituting
+into~\eqref{eq:optimal_wage_sum} and dividing through by
+$W_t^{*\,-(1+\psi_s)\theta_s}$, we obtain the optimal relative
+wage $\breve w_t = \breve W_t/W_t$ as an implicit function of three recursion
+variables $H_{1,t}$, $H_{2,t}$, $H_{3,t}$.
+
+The household real wage $w^h_t$ that a member of union~$\varsigma$ receives is
+related to the gross wage through the Kimball markup: at steady state,
+$w^h = w/\mu_s$.
+
+\paragraph{Equation~26: Optimal relative wage.}
+\begin{equation}\label{eq:eq26}\tag{Eq.~26}
+  \boxed{
+  \breve w_t = \frac{\theta_s(1+\psi_s)}{\theta_s(1+\psi_s)-1}\,
+  \frac{H_{1,t}}{H_{2,t}}
+  + \frac{\psi_s}{\theta_s(1+\psi_s)-1}\,
+  (\breve w_t)^{1+\theta_s(1+\psi_s)}\,
+  \frac{H_{3,t}}{H_{2,t}}.}
+\end{equation}
+This parallels the optimal price equation~\eqref{eq:eq15}. The ratio
+$H_{1,t}/H_{2,t}$ captures the desired wage markup (household wage over
+gross wage), and $H_{3,t}$ corrects for Kimball curvature. In the CES
+case ($\psi_s = 0$), the equation reduces to
+$\breve w_t = [\theta_s/(\theta_s-1)]\,H_{1,t}/H_{2,t}$.
+
+\paragraph{Equation~28: Recursion for $H_{1,t}$.}
+$H_{1,t}$ captures the present-value effective household wage cost
+$\nu^w_t\,w^h_t$, weighted by Kimball labour demand:
+\begin{equation}\label{eq:eq28}\tag{Eq.~28}
+  \boxed{
+  H_{1,t} = \lambda_t\,w^h_t\,\nu^w_t\,(\Lambda^s_t)^{\theta_s(1+\psi_s)}\,L^s_t
+  + \beta\,\xi_w\,g_{t+1}^{1-\sigma_c}\,
+    \left(\frac{\omega_{t+1}\,\pi_{t+1}}{\omega^{nw}_t}\right)^{\!\theta_s(1+\psi_s)}
+    \!H_{1,t+1}.}
+\end{equation}
+
+\paragraph{Equation~29: Recursion for $H_{2,t}$.}
+$H_{2,t}$ captures the present-value revenue of the union, weighted
+by Kimball labour demand:
+\begin{equation}\label{eq:eq29}\tag{Eq.~29}
+  \boxed{
+  H_{2,t} = \lambda_t\,w_t\,
+    (\Lambda^s_t)^{\theta_s(1+\psi_s)}\,L^s_t
+  + \beta\,\xi_w\,g_{t+1}^{1-\sigma_c}\,
+    \left(\frac{\omega_{t+1}\,\pi_{t+1}}{\omega^{nw}_t}\right)^{\!\theta_s(1+\psi_s)-1}
+    \!H_{2,t+1}.}
+\end{equation}
+The exponent $\theta_s(1+\psi_s)-1$ (rather than $\theta_s(1+\psi_s)$)
+has the same origin as in the price block: the extra power of~$-1$ comes
+from the wage factor in the revenue integrand.
+
+\paragraph{Equation~30: Recursion for $H_{3,t}$.}
+$H_{3,t}$ is the Kimball correction, capturing the linear part of the
+labour demand function:
+\begin{equation}\label{eq:eq30}\tag{Eq.~30}
+  \boxed{
+  H_{3,t} = \lambda_t\,w_t\,L^s_t
+  + \beta\,\xi_w\,g_{t+1}^{1-\sigma_c}\,
+    \frac{\omega^{nw}_t}{\pi_{t+1}\,\omega_{t+1}}\,H_{3,t+1}.}
+\end{equation}
+As in the price block, the simpler discount factor reflects that the
+linear component of the Kimball demand only depends on the relative wage
+to the power~$1$.
+
+\medskip
+\noindent\textbf{Interpretation at steady state.}
+At steady state, $H_1/H_2 = w^h/w = 1/\mu_s$ and $H_3/H_2 = 1$, so
+equation~\eqref{eq:eq26} gives:
+\[
+  1 = \frac{\theta_s(1+\psi_s)}{\theta_s(1+\psi_s)-1}\,\frac{1}{\mu_s}
+  + \frac{\psi_s}{\theta_s(1+\psi_s)-1},
+\]
+consistent with $\mu_s = \theta_s/(\theta_s - 1)$.
+
+
+%% ============================================================
+\section{Monetary policy}
+\label{sec:monetary}
+%% ============================================================
+
+\paragraph{Equation~35: Taylor rule.}
+The central bank sets the nominal interest rate according to a generalised
+Taylor rule with interest rate smoothing:
+\begin{equation}\label{eq:eq35}\tag{Eq.~35}
+  \boxed{
+  R_t = R_{t-1}^{\rho_R}
+  \left[
+  \bbar R\,
+  \left(\frac{\pi_{t-1}}{\bbar\pi_t}\right)^{\!r_\pi}\!
+  \mathcal{G}_t^{\,r_y}\,
+  \left(\frac{\pi_t/\bbar\pi_t}{\pi_{t-1}/\bbar\pi_{t-1}}\right)^{\!r_{\Delta\pi}}\!
+  \left(\frac{\mathcal{G}_t}{\mathcal{G}_{t-1}}\right)^{\!r_{\Delta y}}
+  \right]^{1-\rho_R}
+  \!\!\varepsilon^R_t,}
+\end{equation}
+where:
+\begin{itemize}[nosep]
+  \item $\rho_R \in [0,1)$ is the interest rate smoothing parameter;
+  \item $\bbar R$ is the steady-state nominal interest rate;
+  \item $r_\pi > 1$ is the response to lagged inflation deviations from target;
+  \item $r_y > 0$ is the response to the output gap~$\mathcal{G}_t$;
+  \item $r_{\Delta\pi}$ is the response to inflation growth;
+  \item $r_{\Delta y}$ is the response to output gap growth;
+  \item $\varepsilon^R_t$ is the monetary policy shock.
+\end{itemize}
+
+
+%% ============================================================
+\section{Government}
+\label{sec:government}
+%% ============================================================
+
+\paragraph{Equation~36: Output gap.}
+The output gap is defined as the ratio of actual GDP to efficient GDP
+(the level that would prevail under flexible prices and wages):
+\begin{equation}\label{eq:eq36}\tag{Eq.~36}
+  \boxed{\mathcal{G}_t = \frac{Y_t}{Y^e_t},}
+\end{equation}
+where $Y^e_t$ denotes efficient output (see \Cref{sec:efficient}).
+
+\paragraph{Equation~37: Public spending.}
+Government expenditure is a time-varying share of GDP:
+\begin{equation}\label{eq:eq37}\tag{Eq.~37}
+  \boxed{G_t = \varepsilon^g_t\,Y_t.}
+\end{equation}
+
+
+%% ============================================================
+\section{Market clearing}
+\label{sec:clearing}
+%% ============================================================
+
+\paragraph{Equation~38: Capital market.}
+Effective capital (services) equals the utilised physical stock, detrended
+by the growth rate:
+\begin{equation}\label{eq:eq38}\tag{Eq.~38}
+  \boxed{K_t = z_t\,\frac{\bbar K_{t-1}}{g_t}.}
+\end{equation}
+
+\paragraph{Equation~40: Labour market.}
+The employment agency's labour supply equals labour demand from
+intermediate firms:
+\begin{equation}\label{eq:eq40}\tag{Eq.~40}
+  \boxed{L^s_t = L^d_t.}
+\end{equation}
+
+\paragraph{Equation~42: Goods market.}
+The aggregate resource constraint equates final demand to output:
+\begin{equation}\label{eq:eq42}\tag{Eq.~42}
+  \boxed{
+  G_t + C_t + p^I_t\,I_t = Y_t.}
+\end{equation}
+Government spending, consumption and investment (valued at the relative
+price of investment~$p^I_t$) exhaust output. Because the cost-push
+shocks enter only the Phillips and wage curves, no markup wedge appears
+here, and the constraint takes the same undistorted form as in the
+linearised Smets--Wouters model.
+
+
+%% ============================================================
+\section{Exogenous processes (Equations~43--59)}
+\label{sec:shocks}
+%% ============================================================
+
+By default, each of the 17 exogenous driving forces follows an AR(1)
+process in levels (Section~\ref{sec:arma} generalises this to ARMA$(p,q)$).
+Let $X_t$ denote a generic shock with steady-state value
+$\bbar X$, autocorrelation parameter $\rho_X$, and innovation
+$\epsilon_{X,t}$. The law of motion is:%
+\footnote{For the growth-rate shock $g_t$
+(\texttt{ProductionEfficiencyGrowth}), the normalisation uses
+$(1+\bbar g)$ instead of $\bbar g$.}
+\begin{equation}\label{eq:shock_general}\tag{Eq.~43--59}
+  \boxed{
+  \frac{X_t}{\bbar X}
+  = \left(\frac{X_{t-1}}{\bbar X}\right)^{\!\rho_X}
+  \exp(\sigma_X\,\epsilon_{X,t}),
+  \qquad \epsilon_{X,t} \sim \mathcal{N}(0,1).}
+\end{equation}
+In log-deviations $\hat x_t = \ln(X_t/\bbar X)$, this is:
+\[
+  \hat x_t = \rho_X\,\hat x_{t-1} + \sigma_X\,\epsilon_{X,t},
+\]
+a standard AR(1) process.
+
+\medskip
+\noindent The 17 shocks are listed in \Cref{tab:shocks}, with their
+Smets--Wouters target persistence $\rho_{SW}$, unconditional standard
+deviation $\sqrt{V_{SW}}$, and ARMA order $(p,q)$. For an AR(1) the innovation
+standard deviation is $\sigma_\varepsilon = \sqrt{V_{SW}}\,\sqrt{1-\rho_{SW}^2}$.
+Shocks with $\sqrt{V_{SW}} = 0$ are kept in the model but switched off.
+
+\begin{table}[h]
+\centering\small
+\begin{tabular}{llccc}
+\toprule
+\textbf{Shock} & \textbf{Symbol} & $\rho_{SW}$ & $\sqrt{V_{SW}}$ & $(p,q)$ \\
+\midrule
+Technology growth    & $g_t$              & $0.39$ & $0$      & $(1,0)$ \\
+Technology level     & $A_t$              & $0.95$ & $0.0045$ & $(1,0)$ \\
+Consumption tax      & $\tau^C_t$         & $0.00$ & $0$      & $(1,0)$ \\
+Labour income tax    & $\tau^W_t$         & $0.00$ & $0$      & $(1,0)$ \\
+Income tax           & $\tau^R_t$         & $0.00$ & $0$      & $(1,0)$ \\
+Risk premium         & $\varepsilon^B_t$  & $0.22$ & $0.0024$ & $(1,0)$ \\
+Labour supply        & $\varepsilon^L_t$  & $0.94$ & $0$      & $(1,0)$ \\
+Inv.\ relative price & $p^I_t$           & $0.71$ & $0$      & $(1,0)$ \\
+Inv.\ efficiency     & $\varepsilon^I_t$  & $0.71$ & $0.0045$ & $(1,0)$ \\
+Employer labour tax  & $\tau^L_t$         & $0.00$ & $0$      & $(1,0)$ \\
+Price cost-push      & $\nu^p_t$          & $0.90$ & $0.0014$ & $(1,1)$ \\
+Wage cost-push       & $\nu^w_t$          & $0.97$ & $0.0024$ & $(1,1)$ \\
+Inflation target     & $\bbar\pi_t$       & $0.00$ & $0$      & $(1,0)$ \\
+Monetary policy      & $\varepsilon^R_t$  & $0.15$ & $0.0024$ & $(1,0)$ \\
+Public spending      & $\varepsilon^g_t$  & $0.97$ & $0.0053$ & $(1,0)$ \\
+Habit                & $\eta^s_t$         & $0.98$ & $0$      & $(1,0)$ \\
+Preference           & $\varsigma_t$      & $0.90$ & $0$      & $(1,0)$ \\
+\bottomrule
+\end{tabular}
+\caption{Exogenous shock processes: Smets--Wouters target persistence and
+unconditional standard deviation, and ARMA order. Shocks with $\sqrt{V_{SW}}=0$
+are kept in the model but switched off; the two mark-ups are ARMA(1,1), all
+other active shocks AR(1).}\label{tab:shocks}
+\end{table}
+
+\subsection{Generalisation to ARMA$(p,q)$}
+\label{sec:arma}
+
+The AR(1) law~\eqref{eq:shock_general} is only the default. Because the model
+is assembled programmatically with \texttt{modBuilder}, any shock can instead be
+declared as an ARMA$(p,q)$ process, the orders $p$ and $q$ being chosen per
+shock. In log deviations $\hat x_t = \ln(X_t/\bbar X)$,
+\begin{equation}\label{eq:arma}
+  \hat x_t = \sum_{i=1}^{p}\phi_i\,\hat x_{t-i}
+           + \sigma_\varepsilon\Big(\varepsilon_t
+             + \sum_{j=1}^{q}\theta_j\,\varepsilon_{t-j}\Big),
+  \qquad \varepsilon_t\sim\mathcal{N}(0,1),
+\end{equation}
+written in the same multiplicative form as~\eqref{eq:shock_general},
+\[
+  \frac{X_t}{\bbar X}
+  = \prod_{i=1}^{p}\Big(\frac{X_{t-i}}{\bbar X}\Big)^{\!\phi_i}
+    \exp\!\Big(\sigma_\varepsilon\big(\varepsilon_t
+      + \textstyle\sum_{j=1}^{q}\theta_j\,\varepsilon_{t-j}\big)\Big).
+\]
+The lagged innovations $\varepsilon_{t-j}$ are written directly: Dynare's
+preprocessor introduces the corresponding \texttt{AUX\_EXO\_LAG} auxiliary
+variables, so no manual bookkeeping is required.
+
+\paragraph{Calibration by moment matching.}
+The coefficients are chosen so that the ARMA process reproduces \emph{two}
+moments of the corresponding Smets--Wouters shock: its unconditional variance
+$\gamma(0)=V_{SW}$ and its first-order autocorrelation $\rho(1)=\rho_{SW}$ (for
+an AR(1), $V_{SW}=\sigma_{SW}^2/(1-\rho_{SW}^2)$ and $\rho_{SW}$ is the
+persistence). Two facts make this well posed:
+\begin{itemize}[nosep]
+\item the unconditional variance is a pure scale, so $\sigma_\varepsilon^2$ is
+  set last to hit $V_{SW}$ exactly;
+\item $\rho(1)$ is scale-free, so it is the only constraint that binds the AR/MA
+  coefficients.
+\end{itemize}
+The remaining coefficients are therefore free, and that freedom is the point:
+for $p+q\ge 2$ the process matches the variance and first-order persistence of
+the SW shock while having a \emph{different} higher-order autocorrelation
+structure (hence a different spectrum and different impulse responses).
+
+\paragraph{Random generation.}
+The free coefficients are drawn at random. We sample $p+q-1$ characteristic
+roots with moduli in a configurable interval $[a,b]\subset(0,1)$ --- which
+guarantees stationarity of the AR part and invertibility of the MA part --- and
+solve the last root so that $\rho(1)=\rho_{SW}$; $\sigma_\varepsilon^2$ then
+matches the variance. Not every target is attainable at a given order: an
+ARMA(1,1) satisfies $\rho(1)\le(1+\phi)/2$, so reaching the wage mark-up
+persistence $\rho_{SW}=0.97$ requires roots close to the unit circle ($b$ near
+$1$); the generator reports infeasibility otherwise.
+
+\paragraph{Autocovariances.}
+Matching relies on the autocovariances of the ARMA$(p,q)$, obtained from the
+MA$(\infty)$ representation $\hat x_t=\sum_{j\ge0}\psi_j\,\varepsilon_{t-j}$ with
+$\psi_0=1$ and $\psi_j=\theta_j+\sum_{i}\phi_i\,\psi_{j-i}$, as
+$\gamma(k)=\sigma_\varepsilon^2\sum_{j\ge0}\psi_j\,\psi_{j+k}$.
+
+\paragraph{Implementation.}
+Three routines support this (in the \texttt{matlab/} subdirectory, called from
+\texttt{sw.m}): \texttt{arma\_autocov} (autocovariances), \texttt{arma\_random}
+(the random moment-matching generator) and \texttt{declare\_arma\_shock} (which
+writes the equation and declares the parameters $\phi_i,\theta_j,\sigma_\varepsilon$
+and the innovation through the \texttt{modBuilder} API); they are checked in
+\texttt{validate\_arma.m}. Setting
+$(p,q)=(1,0)$ recovers the AR(1) baseline exactly. In the calibration shipped
+here only the two mark-up shocks are declared as ARMA(1,1); for the price
+mark-up this yields $\phi_1=0.903,\ \theta_1=-0.013$ (so that $\rho(1)=0.90$),
+and for the wage mark-up $\phi_1=0.959,\ \theta_1=0.200$ ($\rho(1)=0.97$).
+
+
+%% ============================================================
+\section{The efficient economy (Equations~60--78)}
+\label{sec:efficient}
+%% ============================================================
+
+The \textbf{efficient economy} is a version of the model in which nominal
+rigidities (Calvo pricing and wage setting) are removed, but all real
+frictions are kept:
+\begin{itemize}[nosep]
+  \item External habit formation with stochastic habit;
+  \item Investment adjustment costs;
+  \item Variable capacity utilisation and endogenous depreciation;
+  \item All structural shocks.
+\end{itemize}
+The efficient economy is used to compute the output gap
+$\mathcal{G}_t = Y_t/Y^e_t$ that enters the Taylor rule.
+
+\subsection{Household equations (Equations~60--68)}
+
+The household first-order conditions are identical to those in the sticky-price
+economy (\Cref{sec:households}), with two modifications:
+\begin{enumerate}[nosep]
+  \item The nominal interest rate $R_t/\pi_{t+1}$ is replaced by the real
+    interest rate $r^e_t$ (\texttt{EfficientRealInterestFactor}).
+  \item All efficient variables carry a superscript~$e$.
+\end{enumerate}
+
+\paragraph{Equation~60: Efficient consumption FOC.}
+\begin{equation}\tag{Eq.~60}
+  \bigl(C^e_t - \eta\,\eta^s_t\,C^e_{t-1}/g_t + \ln\varsigma_t\bigr)^{-\sigma_c}
+  \exp\!\Bigl(\tfrac{(\sigma_c-1)\varepsilon^L_t}{1+\sigma_l}
+  (L^e_t/\bbar L)^{1+\sigma_l}\Bigr)
+  = \tau^C_t\,\lambda^e_t.
+\end{equation}
+
+\paragraph{Equation~61: Efficient Euler equation.}
+\begin{equation}\tag{Eq.~61}
+  \lambda^e_t\,\tau^R_t
+  = \beta\,\varepsilon^B_t\,r^e_t\,g_{t+1}^{-\sigma_c}\,
+    \lambda^e_{t+1}\,\tau^R_{t+1}.
+\end{equation}
+
+\paragraph{Equations~62--68.} The efficient labour FOC, investment FOC,
+depreciation rate, marginal depreciation, capacity utilisation FOC, capital
+FOC, and capital accumulation are all identical in structure to
+Equations~3--9, with all variables replaced by their efficient
+counterparts.
+
+\subsection{Price and wage decisions (Equations~69--72)}
+
+Without nominal rigidities, all firms and unions re-optimise every period.
+The Kimball aggregator still applies, so steady-state markups remain at
+$\mu_f$ and $\mu_s$.
+
+\paragraph{Equation~69: Efficient factor price frontier.}
+\begin{equation}\tag{Eq.~69}
+  \frac{\tau^L_t\,w^e_t\,L^{e,d}_t}{r^{e,k}_t\,K^e_t}
+  = \frac{1-\alpha}{\alpha}.
+\end{equation}
+
+\paragraph{Equation~70: Efficient marginal cost.}
+\begin{equation}\tag{Eq.~70}
+  mc^e_t = A_t^{\,\alpha-1}\,
+  \Bigl(\frac{r^{e,k}_t}{\alpha}\Bigr)^{\!\alpha}\,
+  \Bigl(\frac{\tau^L_t\,w^e_t}{1-\alpha}\Bigr)^{\!1-\alpha}.
+\end{equation}
+
+\paragraph{Equation~71: Efficient price decision.}
+With all firms re-optimising every period ($\xi_p = 0$ effectively), and all
+setting the same price, the Kimball optimal price condition reduces to:
+\begin{equation}\tag{Eq.~71}
+  \frac{\theta_f(1+\psi_f)}{\theta_f(1+\psi_f)-1}\,mc^e_t
+  + \frac{\psi_f}{\theta_f(1+\psi_f)-1}
+  = 1.
+\end{equation}
+This pins down the efficient marginal cost at its steady-state value
+$mc^e = 1/\mu_f$.
+
+\paragraph{Equation~72: Efficient wage decision.}
+Similarly, with all unions re-optimising:
+\begin{equation}\tag{Eq.~72}
+  \frac{\theta_s(1+\psi_s)}{\theta_s(1+\psi_s)-1}\,
+  \frac{w^{e,h}_t}{w^e_t}
+  + \frac{\psi_s}{\theta_s(1+\psi_s)-1}
+  = 1,
+\end{equation}
+which gives $w^{e,h}/w^e = 1/\mu_s$.
+
+\subsection{Market clearing (Equations~73--78)}
+
+\paragraph{Equation~73: Efficient labour market.}
+Without wage dispersion ($\Delta^w = 1$), labour supply equals demand directly:
+\begin{equation}\tag{Eq.~73}
+  L^{e,d}_t = L^e_t.
+\end{equation}
+
+\paragraph{Equation~74: Efficient capital market.}
+\begin{equation}\tag{Eq.~74}
+  K^e_t = z^e_t\,\frac{\bbar K^e_{t-1}}{g_t}.
+\end{equation}
+
+\paragraph{Equation~75: Efficient goods market.}
+Without markup shocks distorting the resource constraint:
+\begin{equation}\tag{Eq.~75}
+  C^e_t + p^I_t\,I^e_t = (1 - \varepsilon^g_t)\,Y^e_t.
+\end{equation}
+
+\paragraph{Equation~76: Efficient aggregate production.}
+Without price dispersion ($\Delta^p = 1$):
+\begin{equation}\tag{Eq.~76}
+  Y^e_t = (K^e_t)^{\alpha}\,(A_t\,L^{e,d}_t)^{1-\alpha}.
+\end{equation}
+
+\paragraph{Equations~77--78: Efficient investment costs.}
+These are identical in form to Equations~10--11, with all variables
+replaced by their efficient counterparts.
+
+
+%% ============================================================
+\section{Steady state}
+\label{sec:steady_state}
+%% ============================================================
+
+The steady state is computed by setting all shocks to their long-run
+values and all growth rates to their balanced-growth values. Key
+steady-state relationships include:
+
+\begin{enumerate}[nosep]
+  \item The \textbf{discount factor} is pinned down by the Euler
+    equation~\eqref{eq:eq2}:
+    \[
+      \beta = \frac{\bbar\pi}{\bbar\varepsilon^B\,\bbar R}\,
+      (1+\bbar g)^{\sigma_c}.
+    \]
+  \item The \textbf{steady-state capital rental rate} from the capital
+    FOC~\eqref{eq:eq8}:
+    \[
+      \bbar r^k = \frac{(1+\bbar g)^{\sigma_c} - \beta(1-\bbar\delta)}
+      {\beta\,\bbar\tau^R\,\bbar z}.
+    \]
+  \item The \textbf{capital share} from the production function:
+    \[
+      \alpha = 1 - \bbar\tau^L\,\mu_f\,\frac{\bbar w\,\bbar L}{\bbar Y}.
+    \]
+  \item The \textbf{steady-state gross wage}:
+    \[
+      \bbar w = \frac{(1-\alpha)}{\bbar\tau^L}\,
+      \Bigl(\frac{1}{\mu_f}\,
+      \Bigl(\frac{\alpha}{\bbar r^k}\Bigr)^{\!\alpha}\Bigr)^{\!1/(1-\alpha)}\,
+      \bbar A.
+    \]
+  \item The \textbf{investment-to-GDP ratio}:
+    \[
+      \frac{\bbar I}{\bbar Y}
+      = \frac{\bbar g + \bbar\delta}{\bbar z}\,
+        \frac{(\bbar K/\bbar L)^{1-\alpha}}{\bbar A^{1-\alpha}},
+    \]
+    where $\bbar K/\bbar L = \bbar\tau^L\,\bbar w\,\alpha/[(1-\alpha)\bbar r^k]$.
+  \item The \textbf{consumption-to-GDP ratio}:
+    \[
+      \frac{\bbar C}{\bbar Y}
+      = 1 - \bbar\varepsilon^g - \frac{\bbar I}{\bbar Y}.
+    \]
+\end{enumerate}
+
+At steady state, all relative prices equal unity ($\breve p = \tilde p =
+\Lambda^f = 1$), all dispersion indices equal unity ($\Delta^p = \Delta^w
+= \nabla^p = \nabla^w = 1$), Tobin's $Q = 1$, and the output gap
+$\mathcal{G} = 1$.
+
+
+%% ============================================================
+\section{Summary of the equation system}
+\label{sec:summary}
+%% ============================================================
+
+The full model consists of:
+\begin{itemize}[nosep]
+  \item \textbf{11 household equations} (Eq.~1--11): consumption, Euler,
+    labour, investment, depreciation (2), capacity utilisation, capital
+    (Tobin's~$Q$), capital accumulation, investment cost (2);
+  \item \textbf{12 price-setting equations} (Eq.~12--23): indexation,
+    factor frontier, marginal cost, optimal price, Kimball multiplier,
+    $Z_1$, $Z_2$, $Z_3$ recursions, average price, aggregate price,
+    price dispersion, $\nabla^p$ recursion;
+  \item \textbf{11 wage-setting equations} (Eq.~24--34): indexation, real
+    wage growth, optimal wage, Kimball multiplier, $H_1$, $H_2$, $H_3$
+    recursions, average wage, aggregate wage, wage dispersion, $\nabla^w$
+    recursion;
+  \item \textbf{3 policy/government equations} (Eq.~35--37): Taylor rule,
+    output gap, public spending;
+  \item \textbf{5 market clearing equations} (Eq.~38--42): capital market,
+    labour supply--agency, labour demand, aggregate production, goods
+    market;
+  \item \textbf{17 exogenous processes} (Eq.~43--59): AR(1) laws of
+    motion for all structural shocks;
+  \item \textbf{19 efficient-economy equations} (Eq.~60--78): the
+    flexible-price/wage counterpart.
+\end{itemize}
+
+This gives a total of 78 equations for 78 endogenous variables (plus the
+17~exogenous processes), forming a complete nonlinear rational expectations
+system that can be solved using perturbation methods in Dynare.
+
+\end{document}
