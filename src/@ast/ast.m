@@ -4441,20 +4441,77 @@ classdef ast
             op = o.value;
             L = o.children{1};
             R = o.children{2};
-            if strcmp(op, '+') && strcmp(R.type, 'uminus')
-                op = '-'; R = R.children{1};
-            elseif strcmp(op, '+') && strcmp(R.type, 'num') && R.value < 0
-                op = '-'; R = ast('num', -R.value, {});
-            elseif strcmp(op, '*') && strcmp(R.type, 'binop') && strcmp(R.value, '^') && ast.is_neg_one(R.children{2})
+            if strcmp(op, '*')
+                % A product carrying several inverse factors is rendered as ONE fraction:
+                % E·x^(-1)·y^(-1) prints as \frac{E}{x\,y}, not as \frac{\frac{E}{x}}{y}.
+                % Rendering pairwise (below) would nest a \frac per inverse factor, which is
+                % both longer and, being two-dimensional, much harder to read.
+                factors = ast.flatten(o, '*');
+                numf = {}; denf = {};
+                for fi = 1:numel(factors)
+                    fnode = factors{fi};
+                    if strcmp(fnode.type, 'binop') && strcmp(fnode.value, '^') && ast.latex_is_inverse(fnode.children{2})
+                        denf{end+1} = fnode.children{1}; %#ok<AGROW>
+                    else
+                        numf{end+1} = fnode; %#ok<AGROW>
+                    end
+                end
+                if numel(denf) > 1
+                    str = ['\frac{' ast.product_of(numf).to_latex(m, dated, '', false) '}{' ast.product_of(denf).to_latex(m, dated, '', false) '}'];
+                    return
+                end
+            end
+            if strcmp(op, '+') && ~strcmp(parent_op, '+')
+                % Head of an additive chain: lead with a term that is not negated when there
+                % is one, so a sum prints as "b - a" rather than "-a + b". The canonical term
+                % order is fixed by the sort key and is not touched; only the rendering moves.
+                terms = ast.flatten(o, '+');
+                if numel(terms) > 1 && ast.latex_term_is_negative(terms{1})
+                    positive = find(~cellfun(@ast.latex_term_is_negative, terms), 1);
+                    if ~isempty(positive)
+                        terms = [terms(positive), terms(1:positive-1), terms(positive+1:end)];
+                        str = ast.sum_of(terms).to_latex(m, dated, parent_op, is_right);
+                        return
+                    end
+                end
+            end
+            if strcmp(op, '+') && ast.latex_term_is_negative(R)
+                % a + (-b) → "a - b", for every shape a term can carry its minus in: a
+                % unary minus, a negative literal, or a product led by either of those
+                % (-2·x), which would otherwise print as the malformed "+ -2\,x".
+                op = '-'; R = ast.latex_negate_term(R);
+            elseif strcmp(op, '*') && strcmp(R.type, 'binop') && strcmp(R.value, '^') && ast.latex_is_inverse(R.children{2})
                 op = '/'; R = R.children{1};
             end
             boxed = false;
             switch op
                 case '/'
                     % \frac groups numerator and denominator, so neither child needs parens.
-                    str = ['\frac{' L.to_latex(m, dated, '', false) '}{' R.to_latex(m, dated, '', false) '}'];
+                    % A chain of divisions, a/b/c, is one fraction over the product of the
+                    % denominators; only the LEFT spine is collected, since a/(b/c) means
+                    % something else. This is the uncanonicalised counterpart of the
+                    % inverse-factor gathering above (equations are rendered as written).
+                    dens = {R};
+                    while strcmp(L.type, 'binop') && strcmp(L.value, '/')
+                        dens{end+1} = L.children{2}; %#ok<AGROW>
+                        L = L.children{1};
+                    end
+                    if isscalar(dens)
+                        den_str = R.to_latex(m, dated, '', false);
+                    else
+                        den_str = ast.product_of(flip(dens)).to_latex(m, dated, '', false);
+                    end
+                    str = ['\frac{' L.to_latex(m, dated, '', false) '}{' den_str '}'];
                     boxed = true;
                 case '^'
+                    if ast.latex_is_inverse(R)
+                        % x^(-1) is a division like any other: \frac{1}{x}, not x^{-1}.
+                        % Canonical form turns every division into an inverse power, so
+                        % without this the same quantity renders one way before
+                        % canonicalisation and another after.
+                        str = ['\frac{1}{' L.to_latex(m, dated, '', false) '}'];
+                        return
+                    end
                     base = L.to_latex(m, dated, '', false);
                     if ast.latex_base_needs_invisible(L)
                         % Base already ends in a superscript (name^{\star}, e^{…}); a second
@@ -4484,6 +4541,37 @@ classdef ast
                 if cp < pp || (cp == pp && is_right)
                     str = ['\left(' str '\right)'];
                 end
+            end
+        end % function
+
+        function t = latex_negate_term(t)
+        % Strip the leading minus a term renders with (the counterpart of
+        % latex_term_is_negative): -(x) → x, -2 → 2, (-2)·x → 2·x.
+            if strcmp(t.type, 'uminus')
+                t = t.children{1};
+            elseif strcmp(t.type, 'num')
+                t = ast('num', -t.value, {});
+            elseif strcmp(t.type, 'binop') && strcmp(t.value, '*')
+                t = ast('binop', '*', {ast.latex_negate_term(t.children{1}), t.children{2}});
+            end
+        end % function
+
+        function tf = latex_term_is_negative(t)
+        % True iff a term of an additive chain renders with a leading minus sign: a unary
+        % minus, a negative literal, or a product whose first factor is one of those.
+            tf = false;
+            while true
+                if strcmp(t.type, 'uminus')
+                    tf = true; return
+                end
+                if strcmp(t.type, 'num')
+                    tf = t.value < 0; return
+                end
+                if strcmp(t.type, 'binop') && strcmp(t.value, '*')
+                    t = t.children{1};
+                    continue
+                end
+                return
             end
         end % function
 
@@ -4519,6 +4607,13 @@ classdef ast
         function b = is_neg_one(o)
         % True iff o is the numeric literal -1.
             b = strcmp(o.type, 'num') && o.value == -1;
+        end % function
+
+        function b = latex_is_inverse(o)
+        % True iff o is the exponent of an inverse: the literal -1, or the unary minus of
+        % 1 that an uncanonicalised tree carries (x^(-1) parses as x^(uminus(1))). Used by
+        % the renderer, which sees both raw and canonical trees.
+            b = ast.is_neg_one(o) || (strcmp(o.type, 'uminus') && strcmp(o.children{1}.type, 'num') && o.children{1}.value == 1);
         end % function
 
         function o = simplify_pass(o)

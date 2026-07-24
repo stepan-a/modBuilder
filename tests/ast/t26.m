@@ -16,7 +16,7 @@ cases = {
     'x*2',                'x \cdot 2'
     'a/b',                '\frac{a}{b}'
     'x^2',                'x^{2}'
-    'x^(-1)',             'x^{-1}'
+    'x^(-1)',             '\frac{1}{x}'
     '(a+b)^2',            '\left(a + b\right)^{2}'
     '(a/b)^c',            '\left(\frac{a}{b}\right)^{c}'
     'a*(b+c)',            'a\,\left(b + c\right)'
@@ -57,16 +57,18 @@ assert(strcmp(ast('STEADY_STATE(K)').to_latex(m), 'K^{\star}'), 'mapped steady s
 
 % ---------------------------------------------------------------------------
 % On canonical (simplified) trees: the +/uminus and */^(-1) patterns are
-% pretty-printed, and a lone negative power is kept as x^{-1}.
+% pretty-printed. A rendered sum leads with a term that is not negated whenever it
+% has one (the canonical term order itself is untouched), and an inverse power is
+% rendered as the division it is.
 % ---------------------------------------------------------------------------
 assert(strcmp(ast('a/b').simplify().to_latex(),       '\frac{a}{b}'),  'simplified division');
-assert(strcmp(ast('a*b - c*d').simplify().to_latex(), '-c\,d + a\,b'), 'simplified difference of products');
-assert(strcmp(ast('1/x').simplify().to_latex(),       'x^{-1}'),       'lone reciprocal kept as power');
+assert(strcmp(ast('a*b - c*d').simplify().to_latex(), 'a\,b - c\,d'),  'difference of products leads with the positive term');
+assert(strcmp(ast('1/x').simplify().to_latex(),       '\frac{1}{x}'),  'lone reciprocal renders as a fraction');
 
 % ---------------------------------------------------------------------------
 % diff_ast → to_latex: derivatives render cleanly.
 % ---------------------------------------------------------------------------
-assert(strcmp(ast('log(C)').diff_ast('C').to_latex(), 'C^{-1}'), 'd(log C)/dC rendered');
+assert(strcmp(ast('log(C)').diff_ast('C').to_latex(), '\frac{1}{C}'), 'd(log C)/dC rendered');
 
 % ---------------------------------------------------------------------------
 % Dated variables: a bare sym in the `dated` set gets a current-period _t subscript;

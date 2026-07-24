@@ -24,8 +24,11 @@ assert(contains(tex, '\hat{k}_t &= \frac{x^{\star}}{k^{\star}}\,\hat{x}_t + \lef
 % --- LevelVars: a level deviation, and no double superscript on a starred base ----------------
 texL = m.tex_linearise({'y','c','x','k'}, 'LevelVars', {'x'});
 assert(contains(texL, '\left(x_t - x^{\star}\right)'), 'x enters as a level deviation');
-% 1/y^{\star} as a coefficient must use invisible delimiters, not the invalid y^{\star}^{-1}.
-assert(contains(texL, '\left. y^{\star} \right.^{-1}'), 'starred base under a power uses invisible delimiters');
+% 1/y^{\star} as a coefficient renders as a fraction: an inverse power IS a division, and
+% printing it as one avoids the invalid y^{\star}^{-1} altogether. (Starred bases under a
+% non-inverse exponent, which do need the invisible delimiters, are covered by tex-ss/t01
+% and tex-plan/t01.)
+assert(contains(texL, '\frac{1}{y^{\star}}'), 'inverse of a starred base renders as a fraction');
 assert(~contains(texL, 'star}^{-1}'), 'no double superscript');
 
 % --- Evaluate=true: numeric coefficients at the (set) steady state ----------------------------
