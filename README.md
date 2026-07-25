@@ -714,7 +714,7 @@ full_model.merge(consumption);
 
 #### `solve(eqname, sname, sinit[, tol, maxit])`
 
-Numerically solve a single equation for one symbol using Newton's method with automatic differentiation.
+Numerically solve a single equation for one symbol using Newton's method with automatic differentiation (the [`solvers.newton`](src/+solvers/README.md) damped-Newton solver, differentiated by [`autoDiff1`](src/@autoDiff1/README.md) dual numbers).
 
 **Arguments:**
 - `eqname` — Name of the equation to solve
@@ -738,7 +738,7 @@ m.solve('k_ss_eq', 'k_ss', 10, 1e-6);
 
 #### `solve_system(eqnames, snames[, tol, maxit, Method])`
 
-Numerically solve a system of equations for multiple symbols simultaneously using Newton's method. The Jacobian is computed via automatic differentiation, exploiting the known sparsity pattern from the symbol table.
+Numerically solve a system of equations for multiple symbols simultaneously using Newton's method ([`solvers.newton_system`](src/+solvers/README.md)). The Jacobian is computed via automatic differentiation ([`autoDiff1`](src/@autoDiff1/README.md)), exploiting the known sparsity pattern from the symbol table.
 
 **Arguments:**
 - `eqnames` — Cell array of equation names
