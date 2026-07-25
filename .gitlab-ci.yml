@@ -18,8 +18,10 @@ doc:
   stage: build
   script:
    - make -C doc/tex
+   - make -C examples/sw/tex
   artifacts:
     paths:
       - doc/introduction.pdf
       - doc/ast.pdf
       - doc/steadystate.pdf
+      - examples/sw/tex/swmodel.pdf

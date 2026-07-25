@@ -4,8 +4,8 @@ PDFS     := $(TEXFILES:.tex=.pdf)
 all: $(PDFS)
 
 %.pdf: %.tex
-	@rubber --synctex --unsafe --pdf $<
-	@rubber --clean $<
+	@latexmk -pdf $<
+	@latexmk -c $<
 
 clean-all:
 	@rm -f *.pdf
