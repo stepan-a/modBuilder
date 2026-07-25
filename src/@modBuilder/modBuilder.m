@@ -2104,12 +2104,23 @@ classdef modBuilder < handle
         % - Both ojects must have the same number of rows.
         % - It is assumed that the second columns are made only of characters or only of numbers.
         % - Since cA and cB are interpreted as sets of rows, ordering of the rows does not matter.
+        % - The first column of steady_state holds a cellstr on the rows registered by
+        %   steady_call, which sortrows cannot order. Rows are therefore keyed by a
+        %   flattened name and sorted on that key, which is compared as well: two tables
+        %   that pair the same expressions with different names are not equal.
             b = false;
             if not(isequal(size(cA), size(cB)))
                 return
             end
-            cA = sortrows(cA, 1);
-            cB = sortrows(cB, 1);
+            keyA = cellfun(@modBuilder.rowkey, cA(:,1), 'UniformOutput', false);
+            keyB = cellfun(@modBuilder.rowkey, cB(:,1), 'UniformOutput', false);
+            [keyA, orderA] = sort(keyA);
+            [keyB, orderB] = sort(keyB);
+            if not(isequal(keyA, keyB))
+                return
+            end
+            cA = cA(orderA, :);
+            cB = cB(orderB, :);
             if all(cellfun(@isnumeric, cA(:,2))) && all(cellfun(@isnumeric, cB(:,2)))
                 isnanA = cellfun(@isnan, cA(:,2));
                 isnanB = cellfun(@isnan, cB(:,2));
@@ -2121,6 +2132,24 @@ classdef modBuilder < handle
                 b = isequal(cA(:,2), cB(:,2));
             else
                 error('modBuilder:isequalcell:badType', 'Second columns of cell arays must contain only numerics or only characters.')
+            end
+        end % function
+
+        function key = rowkey(name)
+        % Flatten the name column of a table row into a sortable char array.
+        %
+        % INPUTS:
+        % - name   [char or cell]   a symbol name, or the cellstr of output names that
+        %                           steady_call stores
+        %
+        % OUTPUTS:
+        % - key    [char]           1×n array
+            if ischar(name)
+                key = name;
+            elseif iscell(name)
+                key = strjoin(cellfun(@char, name(:)', 'UniformOutput', false), ', ');
+            else
+                error('modBuilder:rowkey:badType', 'A table row name must be a char array or a cell array of char arrays.')
             end
         end % function
 
