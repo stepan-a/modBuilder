@@ -139,7 +139,8 @@ all the same loop, and each outer iteration is then emitted on its own.
 
 ### Conditionals
 
-A `@#if` becomes a MATLAB `if` / `elseif` / `else`, with **every** branch:
+A `@#if` becomes a MATLAB `if` / `elseif` / `else`, with **every** branch, however
+many `@#elseif` there are:
 
 ```
 @#if Sticky
@@ -161,7 +162,9 @@ end
 ```
 
 Setting `Sticky = false` in the script gives the model the `.mod` file would have
-given with that setting. The same holds for a conditional that was false at read
+given with that setting. The script is the same whichever branch was taken when
+the file was read, so a chain of `@#elseif` comes out once and the flag drives it
+from there. The same holds for a conditional that was false at read
 time: its branch is emitted inside an `if` that simply does not run, and turning
 the flag on brings it in.
 

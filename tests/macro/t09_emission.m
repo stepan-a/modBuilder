@@ -194,6 +194,47 @@ opened = modfile.build('t09_inactive_flipped.m');
 assert(ismember('nx', opened.var(:,1)), 'Switching the flag on should bring the branch in.');
 assert(opened.size('equations') == 2, 'The open model should have two equations.');
 
+% --- A chain of @#elseif ----------------------------------------------------------------
+% Every branch is emitted whichever one was taken at read time, so the script is the same
+% in all three cases and the flag drives it from there.
+for regime = 1:3
+    source10 = 't09_elseif.mod';
+    fid = fopen(source10, 'w');
+    fprintf(fid, '@#define Regime = %u\n\nvar y p;\nvarexo e;\nparameters alpha;\nalpha = 0.5;\n\n', regime);
+    fprintf(fid, 'model;\n[name = ''y'']\ny = alpha*e;\n');
+    fprintf(fid, '@#if Regime == 1\n[name = ''p'']\np = alpha*y;\n');
+    fprintf(fid, '@#elseif Regime == 2\n[name = ''p'']\np = y;\n');
+    fprintf(fid, '@#else\n[name = ''p'']\np = 0;\n@#endif\nend;\n');
+    fclose(fid);
+
+    [m10, script10] = modfile.load(source10, Script='t09_elseif_gen.m');
+    text10 = fileread(script10);
+
+    assert(~isempty(regexp(text10, '^if \(Regime == 1\)$', 'once', 'lineanchors')), sprintf('Missing if (Regime = %u):\n%s', regime, text10));
+    assert(~isempty(regexp(text10, '^elseif \(Regime == 2\)$', 'once', 'lineanchors')), sprintf('Missing elseif (Regime = %u):\n%s', regime, text10));
+    assert(~isempty(regexp(text10, '^else$', 'once', 'lineanchors')), 'Missing else.');
+    assert(count(text10, 'm.add(''p''') == 3, 'All three branches should be emitted.');
+    assert(modfile.build(script10) == m10, 'The script should rebuild the same model.');
+
+    expected = {'p = alpha*y', 'p = y', 'p = 0'};
+    assert(strcmp(m10.equations{2,2}, expected{regime}), sprintf('Regime %u should give "%s".', regime, expected{regime}));
+
+    % The same script, driven from its own flag, gives each of the three models.
+    for k = 1:3
+        flipped10 = regexprep(text10, '^Regime = \d+;$', sprintf('Regime = %u;', k), 'lineanchors');
+        fid = fopen('t09_elseif_flipped.m', 'w');
+        fprintf(fid, '%s', flipped10);
+        fclose(fid);
+        built = modfile.build('t09_elseif_flipped.m');
+        got = built.equations{strcmp(built.equations(:,1), 'p'), 2};
+        assert(strcmp(got, expected{k}), sprintf('Regime=%u should give "%s", got "%s".', k, expected{k}, got));
+    end
+
+    delete(source10);
+    delete(script10);
+    delete('t09_elseif_flipped.m');
+end
+
 % --- A condition using a kind predicate ------------------------------------------------
 source9 = 't09_predicate.mod';
 fid = fopen(source9, 'w');
