@@ -31,7 +31,7 @@ function [text, info] = expand_macros(text, filename, options)
 %                                                  @#else), .taken (the branch selected,
 %                                                  0 when none was), .position (how many
 %                                                  output lines preceded it) and
-%                                                  .ancestors (the [line branch] the
+%                                                  .ancestors (the [id branch] the
 %                                                  enclosing conditionals were on)
 %
 % REMARKS:
@@ -39,7 +39,7 @@ function [text, info] = expand_macros(text, filename, options)
 %   Dynare. What modfile.translate needs in order to emit MATLAB control flow rather than
 %   flat text is reported alongside, as the provenance of each output line.
 % - A frame is a struct with fields kind ('if' or 'for'), id (the source line of the
-%   directive, which identifies the construct), iter (the branch or the iteration), cond
+%   directive's key, see modfile.construct_id), iter (the branch or the iteration), cond
 %   (the MATLAB source of the condition, for 'if'), exclusive (for 'if', true when the
 %   construct has a single branch, so that emitting it as a MATLAB if loses nothing) and
 %   values (for 'for', the values bound to the indices in this iteration).
@@ -57,7 +57,7 @@ function [text, info] = expand_macros(text, filename, options)
     end
 
     info = struct('defines', {cell(0,2)}, 'used', false, 'context', {{}}, ...
-                  'conditionals', {struct('id', {}, 'nbranches', {}, 'conds', {}, 'taken', {}, 'position', {}, 'ancestors', {})});
+                  'conditionals', {struct('id', {}, 'line', {}, 'nbranches', {}, 'conds', {}, 'taken', {}, 'position', {}, 'ancestors', {})});
 
     if ~contains(text, '@#') && ~contains(text, '@{')
         info.context = repmat({modfile.macro_frame()}, 1, numel(strsplit(text, newline, 'CollapseDelimiters', false)));
@@ -98,7 +98,7 @@ function [out, env, info] = local_run(lines, env, info, state)
 % a parsed directive tree, which keeps the whole scanner in one place and makes skipping
 % an inactive branch cheap.
     out = struct('text', {}, 'ctx', {});
-    frames = struct('taken', {}, 'active', {}, 'line', {}, 'branch', {}, 'nbranches', {}, 'cond', {}, 'conds', {}, 'takenbranch', {}, 'position', {}, 'ancestors', {}, 'reached', {}, 'forced', {});
+    frames = struct('taken', {}, 'active', {}, 'line', {}, 'id', {}, 'branch', {}, 'nbranches', {}, 'cond', {}, 'conds', {}, 'takenbranch', {}, 'position', {}, 'ancestors', {}, 'reached', {}, 'forced', {});
     i = 1;
 
     while i <= numel(lines)
@@ -118,7 +118,8 @@ function [out, env, info] = local_run(lines, env, info, state)
 
         switch keyword
           case {'if', 'ifdef', 'ifndef'}
-            forced = local_forced(state.force, line.line);
+            id = modfile.construct_id(state.filename, line.line);
+            forced = local_forced(state.force, id);
             outer = local_active(frames);
             if ~isempty(forced)
                 taken = forced == 1;
@@ -128,7 +129,7 @@ function [out, env, info] = local_run(lines, env, info, state)
                 taken = false;
             end
             frames(end+1) = struct('taken', taken, 'active', taken && outer, 'line', line.line, ...
-                                   'branch', 1, 'nbranches', local_count_branches(lines, i), ...
+                                   'id', id, 'branch', 1, 'nbranches', local_count_branches(lines, i), ...
                                    'cond', local_condition_source(keyword, rest, env), ...
                                    'conds', {{local_condition_source(keyword, rest, env)}}, ...
                                    'takenbranch', local_ternary(taken, 1, 0), ...
@@ -191,7 +192,8 @@ function [out, env, info] = local_run(lines, env, info, state)
             % taken is not a construct of this reading at all. Treating it as one would
             % emit its calls a second time, next to the branch that already carries them.
             if frames(end).reached
-                info.conditionals(end+1) = struct('id', frames(end).line, ...
+                info.conditionals(end+1) = struct('id', frames(end).id, ...
+                                                  'line', frames(end).line, ...
                                                   'nbranches', frames(end).nbranches, ...
                                                   'conds', {frames(end).conds}, ...
                                                   'taken', frames(end).takenbranch, ...
@@ -265,7 +267,7 @@ function tf = local_active(frames)
 end
 
 function branch = local_forced(force, id)
-% The branch a caller asked for on the conditional at this line, empty when it is free.
+% The branch a caller asked for on this conditional, empty when it is free.
     branch = [];
     if isempty(force)
         return
@@ -280,7 +282,7 @@ function selection = local_selection(frames)
 % The branch each enclosing conditional is on, as the k×2 [line branch] a Force takes.
     selection = zeros(0, 2);
     for i = 1:numel(frames)
-        selection(end+1, :) = [frames(i).line, frames(i).branch]; %#ok<AGROW>
+        selection(end+1, :) = [frames(i).id, frames(i).branch]; %#ok<AGROW>
     end
 end
 
@@ -297,7 +299,7 @@ function ctx = local_context(state, frames)
 % Provenance of a line: the enclosing loops and includes, then the open conditionals.
     ctx = state.ctx;
     for i = 1:numel(frames)
-        ctx(end+1) = modfile.macro_frame('if', frames(i).line, frames(i).branch, frames(i).cond, frames(i).nbranches == 1); %#ok<AGROW>
+        ctx(end+1) = modfile.macro_frame('if', frames(i).id, frames(i).branch, frames(i).cond, frames(i).nbranches == 1, {}, {}, frames(i).line); %#ok<AGROW>
     end
 end
 
@@ -494,7 +496,7 @@ function [out, env, info] = local_for(header, body, env, info, state, line)
         end
         iteration = iteration + 1;
         inner = state;
-        inner.ctx(end+1) = modfile.macro_frame('for', line, iteration, '', false, local_bound(indexnames, values.data{k}), indexnames);
+        inner.ctx(end+1) = modfile.macro_frame('for', modfile.construct_id(state.filename, line), iteration, '', false, local_bound(indexnames, values.data{k}), indexnames, line);
         [chunk, env, info] = local_run(body, env, info, inner);
         out = [out, chunk]; %#ok<AGROW>
     end

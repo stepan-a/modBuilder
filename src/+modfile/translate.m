@@ -92,7 +92,7 @@ function lines = translate(mod, options)
             % add() declares the endogenous variables in equation order. When the var
             % statement lists them differently, which reassign() and flip() both produce,
             % restore the declared order; write() prints the var list from the table.
-            if ~isequal(primary.names(:)', mod.endo(:,1)')
+            if ~isequal(primary.names(:)', mod.endo(:,1)') && ~local_conditional_declarations(mod)
                 declaration = cellfun(@local_quote, mod.endo(:,1)', 'UniformOutput', false);
                 lines{end+1} = '% Declaration order of the endogenous variables'; %#ok<AGROW>
                 lines{end+1} = sprintf('%s.reorder(''endogenous'', {%s});', obj, strjoin(declaration, ', ')); %#ok<AGROW>
@@ -117,6 +117,28 @@ function lines = translate(mod, options)
     lines = lines(:);
 end
 
+function tf = local_conditional_declarations(mod)
+% True when a @#if decides which endogenous variables are declared.
+%
+% reorder() takes the whole list and refuses anything that is not a permutation of it, so
+% it cannot be emitted when the list depends on a macro flag: the call would fail as soon
+% as the flag were changed, in a script whose whole point is that it can be. The
+% declaration order then follows the equations, which differs from the .mod file in the
+% var statement only.
+    tf = false;
+    for i = 1:size(mod.endo, 1)
+        line = mod.endo{i,4};
+        if line < 1 || line > numel(mod.macro.context)
+            continue
+        end
+        ctx = mod.macro.context{line};
+        if ~isempty(ctx) && any(strcmp({ctx.kind}, 'if'))
+            tf = true;
+            return
+        end
+    end
+end
+
 function prep = local_prepare(mod, tag, obj)
 % Everything a description needs before its calls can be built.
 %
@@ -132,7 +154,7 @@ end
 
 function variants = local_prepare_branches(mod, tag, obj)
 % Prepare the descriptions of the branches that were not taken.
-    variants = struct('id', {}, 'branch', {}, 'cond', {}, 'position', {}, 'prep', {});
+    variants = struct('id', {}, 'line', {}, 'branch', {}, 'cond', {}, 'position', {}, 'prep', {});
     if ~isfield(mod, 'branches')
         return
     end
@@ -145,18 +167,18 @@ function variants = local_prepare_branches(mod, tag, obj)
             % falls back to emitting only the branch that was taken.
             continue
         end
-        variants(end+1) = struct('id', b.id, 'branch', b.branch, 'cond', b.cond, 'position', b.position, 'prep', prep); %#ok<AGROW>
+        variants(end+1) = struct('id', b.id, 'line', b.line, 'branch', b.branch, 'cond', b.cond, 'position', b.position, 'prep', prep); %#ok<AGROW>
     end
 end
 
 function blocks = local_section_blocks(mod, variants, which, tag, obj)
 % The calls each conditional's branches contribute to one section.
-    blocks = struct('id', {}, 'nbranches', {}, 'conds', {}, 'taken', {}, 'position', {}, ...
+    blocks = struct('id', {}, 'line', {}, 'nbranches', {}, 'conds', {}, 'taken', {}, 'position', {}, ...
                     'branches', {}, 'subblocks', {}, 'recovered', {});
 
     for i = 1:numel(mod.macro.conditionals)
         c = mod.macro.conditionals(i);
-        entry = struct('id', c.id, 'nbranches', c.nbranches, 'conds', {c.conds}, ...
+        entry = struct('id', c.id, 'line', c.line, 'nbranches', c.nbranches, 'conds', {c.conds}, ...
                        'taken', c.taken, 'position', c.position, ...
                        'branches', {cell(1, c.nbranches)}, ...
                        'subblocks', {cell(1, c.nbranches)}, ...
@@ -208,7 +230,7 @@ end
 
 function blocks = local_empty_blocks()
 % An empty block array, with the fields modfile.emit_items expects.
-    blocks = struct('id', {}, 'nbranches', {}, 'conds', {}, 'taken', {}, 'position', {}, ...
+    blocks = struct('id', {}, 'line', {}, 'nbranches', {}, 'conds', {}, 'taken', {}, 'position', {}, ...
                     'branches', {}, 'subblocks', {}, 'recovered', {});
 end
 
@@ -226,7 +248,7 @@ function [items, blocks] = local_add_placeholders(items, blocks, mod)
             continue
         end
         phantom = local_empty_items();
-        phantom(1) = struct('ctx', modfile.macro_frame('if', blocks(i).id, max(blocks(i).taken, 1), '', false), ...
+        phantom(1) = struct('ctx', modfile.macro_frame('if', blocks(i).id, max(blocks(i).taken, 1), '', false, {}, {}, blocks(i).line), ...
                             'strings', {{}}, 'render', [], 'templatable', false, 'line', blocks(i).position);
         items = local_insert(items, phantom, blocks(i).position);
     end

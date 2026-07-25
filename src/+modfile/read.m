@@ -58,7 +58,7 @@ function mod = read(filename, options)
     txt = fileread(filename);
 
     macroinfo = struct('defines', {cell(0,2)}, 'used', false, 'context', {{}}, ...
-                       'conditionals', {struct('id', {}, 'nbranches', {}, 'conds', {}, 'taken', {}, 'position', {}, 'ancestors', {})});
+                       'conditionals', {struct('id', {}, 'line', {}, 'nbranches', {}, 'conds', {}, 'taken', {}, 'position', {}, 'ancestors', {})});
     if options.Macro
         % The macro pass runs before the comments are stripped, as in Dynare: a directive
         % may sit inside a region a later stage would blank, and an included file brings
@@ -164,7 +164,7 @@ function branches = local_read_branches(filename, mod, options)
 % The cost is one extra read per branch, not one per combination: every other conditional
 % keeps the selection it already had, and the ancestors are forced only as far as needed
 % to reach the branch in question.
-    branches = struct('id', {}, 'branch', {}, 'cond', {}, 'position', {}, 'mod', {});
+    branches = struct('id', {}, 'line', {}, 'branch', {}, 'cond', {}, 'position', {}, 'mod', {});
 
     if ~options.Branches || ~options.Macro || options.Depth < 1
         return
@@ -201,7 +201,7 @@ function branches = local_read_branches(filename, mod, options)
                 % emitting the branch that was taken, and says so.
                 continue
             end
-            branches(end+1) = struct('id', c.id, 'branch', b, 'cond', c.conds{b}, 'position', c.position, 'mod', variant); %#ok<AGROW>
+            branches(end+1) = struct('id', c.id, 'line', c.line, 'branch', b, 'cond', c.conds{b}, 'position', c.position, 'mod', variant); %#ok<AGROW>
         end
     end
 end

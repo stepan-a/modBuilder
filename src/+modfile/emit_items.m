@@ -38,7 +38,7 @@ function lines = emit_items(items, reserved, blocks)
     arguments
         items    struct
         reserved (1,:) cell = {}
-        blocks   struct = struct('id', {}, 'nbranches', {}, 'conds', {}, 'taken', {}, 'position', {}, 'branches', {}, 'subblocks', {}, 'recovered', {})
+        blocks   struct = struct('id', {}, 'line', {}, 'nbranches', {}, 'conds', {}, 'taken', {}, 'position', {}, 'branches', {}, 'subblocks', {}, 'recovered', {})
     end
 
     lines = local_emit(items, 0, '', reserved, blocks);
@@ -94,7 +94,7 @@ function lines = local_emit_if(run, frame, depth, indent, reserved, blocks)
     if isempty(block) || ~local_renderable(block)
         % No branch could be recovered, or some condition has no MATLAB form. Emitting an
         % if would then look re-runnable while quietly dropping a branch.
-        lines = {sprintf('%s%% from the conditional at line %u of the .mod file%s', indent, frame.id, local_because(block, frame))};
+        lines = {sprintf('%s%% from the conditional at line %u of the .mod file%s', indent, frame.line, local_because(block, frame))};
         lines = [lines, local_emit(run, depth+1, indent, reserved, blocks)];
         return
     end

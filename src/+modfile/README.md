@@ -221,6 +221,21 @@ branch is read, and its own branches when the result is read again. The `Depth`
 option of `modfile.read` bounds that recursion, three levels by default, and
 each level costs one read per branch.
 
+Constructs are keyed by `modfile.construct_id`, built from the file **and** the
+line, not by the line alone. An `@#include`d file starts again at line 1, so a
+directive in it sits at the same line as one in the includer; keying on the line
+merges the two, emitting them as a single `if` and forcing a branch of one when
+the other was meant. The key is a hash of the path rather than a position in the
+order the files were met, because forcing a branch can change which files an
+`@#include` brings in, and anything counted during the scan would shift under the
+keys already handed out.
+
+When a `@#if` decides which endogenous variables are *declared*, the `reorder()`
+call that restores the `var` order is not emitted: it takes the whole list and
+would fail as soon as the flag changed, in a script whose point is that it can
+be. The variables then follow the equations, which differs from the `.mod` file
+in the `var` statement only.
+
 A conditional is recorded only if it was **reached**. One sitting inside a
 branch that was not taken is not a construct of that reading at all, and
 treating it as one used to emit its calls a second time, next to the branch that
@@ -279,6 +294,7 @@ file has identical parameter, exogenous, equation, tag and symbol tables.
 | `inline_model_local_variables(...)` | substitute the `#` definitions away |
 | `name_equations(...)` | associate equations with endogenous variables |
 | `emit_items(...)` | restore the macro control flow around the generated calls |
+| `construct_id(...)` | key a directive construct by its file and line |
 | `macro_frame(...)` | build one unit of directive provenance |
 | `resolve_include(...)` | locate an `@#include` target |
 | `parse_options(text)` | read a command option group |
