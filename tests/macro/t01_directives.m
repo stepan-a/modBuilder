@@ -92,6 +92,31 @@ assert(contains(out, 'var y_2;') && contains(out, 'var y_3;'), 'Arithmetic in @{
 out = modfile.expand_macros(sprintf('@#for i in [1,2]\n@#endfor\nvar y_@{i};\n'));
 assert(contains(out, 'var y_2;'), 'The loop index should stay bound after the loop.');
 
+% --- @#echo and @#error ------------------------------------------------------------------
+% Both take an expression, not a bare literal, and both are inert unless the branch they
+% sit in is taken.
+echoed = evalc('modfile.expand_macros(sprintf(''@#define N = 3\n@#echo "building with N = " + string(N)\nvar y;\n''))');
+assert(contains(echoed, 'building with N = 3'), sprintf('@#echo should print its message, got: %s', echoed));
+
+out = modfile.expand_macros(sprintf('@#define N = 3\n@#echo "noise"\nvar y;\n'));
+assert(strcmp(strtrim(out), 'var y;'), '@#echo should contribute nothing to the expansion.');
+
+thrown = '';
+message = '';
+try
+    modfile.expand_macros(sprintf('@#define N = 3\n@#if N > 2\n@#error "N is too large: " + string(N)\n@#endif\n'));
+catch ME
+    thrown = ME.identifier;
+    message = ME.message;
+end
+assert(strcmp(thrown, 'modfile:expand_macros:userError'), sprintf('Expected expand_macros:userError, got "%s".', thrown));
+assert(contains(message, 'N is too large: 3'), 'The message should be the evaluated expression.');
+assert(contains(message, 'line 3'), 'The message should name the line.');
+
+% Neither fires from a branch that is not taken.
+out = modfile.expand_macros(sprintf('@#define N = 1\n@#if N > 2\n@#error "boom"\n@#echo "noise"\n@#endif\nvar y;\n'));
+assert(strcmp(strtrim(out), 'var y;'), 'An inactive branch should not run @#error or @#echo.');
+
 % --- Function macros -------------------------------------------------------------------
 out = modfile.expand_macros(sprintf('@#define f(x) = 2*x\n@#define n = f(3)\nvar y_@{n};\n'));
 assert(contains(out, 'var y_6;'), 'A function macro should be applied.');

@@ -94,7 +94,7 @@ function lines = local_emit_if(run, frame, depth, indent, reserved, blocks)
     if isempty(block) || ~local_renderable(block)
         % No branch could be recovered, or some condition has no MATLAB form. Emitting an
         % if would then look re-runnable while quietly dropping a branch.
-        lines = {sprintf('%s%% from the conditional at line %u of the .mod file%s', indent, frame.line, local_because(block, frame))};
+        lines = {sprintf('%s%% from the conditional at line %u of the .mod file%s', indent, frame.line, local_because(block))};
         lines = [lines, local_emit(run, depth+1, indent, reserved, blocks)];
         return
     end
@@ -161,20 +161,27 @@ function tf = local_renderable(block)
     tf = true;
 end
 
-function why = local_because(block, frame)
+function why = local_because(block)
 % Say why a conditional could not become a MATLAB if.
+%
+% The reasons are checked in the order local_renderable rejects them, so that the comment
+% names the one that actually applied. A branch that could not be read is the common case
+% and used to be reported as a condition that does not render, which sends the reader
+% looking for the wrong thing.
     if isempty(block)
-        why = ' (its branches could not be read on their own)';
-    elseif block.taken < 1 && all(cellfun(@isempty, block.branches))
-        why = ' (no branch was taken and none could be read on its own)';
-    elseif isempty(block.conds{1})
+        why = ' (it was not recorded)';
+        return
+    end
+    if ~all(block.recovered)
+        missing = find(~block.recovered);
+        why = sprintf(' (branch %u could not be read on its own)', missing(1));
+        return
+    end
+    if isempty(block.conds{1})
         why = ' (its condition has no MATLAB equivalent)';
-    else
-        why = ' (one of its conditions has no MATLAB equivalent)';
+        return
     end
-    if nargin > 1 && isempty(block) && ~isempty(frame.cond)
-        why = ' (its branches could not be read on their own)';
-    end
+    why = ' (one of its conditions has no MATLAB equivalent)';
 end
 
 function lines = local_emit_loop(run, depth, indent, reserved, blocks)

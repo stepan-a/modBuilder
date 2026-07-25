@@ -84,7 +84,8 @@ end
 Supported: `@#define` (variables and functions), `@#if` / `@#elseif` / `@#else` /
 `@#endif`, `@#ifdef`, `@#ifndef`, `@#for` / `@#endfor` (single index, tuple
 destructuring, `when` guard), `@#include`, `@#includepath`, `@#echo`, `@#error`,
-and `@{expr}` substitution. `Defines=` is the equivalent of Dynare's `-D`.
+and `@{expr}` substitution. `@#echo` and `@#error` both take an expression rather
+than a literal, and neither fires from a branch that is not taken. `Defines=` is the equivalent of Dynare's `-D`.
 
 The expression engine lives in `src/@macro/` and covers the operators, the type
 system (real, boolean, string, tuple, array), the set operations, ranges,
@@ -204,8 +205,9 @@ the conditional and saying why:
   [`src/@macro/README.md`](../@macro/README.md) for the table and for why two of
   the predicate names cannot simply be carried across.
 - **A branch does not stand on its own** — reading it raises, typically because
-  it declares a variable whose equation lives outside the conditional, so the
-  equations cannot be matched. Only the branch that was taken is then emitted.
+  it declares a variable whose equation lives outside the conditional, or because
+  it holds an `@#error`, which the forced re-reading reaches. Only the branch that
+  was taken is then emitted, under a comment naming which branch was lost.
 
 Nested conditionals are supported, and produce nested MATLAB `if`s:
 
