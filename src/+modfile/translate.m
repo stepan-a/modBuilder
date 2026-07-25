@@ -154,12 +154,18 @@ end
 
 function variants = local_prepare_branches(mod, tag, obj)
 % Prepare the descriptions of the branches that were not taken.
-    variants = struct('id', {}, 'line', {}, 'branch', {}, 'cond', {}, 'position', {}, 'prep', {});
+    variants = struct('id', {}, 'line', {}, 'branch', {}, 'cond', {}, 'position', {}, 'prep', {}, 'refused', {});
     if ~isfield(mod, 'branches')
         return
     end
     for i = 1:numel(mod.branches)
         b = mod.branches(i);
+        if ~isempty(b.refused)
+            % A branch the file itself refuses with @#error. There is nothing to prepare;
+            % the translator writes the error out in its place.
+            variants(end+1) = struct('id', b.id, 'line', b.line, 'branch', b.branch, 'cond', b.cond, 'position', b.position, 'prep', [], 'refused', b.refused); %#ok<AGROW>
+            continue
+        end
         try
             prep = local_prepare(b.mod, tag, obj);
         catch
@@ -167,7 +173,7 @@ function variants = local_prepare_branches(mod, tag, obj)
             % falls back to emitting only the branch that was taken.
             continue
         end
-        variants(end+1) = struct('id', b.id, 'line', b.line, 'branch', b.branch, 'cond', b.cond, 'position', b.position, 'prep', prep); %#ok<AGROW>
+        variants(end+1) = struct('id', b.id, 'line', b.line, 'branch', b.branch, 'cond', b.cond, 'position', b.position, 'prep', prep, 'refused', ''); %#ok<AGROW>
     end
 end
 
@@ -194,6 +200,15 @@ function blocks = local_section_blocks(mod, variants, which, tag, obj)
                 continue
             end
             b = variants(v).branch;
+            if ~isempty(variants(v).refused)
+                % The branch raises: write the error where its calls would have gone, once,
+                % in the section the equations are emitted from.
+                if strcmp(which, 'equations')
+                    entry.branches{b} = local_error_item(variants(v).refused);
+                end
+                entry.recovered(b) = true;
+                continue
+            end
             all = local_section_items(variants(v).prep, which);
             % Only this conditional and the ancestors that had to be forced to reach it
             % are dropped: a conditional NESTED in the branch keeps its frame, so that it
@@ -426,6 +441,14 @@ function s = local_attributes(strings)
     if numel(strings) >= 3 && ~isempty(strings{3})
         s = sprintf('%s, ''texname'', %s', s, local_quote(strings{3}));
     end
+end
+
+function items = local_error_item(message)
+% The single call standing for a branch the file refuses with @#error.
+    items = local_empty_items();
+    items(1) = struct('ctx', modfile.macro_frame(), 'strings', {{message}}, ...
+                      'render', @(s, ~) sprintf('error(''%s'');', strrep(s{1}, '''', '''''')), ...
+                      'templatable', false, 'line', 0);
 end
 
 function items = local_empty_items()

@@ -288,11 +288,12 @@ assert(modfile.build(script12) == m12, 'The script should rebuild the same model
 m13 = modfile.load(source12, Defines=struct('Open', false));
 assert(~ismember('nx', m13.var(:,1)), 'Defines should win over a guarded default.');
 
-% --- A branch that raises cannot be emitted, and says so --------------------------------
-% The branches that were not taken are reached by reading the file again with the
-% conditional forced onto them, so an @#error in one of them fires during that read. The
-% branch is then dropped and the conditional falls back to its flat calls, which is the
-% only honest answer: an if with an empty body would silently lose what the branch holds.
+% --- A branch the file refuses with @#error ---------------------------------------------
+% An @#error never fires when the file is read normally, since its branch is not taken. It
+% fires only during the extra read that forces that branch so it can be emitted, and that
+% is not a failure to read it: the file is saying the setting is unsupported. The branch is
+% emitted as the error itself, so changing the flag in the script gives what changing it in
+% the .mod file would give.
 source13 = 't09_errorbranch.mod';
 fid = fopen(source13, 'w');
 fprintf(fid, '@#define Open = true\n\nvar y p;\nvarexo e;\nparameters alpha;\nalpha = 0.5;\n\n');
@@ -302,19 +303,55 @@ fprintf(fid, '@#else\n@#error "the closed variant is not implemented"\n@#endif\n
 fclose(fid);
 cleanup21 = onCleanup(@() delete(source13));
 
+% Reading the file does not raise: the @#error sits in the branch that is not taken.
 [m14, script14] = modfile.load(source13, Script='t09_errorbranch_gen.m');
 cleanup22 = onCleanup(@() delete(script14));
 text14 = fileread(script14);
 
-% The model is still built, from the branch that was taken.
-assert(m14.size('equations') == 2, 'The model should still be built.');
+assert(m14.size('equations') == 2, 'The model should be built.');
 assert(strcmp(m14.equations{2,2}, 'p = alpha*y'), 'From the branch that was taken.');
 assert(modfile.build(script14) == m14, 'The script should rebuild the same model.');
 
-% No if is written, and the comment names the branch rather than blaming the condition.
-assert(isempty(regexp(text14, '^if ', 'once', 'lineanchors')), sprintf('No if should be written, got:\n%s', text14));
-assert(contains(text14, 'branch 2 could not be read on its own'), sprintf('The reason should name the branch, got:\n%s', text14));
-assert(contains(text14, 'm.add(''p'', ''p = alpha*y'');'), 'The taken branch should still be emitted.');
+assert(~isempty(regexp(text14, '^if Open$', 'once', 'lineanchors')), sprintf('An if should still be written, got:\n%s', text14));
+assert(contains(text14, 'error(''') && contains(text14, 'the closed variant is not implemented'), sprintf('The refused branch should be emitted as its error, got:\n%s', text14));
+
+% Turning the flag off in the script raises what the .mod file would have raised.
+flipped14 = strrep(text14, 'Open = true;', 'Open = false;');
+fid = fopen('t09_errorbranch_flipped.m', 'w');
+fprintf(fid, '%s', flipped14);
+fclose(fid);
+cleanup23 = onCleanup(@() delete('t09_errorbranch_flipped.m'));
+
+raised = false;
+try
+    modfile.build('t09_errorbranch_flipped.m');
+catch ME
+    raised = contains(ME.message, 'the closed variant is not implemented');
+end
+assert(raised, 'Turning the flag off should raise the file''s own error.');
+
+% --- A branch that genuinely cannot be read on its own -----------------------------------
+% Here one branch carries an equation for a variable the model never declares, so forcing
+% it gives something that cannot be matched. Only the branch that was taken is emitted,
+% under a comment naming the branch that was lost rather than blaming the condition, which
+% renders perfectly well.
+source15 = 't09_badbranch.mod';
+fid = fopen(source15, 'w');
+fprintf(fid, '@#define Alt = false\n\nvar y q;\nvarexo e;\nparameters alpha;\nalpha = 0.5;\n\n');
+fprintf(fid, 'model;\n[name = ''y'']\ny = alpha*e;\n');
+fprintf(fid, '@#if Alt\n[name = ''nowhere'']\nnowhere = y;\n@#else\n[name = ''q'']\nq = 2*y;\n@#endif\nend;\n');
+fclose(fid);
+cleanup24 = onCleanup(@() delete(source15));
+
+[m15, script15] = modfile.load(source15, Script='t09_badbranch_gen.m');
+cleanup25 = onCleanup(@() delete(script15));
+text15 = fileread(script15);
+
+assert(isequal(m15.var(:,1)', {'y', 'q'}), 'The model should be built from the branch that was taken.');
+assert(strcmp(m15.equations{2,2}, 'q = 2*y'), 'From the else branch.');
+assert(isempty(regexp(text15, '^if ', 'once', 'lineanchors')), 'No if should be written.');
+assert(contains(text15, 'could not be read on its own'), sprintf('The reason should name the branch, got:\n%s', text15));
+assert(modfile.build(script15) == m15, 'The script should rebuild the same model.');
 
 % --- A condition using a kind predicate ------------------------------------------------
 source9 = 't09_predicate.mod';

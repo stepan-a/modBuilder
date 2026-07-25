@@ -205,9 +205,26 @@ the conditional and saying why:
   [`src/@macro/README.md`](../@macro/README.md) for the table and for why two of
   the predicate names cannot simply be carried across.
 - **A branch does not stand on its own** — reading it raises, typically because
-  it declares a variable whose equation lives outside the conditional, or because
-  it holds an `@#error`, which the forced re-reading reaches. Only the branch that
-  was taken is then emitted, under a comment naming which branch was lost.
+  it carries an equation for a variable the model never declares, so the
+  equations cannot be matched. Only the branch that was taken is then emitted,
+  under a comment naming which branch was lost.
+
+A branch the file itself refuses with `@#error` is **not** one of these. The
+`@#error` never fires when the file is read normally, since its branch is not
+taken; it fires only during the extra read that forces that branch so it can be
+emitted. That is the file saying the setting is unsupported, not a failure to
+read it, so the branch is emitted as the error itself:
+
+```matlab
+if Open
+    m.add('p', 'p = alpha*y');
+else
+    error('rbc.mod (line 13): the closed variant is not implemented');
+end
+```
+
+Turning the flag off in the script then raises exactly what turning it off in the
+`.mod` file would raise.
 
 Nested conditionals are supported, and produce nested MATLAB `if`s:
 

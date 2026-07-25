@@ -164,7 +164,7 @@ function branches = local_read_branches(filename, mod, options)
 % The cost is one extra read per branch, not one per combination: every other conditional
 % keeps the selection it already had, and the ancestors are forced only as far as needed
 % to reach the branch in question.
-    branches = struct('id', {}, 'line', {}, 'branch', {}, 'cond', {}, 'position', {}, 'mod', {});
+    branches = struct('id', {}, 'line', {}, 'branch', {}, 'cond', {}, 'position', {}, 'mod', {}, 'refused', {});
 
     if ~options.Branches || ~options.Macro || options.Depth < 1
         return
@@ -188,6 +188,7 @@ function branches = local_read_branches(filename, mod, options)
                     force(end+1, :) = [other.id, b]; %#ok<AGROW>
                 end
             end
+            refused = '';
             try
                 % The variant explores its own conditionals too, so that a conditional
                 % nested inside a branch that was not taken keeps its branches. Depth
@@ -195,13 +196,23 @@ function branches = local_read_branches(filename, mod, options)
                 variant = modfile.read(filename, Strict=false, Macro=true, ...
                                        Defines=options.Defines, IncludePaths=options.IncludePaths, ...
                                        Force=force, Branches=true, Depth=options.Depth-1);
-            catch
-                % A branch that does not stand on its own, typically because it declares a
-                % variable whose equation lives elsewhere. The translator falls back to
-                % emitting the branch that was taken, and says so.
-                continue
+            catch err
+                if ~strcmp(err.identifier, 'modfile:expand_macros:userError')
+                    % A branch that does not stand on its own, typically because it
+                    % declares a variable whose equation lives elsewhere. The translator
+                    % falls back to emitting the branch that was taken, and says so.
+                    continue
+                end
+                % An @#error the branch raises is not a failure to read it: the file is
+                % saying that this setting is not supported. It never fires when the file
+                % is read normally, since the branch is not taken; it fires here only
+                % because the branch is forced so that it can be emitted. The branch is
+                % kept, and the translator writes the error out, so that changing the flag
+                % in the script gives what changing it in the .mod file would give.
+                refused = err.message;
+                variant = [];
             end
-            branches(end+1) = struct('id', c.id, 'line', c.line, 'branch', b, 'cond', c.conds{b}, 'position', c.position, 'mod', variant); %#ok<AGROW>
+            branches(end+1) = struct('id', c.id, 'line', c.line, 'branch', b, 'cond', c.conds{b}, 'position', c.position, 'mod', variant, 'refused', refused); %#ok<AGROW>
         end
     end
 end
