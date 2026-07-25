@@ -20,6 +20,6 @@ doc:
    - make -C doc/tex
   artifacts:
     paths:
-      - doc/slides.pdf
+      - doc/introduction.pdf
       - doc/ast.pdf
       - doc/steadystate.pdf

@@ -1,10 +1,10 @@
 LATEX = pdflatex
 TECHDOCS = ast.pdf steadystate.pdf
 
-all: slides.pdf $(TECHDOCS) clean push
+all: introduction.pdf $(TECHDOCS) clean push
 
-slides.pdf: slides.tex ../models/rbc12.mod ../models/rbc12b.mod
-	@latexmk -pdf slides
+introduction.pdf: introduction.tex ../models/rbc12.mod ../models/rbc12b.mod
+	@latexmk -pdf introduction
 	@latexmk -c
 
 # Technical notes (standalone): AST engine and steady-state algorithms.
@@ -23,7 +23,7 @@ clean:
 clean-all:
 	rm -f *.pdf
 
-push: slides.pdf $(TECHDOCS)
-	cp slides.pdf $(TECHDOCS) ../
+push: introduction.pdf $(TECHDOCS)
+	cp introduction.pdf $(TECHDOCS) ../
 
 .PHONY: push
