@@ -120,7 +120,7 @@ and means something else by them:
 | `isarray(x)` | `isa(x, 'macroarray')` | the kind is carried by the type, see below |
 | `istuple(x)` | `isa(x, 'macrotuple')` | idem |
 | `isempty(x)` | `isempty(x)` | |
-| `defined(X)` | `exist('X', 'var') == 1` | settled before the argument is rendered, since rendering an unbound variable fails |
+| `defined(X)` | `exist('X', 'var') == 1` | settled before the argument is rendered, since rendering an unbound variable fails; `@#ifdef` renders the same way |
 
 ### How arrays and tuples render
 

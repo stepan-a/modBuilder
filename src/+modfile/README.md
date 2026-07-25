@@ -186,9 +186,12 @@ with it — and flipping one alone would leave a model with an equation for an
 undeclared variable, which would not read back. This mirrors the generated
 script, where one MATLAB variable drives every `if` written from that condition.
 
-Values seeded through `Defines` are emitted as locals as well, so a file whose
-default is guarded by `@#ifndef` does not leave the script referring to a
-variable it never assigns.
+`@#ifdef` and `@#ifndef` render as `exist('X', 'var')`, which agrees with the
+model because the `@#define` that binds the variable is itself emitted as that
+local. Values seeded through `Defines` are emitted as locals as well, so a file
+whose default is guarded by `@#ifndef` — the idiom that makes a setting
+overridable from outside — does not leave the script referring to a variable it
+never assigns.
 
 Two cases still fall back to the flat calls, under a comment naming the line of
 the conditional and saying why:

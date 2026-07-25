@@ -235,6 +235,59 @@ for regime = 1:3
     delete('t09_elseif_flipped.m');
 end
 
+% --- @#ifdef and @#ifndef ---------------------------------------------------------------
+% @#ifdef asks whether a macro variable is bound, which in the script is whether the local
+% exists. The @#define that binds it is emitted as that local, so the two agree.
+for defined = [true false]
+    source11 = 't09_ifdef.mod';
+    fid = fopen(source11, 'w');
+    if defined
+        fprintf(fid, '@#define Flag = 1\n\n');
+    end
+    fprintf(fid, 'var y p;\nvarexo e;\nparameters alpha;\nalpha = 0.5;\n\n');
+    fprintf(fid, 'model;\n[name = ''y'']\ny = alpha*e;\n');
+    fprintf(fid, '@#ifdef Flag\n[name = ''p'']\np = alpha*y;\n@#else\n[name = ''p'']\np = y;\n@#endif\nend;\n');
+    fclose(fid);
+
+    [m11, script11] = modfile.load(source11, Script='t09_ifdef_gen.m');
+    text11 = fileread(script11);
+
+    assert(~isempty(regexp(text11, '^if exist\(''Flag'', ''var''\)$', 'once', 'lineanchors')), sprintf('Unexpected rendering:\n%s', text11));
+    assert(contains(text11, 'm.add(''p'', ''p = alpha*y'');') && contains(text11, 'm.add(''p'', ''p = y'');'), 'Both branches should be emitted.');
+    assert(contains(text11, 'Flag = 1;') == defined, 'The local should be emitted exactly when the variable is bound.');
+    assert(modfile.build(script11) == m11, 'The script should rebuild the same model.');
+
+    if defined
+        assert(strcmp(m11.equations{2,2}, 'p = alpha*y'), 'A bound variable takes the first branch.');
+    else
+        assert(strcmp(m11.equations{2,2}, 'p = y'), 'An unbound variable takes the else branch.');
+    end
+
+    delete(source11);
+    delete(script11);
+end
+
+% @#ifndef guarding a default is the idiom that makes a setting overridable from outside,
+% since a plain @#define would overwrite whatever Defines seeded.
+source12 = 't09_ifndef.mod';
+fid = fopen(source12, 'w');
+fprintf(fid, '@#ifndef Open\n@#define Open = true\n@#endif\n\n');
+fprintf(fid, 'var y\n@#if Open\n  nx\n@#endif\n;\nvarexo e;\nparameters alpha;\nalpha = 0.5;\n\n');
+fprintf(fid, 'model;\n[name = ''y'']\ny = alpha*e;\n@#if Open\n[name = ''nx'']\nnx = y;\n@#endif\nend;\n');
+fclose(fid);
+cleanup19 = onCleanup(@() delete(source12));
+
+[m12, script12] = modfile.load(source12, Script='t09_ifndef_gen.m');
+cleanup20 = onCleanup(@() delete(script12));
+
+assert(ismember('nx', m12.var(:,1)), 'The default should apply.');
+assert(contains(fileread(script12), 'Open = true;'), 'The guarded default should reach the script.');
+assert(modfile.build(script12) == m12, 'The script should rebuild the same model.');
+
+% Defines overrides it, which is the whole point of the guard.
+m13 = modfile.load(source12, Defines=struct('Open', false));
+assert(~ismember('nx', m13.var(:,1)), 'Defines should win over a guarded default.');
+
 % --- A condition using a kind predicate ------------------------------------------------
 source9 = 't09_predicate.mod';
 fid = fopen(source9, 'w');
