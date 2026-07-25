@@ -4229,14 +4229,22 @@ classdef modBuilder < handle
         % USAGE:
         % - o = modBuilder()                          Create empty model
         % - o = modBuilder(datetime_obj)              Create empty model with specific date
+        % - o = modBuilder(modfile)                   Load from a .mod file, without Dynare
+        % - o = modBuilder(modfile, name=value, ...)  Load with reader options
         % - o = modBuilder(M_, oo_, jsonfile)         Load from Dynare structures and JSON
         % - o = modBuilder(M_, oo_, jsonfile, tag)    Load with custom equation tag name
         %
         % INPUTS:
-        % - varargin{1}    [datetime or struct]    date or M_ structure from Dynare
+        % - varargin{1}    [datetime, char or struct]  date, path to a .mod file, or M_
+        %                                              structure from Dynare
         % - varargin{2}    [struct]                oo_ structure from Dynare (if loading)
         % - varargin{3}    [char]                  path to JSON file with equations
         % - varargin{4}    [char]                  equation tag name (default: 'name')
+        %
+        % EXAMPLES:
+        % m = modBuilder('rbc.mod');
+        % m = modBuilder('rbc.mod', Tag='endogenous');
+        % m = modBuilder('rbc.mod', Script='rbc.m');   % keep the generated script
         %
         % OUTPUTS:
         % - o              [modBuilder]            new modBuilder object
@@ -4245,6 +4253,9 @@ classdef modBuilder < handle
         % - Equations whose tag is missing or does not match an endogenous variable
         %   are matched automatically via bipartite matching (matchequations). The
         %   constructor errors out only if no perfect matching exists.
+        % - The .mod branch goes through modfile.load: the file is translated into a
+        %   modBuilder script and that script is run. Pass Script= to keep the script,
+        %   which is meant to be read and edited further; see the modfile package.
         % - Any other argument list raises modBuilder:modBuilder:badType. Without that
         %   guard an unrecognised call returned an object whose immutable date was never
         %   assigned, and the failure surfaced far from its cause.
@@ -4253,6 +4264,18 @@ classdef modBuilder < handle
                 o.date = varargin{1};
             elseif nargin==0
                 o.date = datetime;
+            elseif nargin>=1 && (ischar(varargin{1}) || isstring(varargin{1}))
+                %
+                % Load from a .mod file, without Dynare. The file is translated into a
+                % modBuilder script, which is then run; adopt() takes over the model that
+                % script builds, since a constructor cannot return a different object.
+                %
+                o.date = datetime;
+                modfilename = char(varargin{1});
+                if ~isfile(modfilename)
+                    error('modBuilder:modBuilder:unknownFile', 'File "%s" does not exist. A char argument is read as the path to a .mod file.', modfilename)
+                end
+                o.adopt(modfile.load(modfilename, varargin{2:end}));
             elseif (nargin==3 && isstruct(varargin{1}) && isstruct(varargin{2}) && ischar(varargin{3}) && isfile(varargin{3})) || ...
                     (nargin==4 && isstruct(varargin{1}) && isstruct(varargin{2}) && ischar(varargin{3}) && isfile(varargin{3}) && ischar(varargin{4}))
                 M_ = varargin{1};

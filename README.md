@@ -83,7 +83,7 @@ only if you don't have the Statistics Toolbox — `src/missing/stats`.
 
 ### Constructor
 
-#### `modBuilder([datetime_obj | M_, oo_, jsonfile[, tag]])`
+#### `modBuilder([datetime_obj | modfile | M_, oo_, jsonfile[, tag]])`
 
 Create a new modBuilder object.
 
@@ -96,6 +96,12 @@ m = modBuilder();
 % Create model with specific date
 m = modBuilder(datetime('2024-01-15'));
 
+% Load from a .mod file, without Dynare
+m = modBuilder('rbc.mod');
+
+% Keep the generated modBuilder script
+m = modBuilder('rbc.mod', Script='rbc.m');
+
 % Load from Dynare structures and JSON file
 m = modBuilder(M_, oo_, 'equations.json');
 
@@ -106,13 +112,62 @@ m = modBuilder(M_, oo_, 'equations.json', 'custom_name');
 **Arguments:**
 - No arguments: Creates empty model with current date
 - `datetime_obj`: Creates empty model with specified date
+- `modfile`: Path to a `.mod` file, read without Dynare (see below)
 - `M_`: Dynare model structure (from previous simulation)
 - `oo_`: Dynare output structure
 - `jsonfile`: Path to JSON file with equations
 - `tag` (optional): Custom equation tag name (default: 'name')
 
+**Name-value arguments (`.mod` file form only):**
+- `Tag` (char): equation tag carrying the equation/variable association (default `'name'`)
+- `Script` (char): path of the MATLAB script to keep; by default it is temporary
+- `Defines` (struct): macro variables to seed, the equivalent of Dynare's `-D`
+- `IncludePaths` (cell): directories searched by `@#include`
+- `Macro` (logical): run the macro directives (default `true`)
+- `Strict` (logical): turn the warnings about skipped statements into errors (default `false`)
+
 **Returns:**
 - New `modBuilder` object
+
+**Reading a `.mod` file without Dynare:**
+
+The `.mod` form needs no Dynare installation: the file is translated into a
+readable `modBuilder` script, and running that script is what builds the object.
+Pass `Script=` to keep it — it is meant to be edited and carried on with, and it
+uses only the public API:
+
+```matlab
+% modBuilder script generated from rbc.mod.
+
+m = modBuilder();
+
+% Equations
+m.add('y', 'y = exp(a)*(k(-1)^alpha)*(h^(1-alpha))');
+
+% Calibration
+alpha = 0.360000;
+
+% Parameters
+m.parameter('alpha', alpha, 'declared', true);
+```
+
+The declarations, the calibration, the `model` and `steady_state_model` blocks,
+`initval` and the macro language are all read. The macro control flow survives
+into the script: `@#define` variables become MATLAB locals, a `@#for` becomes an
+implicit loop or a MATLAB `for` loop, and a `@#if` becomes a MATLAB
+`if`/`elseif`/`else` carrying **every** branch — the file is read again with each
+conditional forced onto the branches it did not take, so the whole logic reaches
+the script and not only the path today's settings select. Changing a macro
+variable at the top of the script therefore rebuilds the model the `.mod` file
+would have given with that setting. Statements that would change the model if dropped
+(`predetermined_variables`, deflators, the optimal-policy statements, …) are
+refused; the computational ones (`stoch_simul`, `estimation`, …) are skipped
+with a warning.
+
+Every file `write()` produces reads back and writes out byte for byte
+identically. See [`src/+modfile/README.md`](src/+modfile/README.md) for the full
+scope, and [`src/@macro/README.md`](src/@macro/README.md) for the macro
+expression engine.
 
 **Equation–variable association at load time:**
 
@@ -1124,7 +1179,9 @@ tests/
 ├── partial/        - Symbolic partial / Jacobian tests
 ├── tex-model/      - LaTeX model-export tests
 ├── implicit-loops/ - Implicit loop functionality tests
-├── load-mod-file/  - Mod file loading tests
+├── load-mod-file/  - Mod file loading tests (Dynare M_/oo_/JSON route)
+├── read-mod-file/  - Mod file reading tests (Dynare-free route)
+├── macro/          - Dynare macro language tests
 ├── flip/           - Flip method tests
 ├── reassign/       - Reassign method tests
 ├── rmflip/         - Rmflip and exogenise method tests
@@ -1178,6 +1235,9 @@ Build them locally with `make -C doc/tex` (requires a LaTeX distribution with
 per-directory `README.md` files:
 [`src/@ast`](src/@ast/README.md),
 [`src/@autoDiff1`](src/@autoDiff1/README.md),
+[`src/@macro`](src/@macro/README.md),
+[`src/@macroarray` and `src/@macrotuple`](src/@macro/README.md),
+[`src/+modfile`](src/+modfile/README.md),
 [`src/+solvers`](src/+solvers/README.md).
 
 ## Contributing

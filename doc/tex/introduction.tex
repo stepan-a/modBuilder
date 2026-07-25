@@ -228,9 +228,7 @@ model =
 
   \begin{lstlisting}[style=MatlabConsole]
 
-    >> dynare rbc12 json=compute
-    ...
-    >> model = modBuilder(M_, oo_, 'rbc12/model/json/modfile-original.json')
+    >> model = modBuilder('rbc12.mod')
 
 model =
 
@@ -245,6 +243,97 @@ model =
             T: [1x1 struct]
          date: 04-Oct-2025 09:25:42
    \end{lstlisting}
+
+  \begin{itemize}
+  \item No Dynare run, no JSON file: the \texttt{.mod} file is read directly.
+  \item The route through \texttt{modBuilder(M\_, oo\_, jsonfile)} still works when
+    the preprocessor output is already at hand.
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Instantiate a model from a \texttt{.mod} file -- III bis --}
+
+  Reading a \texttt{.mod} file writes a \texttt{modBuilder} script and runs it. Keep
+  the script and carry on from there:
+
+  \begin{lstlisting}[style=MatlabConsole]
+
+    >> model = modBuilder('rbc12.mod', Script='rbc12.m');
+   \end{lstlisting}
+
+  \begin{lstlisting}[style=MatlabConsole]
+% modBuilder script generated from rbc12.mod.
+%
+% Edit freely: running this file rebuilds the model.
+
+m = modBuilder();
+
+% Equations
+m.add('y', 'y = exp(a)*(k(-1)^alpha)*(h^(1-alpha))');
+
+% Calibration
+alpha = 0.360000;
+
+% Parameters
+m.parameter('alpha', alpha, 'declared', true);
+  \end{lstlisting}
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Instantiate a model from a \texttt{.mod} file -- macros --}
+
+  Macro directives are read too, and their control flow survives into the script
+  rather than disappearing into the expansion.
+
+  \begin{lstlisting}[language=Dynare]
+@#define Countries = ["US", "EA"]
+
+model;
+@#for c in Countries
+[name = 'y_@{c}']
+y_@{c} = alpha + e_@{c};
+@#endfor
+@#if OpenEconomy
+[name = 'nx']
+nx = y_US - y_EA;
+@#endif
+end;
+  \end{lstlisting}
+
+  becomes
+
+  \begin{lstlisting}[style=MatlabConsole]
+Countries = {'US', 'EA'};
+
+m.add('y_$1', 'y_$1 = alpha + e_$1', {'US', 'EA'});
+if OpenEconomy
+    m.add('nx', 'nx = y_US - y_EA');
+end
+  \end{lstlisting}
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Instantiate a model from a \texttt{.mod} file -- macros II --}
+
+  \begin{itemize}
+  \item \texttt{Defines=struct(...)} plays the role of Dynare's \texttt{-D}.
+  \item A loop becomes one implicit-loop call when a \texttt{\$N} template reproduces
+    every iteration, and a MATLAB \texttt{for} loop otherwise. The template is guessed
+    and then verified against the iterations, so a wrong guess is discarded rather than
+    emitted.
+  \item A \texttt{@\#if} becomes a MATLAB \texttt{if}/\texttt{elseif}/\texttt{else}
+    carrying every branch. A branch that is not selected produces no text, so the file is
+    read again with the conditional forced onto it; the model itself always comes from
+    the unforced read. Changing the flag in the script then gives the model the
+    \texttt{.mod} file would have given with that setting.
+  \end{itemize}
 
 \end{frame}
 
