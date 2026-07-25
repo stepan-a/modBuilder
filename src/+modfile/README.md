@@ -138,6 +138,42 @@ applied repeatedly, so a stack of loops collapses in one go; it is refused as
 soon as an item sits directly in the outer loop or the inner constructs are not
 all the same loop, and each outer iteration is then emitted on its own.
 
+### A conditional that cuts a statement
+
+The macro layer sits *under* the statement grammar, so a directive can slice a
+statement rather than enclose it:
+
+```
+y = alpha*
+@#if Open
+e + 1
+@#else
+e
+@#endif
+;
+```
+
+There is no call to put inside an `if` here — one `m.add` carries the whole
+equation. The control flow goes one level down instead, into the argument, which
+is assembled before it is passed:
+
+```matlab
+eq_y = 'y = alpha* e';
+if Open
+    eq_y = [eq_y ' + 1'];
+else
+    % this branch adds nothing
+end
+m.add('y', eq_y);
+```
+
+Everything the branches share is written once, so only the difference sits inside
+the `if`. Such an equation is recognised by not sitting under the conditional at
+all while still reading differently in the branch that was read separately.
+
+This is used only where it is needed: a conditional that wraps whole statements
+still becomes a plain `if` around the calls, which reads better.
+
 ### Conditionals
 
 A `@#if` becomes a MATLAB `if` / `elseif` / `else`, with **every** branch, however

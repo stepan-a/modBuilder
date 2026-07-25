@@ -53,7 +53,13 @@ function lines = local_emit(items, depth, indent, reserved, blocks)
         ctx = items(i).ctx;
         if numel(ctx) <= depth
             if ~isempty(items(i).render)
-                lines{end+1} = [indent items(i).render(items(i).strings, '')]; %#ok<AGROW>
+                % A render may return several lines, for a call whose argument has to be
+                % built up before it can be passed.
+                produced = items(i).render(items(i).strings, '');
+                if ischar(produced)
+                    produced = {produced};
+                end
+                lines = [lines, cellfun(@(l) [indent l], produced(:)', 'UniformOutput', false)]; %#ok<AGROW>
             end
             i = i + 1;
             continue

@@ -103,6 +103,9 @@ function lines = translate(mod, options)
 
         items = local_section_items(primary, which);
         blocks = local_section_blocks(mod, variants, which, options.Tag, obj);
+        if strcmp(which, 'equations')
+            items = local_assemble_cut(items, primary, variants, mod, obj, reserved);
+        end
         [items, blocks] = local_add_placeholders(items, blocks, mod);
 
         if isempty(items)
@@ -115,6 +118,169 @@ function lines = translate(mod, options)
     end
 
     lines = lines(:);
+end
+
+function items = local_assemble_cut(items, primary, variants, mod, obj, reserved)
+% Rewrite the equations a conditional cuts in half, so that they stay adjustable.
+%
+% A directive can slice a statement rather than wrap it:
+%
+%     y = alpha*
+%     @#if Open
+%     e + 1
+%     @#else
+%     e
+%     @#endif
+%     ;
+%
+% There is no call to put inside an if here: the equation spans the whole construct, and
+% one m.add carries all of it. The control flow goes one level down instead, into the
+% argument, which is built before it is passed:
+%
+%     eq_y = 'y = alpha*';
+%     if Open
+%         eq_y = [eq_y ' e + 1'];
+%     else
+%         eq_y = [eq_y ' e'];
+%     end
+%     m.add('y', eq_y);
+%
+% Such an equation is recognised by not sitting under the conditional at all while still
+% reading differently in the branch that was read separately. Everything the branches share
+% is emitted once, and only what differs goes inside the if.
+    for i = 1:numel(items)
+        if numel(items(i).strings) ~= 2 || ~isempty(items(i).ctx)
+            continue
+        end
+        name = items(i).strings{1};
+
+        for c = 1:numel(mod.macro.conditionals)
+            cond = mod.macro.conditionals(c);
+            [texts, ok] = local_branch_texts(cond, variants, primary, name);
+            if ~ok
+                continue
+            end
+            block = local_assemble_block(name, texts, cond, obj, reserved);
+            if isempty(block)
+                continue
+            end
+            items(i).render = @(~, ~) block;
+            items(i).templatable = false;
+            break
+        end
+    end
+end
+
+function [texts, ok] = local_branch_texts(cond, variants, primary, name)
+% The text of one equation in every branch of a conditional, when they differ.
+    texts = cell(1, cond.nbranches);
+    ok = false;
+
+    here = local_equation_text(primary, name);
+    if isempty(here)
+        return
+    end
+    texts{max(cond.taken, 1)} = here;
+
+    seen = false;
+    for v = 1:numel(variants)
+        if variants(v).id ~= cond.id || isempty(variants(v).prep)
+            continue
+        end
+        there = local_equation_text(variants(v).prep, name);
+        if isempty(there)
+            return
+        end
+        texts{variants(v).branch} = there;
+        seen = seen || ~strcmp(there, here);
+    end
+
+    ok = seen && ~any(cellfun(@isempty, texts));
+end
+
+function text = local_equation_text(prep, name)
+% The equation keyed to a name in one reading, empty when there is none.
+    text = '';
+    for i = 1:numel(prep.equations)
+        if strcmp(prep.names{i}, name)
+            text = prep.equations(i).expr;
+            return
+        end
+    end
+end
+
+function lines = local_assemble_block(name, texts, cond, obj, reserved)
+% Build the lines that assemble one equation branch by branch.
+    lines = {};
+    for b = 1:cond.nbranches
+        if isempty(cond.conds{b}) && b < cond.nbranches
+            return
+        end
+    end
+    if isempty(cond.conds{1})
+        return
+    end
+
+    prefix = local_common_prefix(texts);
+    suffix = local_common_suffix(texts, numel(prefix));
+    middles = cellfun(@(t) t(numel(prefix)+1:end-numel(suffix)), texts, 'UniformOutput', false);
+
+    variable = local_unique_name(sprintf('eq_%s', name), reserved);
+    lines{end+1} = sprintf('%s = %s;', variable, local_quote(prefix));
+    for b = 1:cond.nbranches
+        if b == 1
+            lines{end+1} = sprintf('if %s', cond.conds{b}); %#ok<AGROW>
+        elseif isempty(cond.conds{b})
+            lines{end+1} = 'else'; %#ok<AGROW>
+        else
+            lines{end+1} = sprintf('elseif %s', cond.conds{b}); %#ok<AGROW>
+        end
+        if ~isempty(middles{b})
+            lines{end+1} = sprintf('    %s = [%s %s];', variable, variable, local_quote(middles{b})); %#ok<AGROW>
+        else
+            lines{end+1} = sprintf('    %% this branch adds nothing'); %#ok<AGROW>
+        end
+    end
+    lines{end+1} = 'end';
+    if ~isempty(suffix)
+        lines{end+1} = sprintf('%s = [%s %s];', variable, variable, local_quote(suffix)); %#ok<AGROW>
+    end
+    lines{end+1} = sprintf('%s.add(%s, %s);', obj, local_quote(name), variable);
+end
+
+function p = local_common_prefix(variants)
+% Longest character prefix shared by every variant.
+    p = variants{1};
+    for k = 2:numel(variants)
+        n = min(numel(p), numel(variants{k}));
+        j = find(p(1:n) ~= variants{k}(1:n), 1);
+        if isempty(j)
+            p = p(1:n);
+        else
+            p = p(1:j-1);
+        end
+    end
+end
+
+function s = local_common_suffix(variants, used)
+% Longest character suffix shared by every variant, without eating into the prefix.
+    room = min(cellfun(@numel, variants)) - used;
+    s = '';
+    for n = 1:room
+        c = variants{1}(end-n+1);
+        if ~all(cellfun(@(v) v(end-n+1) == c, variants))
+            break
+        end
+        s = [c s]; %#ok<AGROW>
+    end
+end
+
+function name = local_unique_name(base, taken)
+% A name close to base that no local in the script uses.
+    name = base;
+    while ismember(name, taken)
+        name = [name '_'];
+    end
 end
 
 function tf = local_conditional_declarations(mod)
