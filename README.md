@@ -1154,6 +1154,32 @@ runtest('examples/add')
 runtest('examples/lookfor_regex')
 ```
 
+## Documentation
+
+Three Beamer decks are built from their LaTeX sources under `doc/tex/` by the
+`doc` CI job and published as pipeline artifacts (latest `master` build):
+
+- **[Introduction](https://git.dynare.org/Dynare/modBuilder/-/jobs/artifacts/master/raw/doc/introduction.pdf?job=doc)**
+  — a guided tour of the toolbox: instantiating a model, adding and editing
+  equations, typing symbols, implicit loops, computing the steady state, and
+  exporting to `.mod` and LaTeX. Start here.
+- **[The `ast` engine](https://git.dynare.org/Dynare/modBuilder/-/jobs/artifacts/master/raw/doc/ast.pdf?job=doc)**
+  — a technical note on the expression engine: the node model and parser, the
+  `canonicalise`/`simplify` normal form, differentiation, `isolate`, the LaTeX
+  renderer and the complexity measure. Companion to
+  [`src/@ast/README.md`](src/@ast/README.md).
+- **[Deriving the steady state](https://git.dynare.org/Dynare/modBuilder/-/jobs/artifacts/master/raw/doc/steadystate.pdf?job=doc)**
+  — a technical note on `steady_plan`: the equation–variable matching, the SCC
+  decomposition, the closed-form recognisers, the gauge backout, the generated
+  numerical routines and the diagnostics.
+
+Build them locally with `make -C doc/tex` (requires a LaTeX distribution with
+`latexmk`); the PDFs land in `doc/`. The class and package reference lives in the
+per-directory `README.md` files:
+[`src/@ast`](src/@ast/README.md),
+[`src/@autoDiff1`](src/@autoDiff1/README.md),
+[`src/+solvers`](src/+solvers/README.md).
+
 ## Contributing
 
 When adding new features:
