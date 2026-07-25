@@ -286,6 +286,7 @@ listoftests = [
   'eq/t07.m',
   'eq/t08.m',
   'eq/t09.m',
+  'declare/t01.m',
   'normal/t01.m',
   'normal/t02.m',
   'metadata/t01.m',

@@ -326,6 +326,7 @@ classdef modBuilder < handle
         % - Handles parsing of indices, value extraction, and Cartesian product computation
         % - Recursively calls the appropriate method (parameter, exogenous, or endogenous) for each combination
         % - Supports optional 'long_name' and 'texname' attributes with index placeholders
+        % - Also forwards the placeholder-free 'declared' flag to every expanded declaration
         % - Argument order: [value], ['long_name', val, 'texname', val], index_array_1, ..., index_array_n
             arguments
                 o
@@ -361,7 +362,7 @@ classdef modBuilder < handle
             key_val_args = {};
             idx = 1;
             while idx <= numel(remaining)
-                if ischar(remaining{idx}) && ismember(remaining{idx}, {'long_name', 'texname'})
+                if ischar(remaining{idx}) && ismember(remaining{idx}, {'long_name', 'texname', 'declared'})
                     % This is a key
                     if idx + 1 > numel(remaining)
                         error('modBuilder:handle_implicit_loops:missingValue', 'Key "%s" provided without a value.', remaining{idx});
@@ -385,8 +386,8 @@ classdef modBuilder < handle
                       symbol_type, nindices, numel(index_args))
             end
 
-            % Parse optional long_name and texname from key_val_args
-            [long_name, texname] = modBuilder.set_optional_fields(symbol_type, symbol_name, key_val_args{:});
+            % Parse optional long_name, texname and declared from key_val_args
+            [long_name, texname, declared] = modBuilder.set_optional_fields(symbol_type, symbol_name, key_val_args{:});
 
             % Validate that long_name and texname use the same placeholders as symbol_name
             if ~isempty(long_name)
@@ -433,6 +434,11 @@ classdef modBuilder < handle
                     call_args = [call_args, {'texname', expanded{i,col}}];
                 end
 
+                % The declared flag carries no placeholder, so it is forwarded as is
+                if declared
+                    call_args = [call_args, {'declared', true}];
+                end
+
                 % Call the specific method recursively
                 switch symbol_type
                     case 'parameter'
@@ -465,12 +471,16 @@ classdef modBuilder < handle
         %                      semantics is resolved by the public wrapper
         %                      before getting here.
         % - varargin           Optional key/value pairs forwarded to
-        %                      set_optional_fields (long_name, texname).
+        %                      set_optional_fields (long_name, texname, declared).
         %
         % OUTPUTS:
         % - o        [modBuilder]
         %
         % REMARKS:
+        % - 'declared', true waives the precondition that name already appears in the
+        %   model. A .mod file may declare a parameter or an exogenous variable that no
+        %   equation references, and such symbols must still reach the tables; the
+        %   endogenous-to-parameter/exogenous conversion remains forbidden either way.
         % - tables_dirty is set on every type conversion and on every
         %   parameter/exogenous untyped-promotion, but NOT on plain
         %   existing-row updates and (preserving pre-refactor behaviour)
@@ -487,9 +497,14 @@ classdef modBuilder < handle
 
             modBuilder.validate_symbol_name(name, type);
 
+            % Read ahead for 'declared' so the precondition below can be waived without
+            % moving the attribute parser in front of it (see peek_declared).
+            declared_only = modBuilder.peek_declared(varargin);
+
             switch type
               case 'parameter'
-                if ~(ismember(name, o.symbols) || ...
+                if ~(declared_only || ...
+                     ismember(name, o.symbols) || ...
                      ismember(name, o.varexo(:,modBuilder.COL_NAME)) || ...
                      ismember(name, o.params(:,modBuilder.COL_NAME)))
                     if ismember(name, o.var(:,modBuilder.COL_NAME))
@@ -498,10 +513,14 @@ classdef modBuilder < handle
                         error('modBuilder:declare_symbol:unknownSymbol', 'Symbol "%s" does not appear in the model.', name)
                     end
                 end
+                if declared_only && ismember(name, o.var(:,modBuilder.COL_NAME))
+                    error('modBuilder:declare_symbol:typeConversion', 'An endogenous variable cannot be converted into a parameter.')
+                end
                 tbl_name     = 'params';
                 src_tbl_name = 'varexo';
               case 'exogenous'
-                if ~(ismember(name, o.symbols) || ...
+                if ~(declared_only || ...
+                     ismember(name, o.symbols) || ...
                      ismember(name, o.varexo(:,modBuilder.COL_NAME)) || ...
                      ismember(name, o.params(:,modBuilder.COL_NAME)))
                     if ismember(name, o.var(:,modBuilder.COL_NAME))
@@ -509,6 +528,9 @@ classdef modBuilder < handle
                     else
                         error('modBuilder:declare_symbol:unknownSymbol', 'Symbol "%s" does not appear in the model.', name)
                     end
+                end
+                if declared_only && ismember(name, o.var(:,modBuilder.COL_NAME))
+                    error('modBuilder:declare_symbol:typeConversion', 'An endogenous variable cannot be converted into an exogenous variable. Please remove the equation associated to the endogenous variable.')
                 end
                 tbl_name     = 'varexo';
                 src_tbl_name = 'params';
@@ -1411,6 +1433,33 @@ classdef modBuilder < handle
             end
         end % function
 
+        function adopt(o, p)
+        % Take over the content of another model, leaving this object's date alone.
+        %
+        % INPUTS:
+        % - o   [modBuilder]   receiving object
+        % - p   [modBuilder]   source object, left untouched
+        %
+        % REMARKS:
+        % - The mirror image of copy(): copy() builds a new object around this content,
+        %   adopt() pours the content into an object that already exists. The constructor
+        %   needs the second direction, because the .mod branch obtains its model by
+        %   running a generated script and cannot return that object in place of itself.
+        % - date is deliberately not copied: it is immutable and belongs to the receiver.
+            o.params = p.params;
+            o.varexo = p.varexo;
+            o.var = p.var;
+            o.symbols = p.symbols;
+            o.equations = p.equations;
+            o.steady_state = p.steady_state;
+            o.calibration_swaps = p.calibration_swaps;
+            o.T = p.T;
+            o.tags = p.tags;
+            o.tables_dirty = p.tables_dirty;
+            o.symbol_map = p.symbol_map;
+            o.symbol_map_dirty = p.symbol_map_dirty;
+        end % function
+
     end % methods
 
 
@@ -2222,8 +2271,8 @@ classdef modBuilder < handle
             end
         end % function
 
-        function [long_name, texname] = set_optional_fields(type, sname, varargin)
-        % Parse optional 'long_name' and 'texname' arguments from varargin
+        function [long_name, texname, declared] = set_optional_fields(type, sname, varargin)
+        % Parse optional 'long_name', 'texname' and 'declared' arguments from varargin
         %
         % INPUTS:
         % - type        [char]     symbol type ('parameter', 'endogenous', or 'exogenous')
@@ -2233,6 +2282,13 @@ classdef modBuilder < handle
         % OUTPUTS:
         % - long_name   [char]     long name or empty string
         % - texname     [char]     TeX name or empty string
+        % - declared    [logical]  scalar, true when the symbol may be declared even though it
+        %                          appears in no equation (see declare_symbol)
+        %
+        % REMARKS:
+        % - The 'declared' value is also read ahead of this parser by peek_declared, because
+        %   declare_symbol must know it before its appears-in-the-model precondition runs.
+        %   Both readers must accept the same spelling.
             arguments
                 type  (1,:) char {mustBeNonempty}
                 sname (1,:) char {mustBeNonempty}
@@ -2242,6 +2298,7 @@ classdef modBuilder < handle
             end
             long_name = '';
             texname='';
+            declared = false;
             if ~isempty(varargin)
                 if ismember(type, {'endogenous', 'exogenous'})
                     type = sprintf('%s variable', type);
@@ -2256,9 +2313,36 @@ classdef modBuilder < handle
                         long_name = varargin{i+1};
                       case 'texname'
                         texname = varargin{i+1};
+                      case 'declared'
+                        if ~(islogical(varargin{i+1}) && isscalar(varargin{i+1}))
+                            error('modBuilder:set_optional_fields:badType', 'Property "declared" of %s %s must be a logical scalar.', type, sname)
+                        end
+                        declared = varargin{i+1};
                       otherwise
                         error('modBuilder:set_optional_fields:unknownProperty', 'Unknown property for %s %s.', type, sname)
                     end
+                end
+            end
+        end % function
+
+        function declared = peek_declared(args)
+        % Read the 'declared' flag out of a key/value list without validating the other keys.
+        %
+        % INPUTS:
+        % - args       [cell]     1×n key/value pairs as passed to parameter() or exogenous()
+        %
+        % OUTPUTS:
+        % - declared   [logical]  scalar, true iff 'declared' is present and paired with true
+        %
+        % REMARKS:
+        % - declare_symbol needs the flag before it checks that the symbol appears in the model,
+        %   but that check must keep firing ahead of the attribute parser (see tests/errors/t34).
+        %   This lookahead therefore stays silent on malformed input and leaves every diagnostic
+        %   to set_optional_fields, which runs later on the same list.
+            declared = false;
+            for i = 1:2:numel(args)-1
+                if ischar(args{i}) && strcmp(args{i}, 'declared') && islogical(args{i+1}) && isscalar(args{i+1})
+                    declared = args{i+1};
                 end
             end
         end % function
@@ -4161,6 +4245,9 @@ classdef modBuilder < handle
         % - Equations whose tag is missing or does not match an endogenous variable
         %   are matched automatically via bipartite matching (matchequations). The
         %   constructor errors out only if no perfect matching exists.
+        % - Any other argument list raises modBuilder:modBuilder:badType. Without that
+        %   guard an unrecognised call returned an object whose immutable date was never
+        %   assigned, and the failure surfaced far from its cause.
 
             if nargin==1 && isdatetime(varargin{1})
                 o.date = varargin{1};
@@ -4348,6 +4435,8 @@ classdef modBuilder < handle
                 % Set date
                 %
                 o.date = datetime;
+            else
+                error('modBuilder:modBuilder:badType', 'Unsupported argument list. Use modBuilder(), modBuilder(datetime), or modBuilder(M_, oo_, jsonfile[, tag]).')
             end
         end % function
 
@@ -4395,6 +4484,66 @@ classdef modBuilder < handle
               case 'equations'
                 n = size(o.equations, 1);
             end
+        end % function
+
+        function o = reorder(o, type, names)
+        % Set the declaration order of the symbols of one type.
+        %
+        % INPUTS:
+        % - o       [modBuilder]
+        % - type    [char]         'parameters', 'exogenous' or 'endogenous'
+        % - names   [cell]         1×n array of row char arrays, the symbols of that type
+        %                          in the wanted order; must be a permutation of the ones
+        %                          already declared
+        %
+        % OUTPUTS:
+        % - o       [modBuilder]   updated object
+        %
+        % EXAMPLES:
+        % m = modBuilder();
+        % m.add('y', 'y = alpha*k');
+        % m.add('k', 'k = (1-delta)*k(-1) + i');
+        %
+        % % Declare k before y in the var statement written by write()
+        % m.reorder('endogenous', {'k', 'y'});
+        %
+        % REMARKS:
+        % - Only the order of the declaration table changes. Nothing else is touched: the
+        %   equations keep their own order, which write() uses for the model block, and
+        %   the symbol tables are unaffected because they are keyed by name.
+        % - The order of the endogenous table is independent of the order of the equations.
+        %   reassign() already produces models where the two differ, and write() prints the
+        %   var list from the table while printing the equations in equation order.
+        % - Raises modBuilder:reorder:badPermutation when names is not exactly the set of
+        %   declared symbols of that type, so a typo cannot silently drop a symbol.
+            arguments
+                o
+                type  (1,:) char {mustBeNonempty}
+                names (1,:) cell
+            end
+
+            modBuilder.validate_type(type);
+
+            switch type
+              case 'parameters'
+                tbl_name = 'params';
+              case 'exogenous'
+                tbl_name = 'varexo';
+              case 'endogenous'
+                tbl_name = 'var';
+              otherwise
+                error('modBuilder:reorder:unknownType', 'Cannot reorder "%s".', type)
+            end
+
+            tbl = o.(tbl_name);
+            current = tbl(:,modBuilder.COL_NAME);
+
+            if numel(names) ~= numel(current) || ~isempty(setxor(names, current))
+                error('modBuilder:reorder:badPermutation', 'The given names are not a permutation of the declared %s symbols.', type)
+            end
+
+            [~, order] = ismember(names(:), current);
+            o.(tbl_name) = tbl(order, :);
         end % function
 
         function o = add(o, varname, equation, varargin)
@@ -4613,7 +4762,11 @@ classdef modBuilder < handle
         % REMARKS:
         % - If symbol pname is known as an exogenous variable, it is converted to a parameter. If pvalue is not NaN, pname is set
         %   equal to pvalue, otherwise the parameter is calibrated with the value of the exogeous variable.
-        % - Optional arguments in varargin must come by key/value pairs. Allowed keys are 'long_name' and 'texname'.
+        % - Optional arguments in varargin must come by key/value pairs. Allowed keys are 'long_name', 'texname'
+        %   and 'declared'.
+        % - By default pname must already appear in an equation. Pass 'declared', true to declare a parameter that
+        %   no equation references, as a .mod file may do; this is what the .mod reader emits. Converting an
+        %   endogenous variable stays forbidden regardless of the flag.
         % - If pname contains indices (e.g. 'beta_$1_$2'), then parameters are defined for all combinations of values provided
         %   as cell arrays of index values at the end of varargin.
         % - If pname contains indices, pvalue can be provided as the first argument in varargin. If pvalue is not provided, the parameters
