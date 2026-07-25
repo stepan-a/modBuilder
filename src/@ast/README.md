@@ -188,6 +188,39 @@ factor analysis still does not reason about power identities, so
 `a² + a³` is not factored to `a² · (1 + a)` — that's a deferred
 extension. Tree size shrinks (or stays the same). Idempotent.
 
+#### `t.single_fraction()`
+
+Rewrite `t` as a single quotient `N/D`, putting a sum of fractions over
+a common denominator (the multiset lcm of the term denominators, so a
+denominator shared across terms is not squared):
+
+- `1/(a·b) − 1 − 1/a + 1/b → (1 + a − b − a·b)/(a·b)`
+- `(δ − 1 + 1/β)/(α·δ) → (1 − β + β·δ)/(α·β·δ)` (a nested quotient
+  flattens onto one denominator)
+
+This is the rational normalisation `clear_denominators` computes and
+then discards, kept here with the denominator. The difference matters:
+`clear_denominators` preserves only the *roots* of `t = 0` (it is the
+numerator of the single-fraction form, used by `isolate` to expose a
+linear structure buried under nested quotients), whereas
+`single_fraction` is **value-preserving** — use it for an expression
+that is a quantity rather than a residual. Returns `t` unchanged (up to
+canonicalisation) when there is no denominator. Same size cap as
+`clear_denominators`: cross-multiplying a deep quotient tower explodes,
+so a huge numerator degrades to a no-op.
+
+#### `t.clear_denominators()`
+
+Return the **numerator** `N` of the single-fraction form `t ≡ N/D` (the
+denominator is dropped). Unlike `single_fraction`, this preserves only
+the *roots* of `t = 0`, not the value — sound under the standing
+steady-state convention that levels and denominator factors are non-zero.
+It is the primitive `isolate` and `linearise_system` fall back on: a
+closed form inlined into a rational chain buries a linear structure under
+nested `(a+b·x)/(c+d·x)` quotients that no recogniser sees through, and
+clearing the denominators makes that structure reappear. No-op when `t`
+has no denominator; degrades to a no-op past the size cap.
+
 #### `t.substitute(target_name, replacement[, parameter_names])`
 
 Return a new tree in which every `sym(target_name)` and every
@@ -257,10 +290,18 @@ and names not listed (e.g. parameters) are untouched.
 This is what the LaTeX reporting methods use to mark steady-state
 coefficients: rendering the result with `to_latex` then gives the
 `name^{\star}` form, and — because the marks are real `ss` nodes — a
-power of one (`1/k^{\star}`) is rendered with invisible delimiters
-(`\left. k^{\star} \right.^{-1}`) instead of an invalid double
-superscript. Used by `modBuilder.tex_linearise` and
+positive power of a starred base (`k^{\star 2}`) is rendered with
+invisible delimiters (`\left. k^{\star} \right.^{2}`) instead of an
+invalid double superscript. Used by `modBuilder.tex_linearise` and
 `modBuilder.tex_steady_state_system`.
+
+#### `[t, changed] = t.strip_ss()`
+
+The inverse of `at_steady_state`: replace every `STEADY_STATE(expr)`
+node by its argument `expr`. At the steady state the operator is the
+identity, and the stripped tree round-trips through `string()` as plain
+MATLAB (which would otherwise emit `STEADY_STATE(...)`). The second
+output `changed` reports whether any `ss` node was removed.
 
 #### `t.shift_lag(k[, parameter_names])`
 
@@ -274,6 +315,23 @@ untouched, as are `num` and `ss` leaves. `k = 0` is a no-op.
 This is used internally by `substitute` for lag-aware replacement and
 is exposed because the same primitive is needed by other passes (e.g.
 log-linearisation, generation of static / dynamic equations).
+
+#### `t.symbol_names()`
+
+Return the unique set of symbol names referenced in the tree (as a
+cellstr). Counts `sym`, `tsym` and the symbols inside an `ss` argument;
+function-call names are not symbols. The inspection primitive behind the
+dependency analysis — `modBuilder` uses it to know which parameters and
+variables an equation touches.
+
+#### `t.lags_of(name)`
+
+Return the sorted distinct periods at which `name` appears: `0` for a
+bare `sym` (current period), the signed lag for each matching `tsym`,
+`[]` if `name` does not appear. `ss` (steady-state) nodes are constants
+and are not counted. Used to tell whether a variable enters an equation
+contemporaneously, at a lag, or as a lead — e.g. `tex_linearise` refuses
+to normalise an equation on a variable absent at lag 0.
 
 #### `[has, cancels] = t.check_factor(varname)`
 
@@ -435,7 +493,10 @@ Rendering highlights:
   `dated` → `K_t`; `ss` → `·^{\star}` (`STEADY_STATE(K)` → `K^{\star}`).
 - division → `\frac{·}{·}`; `exp` → `e^{·}`; `sqrt` → `\sqrt{·}`;
   `cbrt` → `\sqrt[3]{·}`; `abs` → `\left|·\right|`; trig/hyperbolic and
-  the rest as `\sin(·)`, `\Phi(·)`, `\operatorname{…}(·)`, etc.
+  the rest as `\sin(·)`, `\Phi(·)`, `\operatorname{…}(·)`, etc. A product
+  of several inverse factors renders as a *single* fraction —
+  `E·x^(-1)·y^(-1)` → `\frac{E}{x\,y}`, and a division chain `a/b/c`
+  likewise → `\frac{a}{b\,c}` — never a fraction of fractions.
 - Grouping uses `\left( … \right)`, so tall content (fractions, powers)
   brackets correctly — e.g. `(a/b)^c` → `\left(\frac{a}{b}\right)^{c}`.
   A base that merely ends in a superscript (`K^{\star}`, `e^{·}`) raised to
@@ -445,14 +506,40 @@ Rendering highlights:
   cases (sums, products, `(a^b)^c`) keep visible parentheses.
 - Canonical-form patterns are pretty-printed as in `string()`:
   `a + (-b)` → `a - b`, `a·b^(-1)` → `\frac{a}{b}`. A lone negative power
-  (`x^(-1)`) is kept as `x^{-1}` rather than rewritten to a fraction,
-  matching the readability the steady-state forms rely on.
+  is a division too: `x^(-1)` → `\frac{1}{x}` (this also retires the
+  invalid double superscript a starred base under an exponent of −1 would
+  otherwise produce).
+- A rendered sum leads with a term that is *not* negated whenever it has
+  one, so `-a + b` prints as `b - a`. Only the rendering moves; the
+  canonical operand order is untouched. A product with a negative leading
+  factor is recognised too, so a reordered `-2·x + y` prints as `y - 2\,x`,
+  not `y + -2\,x`.
 
 `to_latex` renders whatever tree it is given (it does not canonicalise),
-so the caller controls the algebraic form. One known rough edge: a sum
-term with a negative numeric coefficient still prints additively
-(`1 + -2\,x + …` rather than `1 - 2\,x + …`), mirroring `string()`.
-Tested in `tests/ast/t26`.
+so the caller controls the algebraic form. Tested in `tests/ast/t26`.
+
+#### `ast.complexity(t[, texname_map])`
+
+Score how complex `t` is **as rendered**, so a caller can choose between
+algebraically equal forms. A node count is the wrong measure for that:
+`1/(a·b·c) − 1 − 1/(a·c) + 1/a` is 26 nodes and the single fraction
+`(1 − b − a·b·c + b·c)/(a·b·c)` is 27, yet the second is the one to
+print. `complexity` scores the LaTeX instead:
+
+- the **glyph** count of `to_latex` — every control sequence counts as
+  one (`\alpha` is one glyph, not six), and `\left`/`\right`/spacing
+  macros count as none, so the score does not depend on how a symbol is
+  named;
+- plus a penalty per fraction and per level of fraction **nesting**
+  (LaTeX is two-dimensional: three `\frac` side by side read worse than
+  one of the same width, and a fraction of fractions worse still);
+- plus a penalty when the rendering leads with a minus.
+
+Because it is defined on the rendering, the measure moves with the
+renderer — which is the point. `modBuilder.tex_linearise(Substitute=true)`
+uses it to pick, among `factor`, `expand` and `single_fraction`
+reductions of each coefficient, the one that reads best. Tested in
+`tests/ast/t38`.
 
 #### `disp(t)`
 
@@ -468,6 +555,16 @@ These are mostly internal but can be useful for inspection.
 - `ast.parse_expr / parse_term / parse_unary / parse_power / parse_atom`
   — recursive-descent parser entry points, one per grammar non-terminal.
 - `ast.ast_equal(a, b)` — structural (syntactic) equality of two trees.
+- `ast.fraction_stats(t)` — the number of `\frac` the renderer emits for
+  `t` and their deepest nesting, walking the tree the way `latex_binop`
+  does (canonical form stores `N/(a·b·c)` as three inverse powers, but one
+  `\frac` is emitted). Backs the fraction penalties of `complexity`.
+- `ast.node_count(t)` — total number of nodes in the tree; a cheap size
+  proxy used to gate the size-capped normalisations
+  (`single_fraction` / `clear_denominators`).
+- `ast.count_occurrences(t, x)` — how many times name `x` occurs as a
+  `sym` or `tsym` leaf (`ss` leaves, being constants w.r.t. `x`, are not
+  counted).
 - `ast.op_precedence(op)` — operator precedence levels used by the
   renderer.
 
