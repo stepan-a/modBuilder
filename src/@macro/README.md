@@ -64,11 +64,15 @@ unary   ::= ('-'|'+'|'!') unary | power
 power   ::= postfix ['^' unary]                    (right-associative)
 postfix ::= atom ('[' expr ']')*
 atom    ::= NUMBER | STRING | 'true' | 'false' | IDENT | IDENT '(' args ')'
-          | '(' expr (',' expr)* ')' | '[' [expr (',' expr)*] ']'
+          | '(' expr (',' expr)* ')' | bracket
+bracket ::= '[' [expr (',' expr)*] ']'                      an array
+          | '[' expr 'for' indices 'in' expr ['when' expr] ']'
+          | '[' indices 'in' expr 'when' expr ']'
+indices ::= IDENT | '(' IDENT (',' IDENT)* ')'
 ```
 
 Node types: `num`, `str`, `bool`, `sym`, `arr`, `tup`, `binop`, `unop`, `call`,
-`index`, `range`.
+`index`, `range`, `comp`.
 
 ## Operators on arrays
 
@@ -82,6 +86,44 @@ Following `preprocessor/src/macro/Expressions.cc`:
 | `["US","EA"] & ["EA","JP"]` | `[EA]` — intersection |
 | `[1,2] * ["a","b"]` | `[(1, a), (1, b), (2, a), (2, b)]` — Cartesian product |
 | `"EA" in Countries` | `true` |
+
+## Comprehensions
+
+Three forms, following `Comprehension` in `Expressions.cc`: one maps an
+expression over an input set, one filters that set, and one does both.
+
+| Expression | Result |
+|---|---|
+| `[i^2 for i in [1,2,3]]` | `[1, 4, 9]` — map |
+| `[c in Countries when c != "JP"]` | `[US, EA]` — filter |
+| `[i^2 for i in [1,2,3] when i > 1]` | `[4, 9]` — both |
+| `[a+b for (a, b) in [(1,2), (3,4)]]` | `[3, 7]` — a destructured index |
+
+The filtering form is the mapping one with the index as its output expression:
+Dynare yields the element the index was bound to, and evaluating the index gives
+that same element back, a destructured tuple included. The parser normalises it
+into the mapping form, so there is one form to evaluate and one to render.
+
+The index does not outlive the comprehension. Dynare binds it in the enclosing
+environment and leaves it there, so a file reading the index afterwards sees
+whatever the last iteration bound; here that reads as an undefined variable,
+which is the one deliberate departure from the reference implementation.
+
+A comprehension renders as a call to `map`, to `filter`, or to both:
+
+```matlab
+[c for c in Countries when c != "JP"]  ->  filter(Countries, @(c) ~strcmp(c, 'JP'))
+[i^2 for i in Nums when i > 1]         ->  map(filter(Nums, @(i) (i > 1)), @(i) (i ^ 2))
+```
+
+which keeps the relation between the two settings in the generated script: the
+evaluated literal would freeze it, and editing the input set there would no
+longer answer the comprehension. Both are `macroarray` methods. The body renders
+with the index bound to the first element of the input set, since what a
+subexpression renders to depends on the kinds it works on; a set mixing kinds is
+therefore declined rather than rendered from whichever element came first, as is
+a destructured index, which would have to be rewritten into the components of
+the argument of the anonymous function.
 
 ## Methods
 
@@ -189,6 +231,4 @@ Convert a MATLAB double, logical, char or cell into a macro value.
 
 ## Deferred
 
-Comprehensions (`[x for x in A when cond]`) raise
-`macro:parse:unexpectedToken` rather than expanding wrongly. String escapes
-beyond `\\` and `\"` are not recognised.
+String escapes beyond `\\` and `\"` are not recognised.

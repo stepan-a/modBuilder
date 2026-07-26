@@ -467,12 +467,12 @@ end
 
 function [out, env, info] = local_for(header, body, env, info, state, line)
 % Run a @#for, recording it as an implicit loop when its body allows it.
-    token = regexp(header, '^(.*?)\s+in\s+(.*)$', 'tokens', 'once');
-    if isempty(token)
+    [lhs, rhs, found] = local_split_keyword(header, 'in');
+    if ~found
         error('modfile:expand_macros:badLoop', '%s (line %u): cannot read the @#for header "%s".', state.filename, line, header)
     end
 
-    [indexnames, guard, setexpr] = local_loop_header(token, state.filename, line);
+    [indexnames, guard, setexpr] = local_loop_header(lhs, rhs, state.filename, line);
 
     try
         values = macro(setexpr).eval(env);
@@ -523,19 +523,10 @@ function bound = local_bound(indexnames, value)
     end
 end
 
-function [indexnames, guard, setexpr] = local_loop_header(token, filename, line)
+function [indexnames, guard, setexpr] = local_loop_header(lhs, rhs, filename, line)
 % Split a @#for header into its index names, its index set and its optional when-guard.
-    lhs = strtrim(token{1});
-    rhs = strtrim(token{2});
-
-    guard = '';
-    position = regexp(rhs, '\s+when\s+', 'once');
-    if ~isempty(position)
-        parts = regexp(rhs, '\s+when\s+', 'split', 'once');
-        rhs = strtrim(parts{1});
-        guard = strtrim(parts{2});
-    end
-    setexpr = rhs;
+    lhs = strtrim(lhs);
+    [setexpr, guard] = local_split_keyword(strtrim(rhs), 'when');
 
     if lhs(1) == '(' && lhs(end) == ')'
         indexnames = strtrim(strsplit(lhs(2:end-1), ','));
@@ -547,6 +538,55 @@ function [indexnames, guard, setexpr] = local_loop_header(token, filename, line)
             error('modfile:expand_macros:badLoop', '%s (line %u): "%s" is not a valid loop index.', filename, line, indexnames{i})
         end
     end
+end
+
+function [before, after, found] = local_split_keyword(str, word)
+% Split a macro expression at the first occurrence of a keyword outside any bracket.
+%
+% A regexp on the whole line would do, were it not for the comprehensions: the index set of
+% a @#for may be one, and it carries an 'in' and possibly a 'when' of its own inside its
+% brackets. Only what stands at the outer level belongs to the loop itself.
+    before = str;
+    after = '';
+    found = false;
+    depth = 0;
+    quoted = false;
+    n = length(word);
+    i = 1;
+    while i <= length(str)
+        c = str(i);
+        if quoted
+            if c == '\'
+                i = i + 2;
+                continue
+            end
+            quoted = c ~= '"';
+            i = i + 1;
+            continue
+        end
+        switch c
+          case '"'
+            quoted = true;
+          case {'(', '['}
+            depth = depth + 1;
+          case {')', ']'}
+            depth = depth - 1;
+          otherwise
+            if depth == 0 && strncmp(str(i:end), word, n) && local_standalone(str, i, n)
+                before = strtrim(str(1:i-1));
+                after = strtrim(str(i+n:end));
+                found = true;
+                return
+            end
+        end
+        i = i + 1;
+    end
+end
+
+function tf = local_standalone(str, i, n)
+% Whether the word at str(i:i+n-1) stands on its own rather than inside a longer name.
+    isword = @(c) isletter(c) || c == '_' || (c >= '0' && c <= '9');
+    tf = (i == 1 || ~isword(str(i-1))) && (i + n > length(str) || ~isword(str(i+n)));
 end
 
 function env = local_bind(env, indexnames, value, filename, line)

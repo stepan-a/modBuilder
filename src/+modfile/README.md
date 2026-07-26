@@ -59,7 +59,7 @@ with stay visible instead of disappearing into the expansion:
 
 ```matlab
 % Macro variables
-Countries = {'US', 'EA'};
+Countries = macroarray('US', 'EA');
 OpenEconomy = true;
 ```
 
@@ -91,8 +91,13 @@ The expression engine lives in `src/@macro/` and covers the operators, the type
 system (real, boolean, string, tuple, array), the set operations, ranges,
 indexing, the casts, the kind predicates and the built-in functions.
 
-Not supported, and reported rather than mis-expanded: comprehensions
-(`[x for x in A when cond]`), `@#echomacrovars`, multi-line and nested `@{...}`.
+Comprehensions are supported in all three of their forms, `[expr for i in set]`,
+`[i in set when cond]` and the two combined. One may serve as the index set of a
+`@#for`, whose own `when` guard is then told from the comprehension's by
+standing outside the brackets.
+
+Not supported, and reported rather than mis-expanded: `@#echomacrovars`,
+multi-line and nested `@{...}`.
 
 ### How the control flow is restored
 

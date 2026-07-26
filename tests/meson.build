@@ -291,6 +291,7 @@ listoftests = [
   'macro/t10_classes.m',
   'macro/t11_include.m',
   'macro/t12_cut.m',
+  'macro/t13_comprehensions.m',
   'errors/t41.m',
   'macro/t01_directives.m',
   'macro/t08_end_to_end.m',

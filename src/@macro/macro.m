@@ -40,7 +40,7 @@ classdef macro
 
     properties
         % Node kind: 'num', 'str', 'bool', 'sym', 'arr', 'tup', 'binop', 'unop',
-        % 'call', 'index' or 'range'.
+        % 'call', 'index', 'range' or 'comp'.
         type
 
         % Payload, whose shape depends on type: the number for 'num', the text for
@@ -144,6 +144,8 @@ classdef macro
                 v = macro.eval_index(o.children{1}.eval(env), o.children{2}.eval(env));
               case 'call'
                 v = macro.eval_call(o, env);
+              case 'comp'
+                v = macro.eval_comprehension(o, env);
               otherwise
                 error('macro:eval:badType', 'Unknown macro node type "%s".', o.type)
             end
@@ -216,6 +218,8 @@ classdef macro
                 [str, ok] = macro.call_to_matlab(o, env);
               case 'index'
                 [str, ok] = macro.index_to_matlab(o, env);
+              case 'comp'
+                [str, ok] = macro.comprehension_to_matlab(o, env);
               otherwise
                 str = '';
                 ok = false;
@@ -510,7 +514,7 @@ classdef macro
         function [node, pos] = parse_in(tokens, pos)
         % in_expr ::= colon_expr ['in' colon_expr]   (non-associative)
             [node, pos] = macro.parse_colon(tokens, pos);
-            if pos <= numel(tokens) && strcmp(tokens{pos}.type, 'identifier') && strcmp(tokens{pos}.value, 'in')
+            if macro.keyword(tokens, pos, 'in')
                 pos = pos + 1;
                 [right, pos] = macro.parse_colon(tokens, pos);
                 node = macro('binop', 'in', {node, right});
@@ -618,7 +622,7 @@ classdef macro
 
         function [node, pos] = parse_atom(tokens, pos)
         % atom ::= NUMBER | STRING | 'true' | 'false' | IDENT | IDENT '(' args ')'
-        %        | '(' expr (',' expr)* ')' | '[' [expr (',' expr)*] ']'
+        %        | '(' expr (',' expr)* ')' | bracket
             if pos > numel(tokens)
                 error('macro:parse:unexpectedEnd', 'Unexpected end of a macro expression.')
             end
@@ -656,11 +660,63 @@ classdef macro
                     node = macro('tup', [], items);
                 end
               case 'lbracket'
-                [items, pos] = macro.parse_list(tokens, pos+1, 'rbracket', ']');
-                node = macro('arr', [], items);
+                [node, pos] = macro.parse_bracket(tokens, pos+1);
               otherwise
                 error('macro:parse:unexpectedToken', 'Unexpected token "%s" in a macro expression.', macro.token_text(token))
             end
+        end % function
+
+        function [node, pos] = parse_bracket(tokens, pos)
+        % What an opening bracket starts, an array or a comprehension:
+        %
+        %   bracket ::= '[' [expr (',' expr)*] ']'
+        %             | '[' expr 'for' indices 'in' expr ['when' expr] ']'
+        %             | '[' indices 'in' expr 'when' expr ']'
+        %
+        % The three are told apart by what follows the first expression, which is where
+        % they first differ: a comma or the closing bracket for an array, 'for' for a
+        % comprehension that maps, 'when' for one that only filters.
+        %
+        % The filtering form is the mapping one with the index itself as the output
+        % expression. Dynare yields the element the index was bound to, and evaluating the
+        % index gives that same element back, a destructured tuple included, so the two
+        % agree; normalising here leaves one form to evaluate and one to render.
+            if pos <= numel(tokens) && strcmp(tokens{pos}.type, 'rbracket')
+                node = macro('arr', [], {});
+                pos = pos + 1;
+                return
+            end
+
+            [first, pos] = macro.parse_expr(tokens, pos);
+
+            if macro.keyword(tokens, pos, 'for')
+                [indices, pos] = macro.parse_indices(tokens, pos+1);
+                pos = macro.expect_keyword(tokens, pos, 'in');
+                [set, pos] = macro.parse_expr(tokens, pos);
+                children = {first, indices, set};
+            elseif macro.keyword(tokens, pos, 'when')
+                if ~strcmp(first.type, 'binop') || ~strcmp(first.value, 'in')
+                    error('macro:parse:badComprehension', 'A comprehension with no "for" must read "[index in set when condition]".')
+                end
+                indices = macro.as_indices(first.children{1});
+                children = {indices, indices, first.children{2}};
+            else
+                items = {first};
+                while pos <= numel(tokens) && strcmp(tokens{pos}.type, 'comma')
+                    [item, pos] = macro.parse_expr(tokens, pos+1);
+                    items{end+1} = item; %#ok<AGROW>
+                end
+                pos = macro.expect(tokens, pos, 'rbracket', ']');
+                node = macro('arr', [], items);
+                return
+            end
+
+            if macro.keyword(tokens, pos, 'when')
+                [guard, pos] = macro.parse_expr(tokens, pos+1);
+                children{end+1} = guard;
+            end
+            pos = macro.expect(tokens, pos, 'rbracket', ']');
+            node = macro('comp', [], children);
         end % function
 
     end % methods
@@ -692,6 +748,70 @@ classdef macro
                 error('macro:parse:missingToken', 'Expected "%s" in a macro expression.', symbol)
             end
             pos = pos + 1;
+        end % function
+
+        function tf = keyword(tokens, pos, word)
+        % Whether the token at pos is a given keyword. The tokeniser leaves 'in', 'for' and
+        % 'when' as identifiers, exactly as it leaves the function names, and the parser
+        % tells them apart from where they stand.
+            tf = pos <= numel(tokens) && strcmp(tokens{pos}.type, 'identifier') && strcmp(tokens{pos}.value, word);
+        end % function
+
+        function pos = expect_keyword(tokens, pos, word)
+        % Consume the expected keyword, or report what is missing.
+            if ~macro.keyword(tokens, pos, word)
+                error('macro:parse:missingToken', 'Expected "%s" in a macro expression.', word)
+            end
+            pos = pos + 1;
+        end % function
+
+        function [node, pos] = parse_indices(tokens, pos)
+        % The index of a comprehension: a name, or a parenthesised tuple of names.
+        %
+        % Parsed on its own rather than as an expression, because "c in A" would otherwise
+        % read as the membership operator and swallow the input set with it.
+            if pos <= numel(tokens) && strcmp(tokens{pos}.type, 'lparen')
+                names = {};
+                pos = pos + 1;
+                while true
+                    [name, pos] = macro.parse_name(tokens, pos);
+                    names{end+1} = name; %#ok<AGROW>
+                    if pos <= numel(tokens) && strcmp(tokens{pos}.type, 'comma')
+                        pos = pos + 1;
+                        continue
+                    end
+                    break
+                end
+                pos = macro.expect(tokens, pos, 'rparen', ')');
+                % A single parenthesised name is grouping, not a tuple, as everywhere else.
+                node = macro.ternary(isscalar(names), names{1}, macro('tup', [], names));
+                return
+            end
+            [node, pos] = macro.parse_name(tokens, pos);
+        end % function
+
+        function [node, pos] = parse_name(tokens, pos)
+        % A bare name, which is all an index may be.
+            if pos > numel(tokens) || ~strcmp(tokens{pos}.type, 'identifier') || ismember(tokens{pos}.value, {'true', 'false'})
+                error('macro:parse:badIndex', 'The index of a comprehension must be a name, or a tuple of names.')
+            end
+            node = macro('sym', tokens{pos}.value, {});
+            pos = pos + 1;
+        end % function
+
+        function node = as_indices(node)
+        % Accept an already parsed expression as an index, which the filtering form of a
+        % comprehension needs: its index is on the left of an 'in' and has been read as an
+        % expression before there was any way to know it was one.
+            switch node.type
+              case 'sym'
+                return
+              case 'tup'
+                if all(cellfun(@(c) strcmp(c.type, 'sym'), node.children))
+                    return
+                end
+            end
+            error('macro:parse:badIndex', 'The index of a comprehension must be a name, or a tuple of names.')
         end % function
 
         function type = punctuation(c)
@@ -1189,6 +1309,110 @@ classdef macro
             else
                 v = macro.mkarray(base.data(positions));
             end
+        end % function
+
+        function v = eval_comprehension(o, env)
+        % Evaluate a comprehension, following Dynare's Expressions.cc: the index runs over
+        % the input set, the guard decides which iterations contribute, and the output
+        % expression is what each of them contributes.
+        %
+        % The index is bound in a copy of the environment and does not outlive the
+        % comprehension. Dynare binds it in the enclosing one and leaves it there, which
+        % only tells the two apart in a file reading the index afterwards -- where the
+        % value would be whatever the last iteration happened to bind.
+            set = o.children{3}.eval(env);
+            if ~strcmp(set.kind, 'array')
+                error('macro:eval_comprehension:typeError', 'The input set of a comprehension must be an array, not a %s.', set.kind)
+            end
+            items = {};
+            for i = 1:numel(set.data)
+                inner = macro.bind_index(o.children{2}, set.data{i}, env);
+                if numel(o.children) > 3 && ~macro.truth(o.children{4}.eval(inner))
+                    continue
+                end
+                items{end+1} = o.children{1}.eval(inner); %#ok<AGROW>
+            end
+            v = macro.mkarray(items);
+        end % function
+
+        function env = bind_index(indices, value, env)
+        % Bind the index of a comprehension to one element of the input set, destructuring
+        % a tuple when there are several indices.
+            if strcmp(indices.type, 'sym')
+                env.vars(string(indices.value)) = value;
+                return
+            end
+            if ~strcmp(value.kind, 'tuple') || numel(value.data) ~= numel(indices.children)
+                error('macro:eval_comprehension:typeError', 'A comprehension over %u indices needs an input set of tuples of %u element(s).', numel(indices.children), numel(indices.children))
+            end
+            for i = 1:numel(indices.children)
+                env.vars(string(indices.children{i}.value)) = value.data{i};
+            end
+        end % function
+
+        function [str, ok] = comprehension_to_matlab(o, env)
+        % Render a comprehension as a call to filter, to map, or to both.
+        %
+        % Worth doing rather than declining, because the evaluated literal would freeze the
+        % relation between the two settings: a script where the input set is a variable
+        % should still answer the comprehension when that variable is edited.
+        %
+        % The body renders in an environment where the index is bound to the first element
+        % of the input set, since what a subexpression renders to depends on the kinds it
+        % works on. That is only sound when the elements all have the same kind, and a set
+        % mixing kinds is declined rather than rendered from whichever came first.
+            indices = o.children{2};
+            if ~strcmp(indices.type, 'sym')
+                % Destructuring would have to rewrite the components of the index into the
+                % components of the argument of the anonymous function.
+                [str, ok] = macro.decline();
+                return
+            end
+
+            [set, ok] = o.children{3}.to_matlab(env);
+            inner = macro.bind_first(indices, o.children{3}, env);
+            if ~ok || isempty(inner)
+                [str, ok] = macro.decline();
+                return
+            end
+
+            str = set;
+            if numel(o.children) > 3
+                [guard, ok] = o.children{4}.to_matlab(inner);
+                if ~ok
+                    [str, ok] = macro.decline();
+                    return
+                end
+                str = sprintf('filter(%s, @(%s) %s)', str, indices.value, guard);
+            end
+
+            % The filtering form gives back the elements themselves, so it is a filter and
+            % nothing else; anything else the index maps to is a map on top.
+            if strcmp(o.children{1}.type, 'sym') && strcmp(o.children{1}.value, indices.value)
+                return
+            end
+            [body, ok] = o.children{1}.to_matlab(inner);
+            if ~ok
+                [str, ok] = macro.decline();
+                return
+            end
+            str = sprintf('map(%s, @(%s) %s)', str, indices.value, body);
+        end % function
+
+        function env = bind_first(indices, set, env)
+        % The environment the body of a comprehension renders in, or empty when there is
+        % nothing sound to render it from.
+            try
+                values = set.eval(env);
+            catch
+                env = [];
+                return
+            end
+            if ~strcmp(values.kind, 'array') || isempty(values.data) || ~all(cellfun(@(x) strcmp(x.kind, values.data{1}.kind), values.data))
+                env = [];
+                return
+            end
+            env.vars(string(indices.value)) = values.data{1};
         end % function
 
         function check_bounds(positions, n)

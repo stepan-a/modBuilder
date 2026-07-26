@@ -104,6 +104,28 @@ classdef macroarray < macrolist
             c = mtimes(a, b);
         end % function
 
+        function c = map(o, f)
+        % The array of f applied to every element, which is what a comprehension gives.
+        %
+        % EXAMPLES:
+        % map(macroarray(1, 2, 3), @(i) i^2)         % [1, 4, 9]
+            items = cellfun(f, cell(o), 'UniformOutput', false);
+            c = macroarray(items{:});
+        end % function
+
+        function c = filter(o, predicate)
+        % The elements the predicate keeps, in the order they came in.
+        %
+        % The condition of a comprehension may be a real as well as a boolean, as it may in
+        % Dynare, which is what logical() is for here.
+        %
+        % EXAMPLES:
+        % filter(macroarray('US', 'EA'), @(c) ~strcmp(c, 'EA'))     % [US]
+            items = cell(o);
+            items = items(cellfun(@(x) logical(predicate(x)), items));
+            c = macroarray(items{:});
+        end % function
+
     end % methods
 
     methods (Static, Access = private)
