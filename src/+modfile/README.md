@@ -86,6 +86,8 @@ Supported: `@#define` (variables and functions), `@#if` / `@#elseif` / `@#else` 
 destructuring, `when` guard), `@#include`, `@#includepath`, `@#echo`, `@#error`,
 and `@{expr}` substitution. `@#echo` and `@#error` both take an expression rather
 than a literal, and neither fires from a branch that is not taken. `Defines=` is the equivalent of Dynare's `-D`.
+`@#echomacrovars`, in both its forms, is accepted and does nothing: every macro
+variable is a local of the generated script, which is where to look at it.
 
 The expression engine lives in `src/@macro/` and covers the operators, the type
 system (real, boolean, string, tuple, array), the set operations, ranges,
@@ -96,8 +98,8 @@ Comprehensions are supported in all three of their forms, `[expr for i in set]`,
 `@#for`, whose own `when` guard is then told from the comprehension's by
 standing outside the brackets.
 
-Not supported, and reported rather than mis-expanded: `@#echomacrovars`,
-multi-line and nested `@{...}`.
+Not supported, and reported rather than mis-expanded: multi-line and nested
+`@{...}`.
 
 ### How the control flow is restored
 

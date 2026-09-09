@@ -244,7 +244,11 @@ function [out, env, info] = local_run(lines, env, info, state)
             i = i + 1;
 
           case 'echomacrovars'
-            modfile.warn('modfile:expand_macros:ignoredDirective', '%s (line %u): @#echomacrovars is a debugging aid and produces no output here.', state.filename, line.line);
+            % A debugging aid of the preprocessor run, with nothing to show here: every
+            % macro variable becomes a local of the generated script, where it can be
+            % inspected at leisure. The (save) form, which copies the values into
+            % options_.macrovars_line_N for the session Dynare runs the model in, is
+            % satisfied by the same locals.
             i = i + 1;
 
           case 'line'

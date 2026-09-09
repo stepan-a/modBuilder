@@ -117,6 +117,13 @@ assert(contains(message, 'line 3'), 'The message should name the line.');
 out = modfile.expand_macros(sprintf('@#define N = 1\n@#if N > 2\n@#error "boom"\n@#echo "noise"\n@#endif\nvar y;\n'));
 assert(strcmp(strtrim(out), 'var y;'), 'An inactive branch should not run @#error or @#echo.');
 
+% --- @#echomacrovars -------------------------------------------------------------------
+% Accepted in both its forms, silently: the macro variables are locals of the generated
+% script, so there is nothing to print and nothing to save.
+shown = evalc('out = modfile.expand_macros(sprintf(''@#define A = 1\n@#define f(x) = 2*x\n@#echomacrovars\n@#echomacrovars A f\n@#echomacrovars(save)\n@#echomacrovars(save) A\nvar y;\n''));');
+assert(isempty(shown), sprintf('@#echomacrovars should print nothing, got: %s', shown));
+assert(strcmp(strtrim(out), 'var y;'), '@#echomacrovars should contribute nothing to the expansion.');
+
 % --- Function macros -------------------------------------------------------------------
 out = modfile.expand_macros(sprintf('@#define f(x) = 2*x\n@#define n = f(3)\nvar y_@{n};\n'));
 assert(contains(out, 'var y_6;'), 'A function macro should be applied.');
