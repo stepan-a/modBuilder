@@ -98,8 +98,9 @@ Comprehensions are supported in all three of their forms, `[expr for i in set]`,
 `@#for`, whose own `when` guard is then told from the comprehension's by
 standing outside the brackets.
 
-Not supported, and reported rather than mis-expanded: multi-line and nested
-`@{...}`.
+An `@{...}` may span several lines; the text after its closing brace then
+continues the line the `@{` opened, as in Dynare. One `@{...}` inside another is
+a syntax error for Dynare, and is reported as one here.
 
 ### How the control flow is restored
 

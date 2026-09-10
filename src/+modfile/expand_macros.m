@@ -106,10 +106,14 @@ function [out, env, info] = local_run(lines, env, info, state)
         directive = regexp(line.text, '^\s*@#\s*(\w+)\s*(.*)$', 'tokens', 'once');
 
         if isempty(directive)
+            % The lines an @{...} left open spans are gathered whether or not the branch
+            % is taken, since Dynare tokenises the whole file before it interprets any
+            % of it; they are evaluated only if it is.
+            [text, next] = local_join_evals(lines, i, state.filename);
             if local_active(frames)
-                out(end+1) = struct('text', local_substitute(line.text, env, state.filename, line.line), 'ctx', {local_context(state, frames)}); %#ok<AGROW>
+                out(end+1) = struct('text', local_substitute(text, env, state.filename, line.line), 'ctx', {local_context(state, frames)}); %#ok<AGROW>
             end
-            i = i + 1;
+            i = next;
             continue
         end
 
@@ -641,6 +645,40 @@ function [chunk, env, info, state] = local_include(keyword, rest, env, info, inn
 
     lines = local_lines(fileread(path));
     [chunk, env, info] = local_run(lines, env, info, inner);
+end
+
+function [text, next] = local_join_evals(lines, i, filename)
+% Gather the lines an @{...} spans when its closing brace is not on the line that opened
+% it, as Dynare does: the newlines inside the braces are dropped, so the text that follows
+% the closing brace lands on the line the @{ opened.
+    text = lines(i).text;
+    next = i + 1;
+    while local_unclosed(text)
+        if next > numel(lines)
+            error('modfile:expand_macros:unterminatedEval', '%s (line %u): "@{" is not closed.', filename, lines(i).line)
+        end
+        text = [text, newline, lines(next).text];
+        next = next + 1;
+    end
+end
+
+function tf = local_unclosed(text)
+% True when the text holds an @{ without its closing brace.
+    tf = false;
+    i = 1;
+    while true
+        start = strfind(text(i:end), '@{');
+        if isempty(start)
+            return
+        end
+        start = i + start(1) - 1;
+        stop = local_match_brace(text, start+1);
+        if isempty(stop)
+            tf = true;
+            return
+        end
+        i = stop + 1;
+    end
 end
 
 function out = local_substitute(text, env, filename, line)

@@ -23,6 +23,41 @@ assert(strcmp(info.defines{1,2}, 'true'), 'A valueless define should be true.');
 out = modfile.expand_macros(sprintf('@#define k = 2\nvar y_@{k};\nvarexo e;\n'));
 assert(count(out, newline) == 2, 'Directive lines are removed, text lines are kept.');
 
+% An @{...} may span lines. As in Dynare the newlines inside the braces are dropped, so
+% the text after the closing brace continues the line the @{ opened.
+[out, info] = modfile.expand_macros(sprintf('@#define C = ["US", "EA"]\nvar y_@{\n  C[1]\n} z_@{C[2]\n};\nvarexo e;\n'));
+assert(strcmp(out, sprintf('var y_US z_EA;\nvarexo e;\n')), sprintf('Unexpected expansion of a multi-line @{...}: %s', out));
+assert(numel(info.context) == 3, 'One context entry per output line, the joined line counting once.');
+
+out = modfile.expand_macros(sprintf('@#define C = ["US", "EA"]\n@#for c in C\nvar y_@{\nc};\n@#endfor\n'));
+assert(strcmp(strtrim(out), sprintf('var y_US;\nvar y_EA;')), 'A multi-line @{...} inside a loop body should expand per iteration.');
+
+% The lines are gathered even in a branch that is not taken, and evaluated only in one
+% that is.
+out = modfile.expand_macros(sprintf('@#if false\nvar y_@{\nUndefined\n};\n@#endif\nvar y;\n'));
+assert(strcmp(strtrim(out), 'var y;'), 'A multi-line @{...} in an inactive branch should be skipped whole.');
+
+thrown = '';
+message = '';
+try
+    modfile.expand_macros(sprintf('var y;\nvar z_@{\n1 +\n'));
+catch ME
+    thrown = ME.identifier;
+    message = ME.message;
+end
+assert(strcmp(thrown, 'modfile:expand_macros:unterminatedEval'), sprintf('Expected expand_macros:unterminatedEval, got "%s".', thrown));
+assert(contains(message, 'line 2'), 'The error should name the line that opened the @{.');
+
+% One @{...} inside another is a syntax error for Dynare, and is reported rather than
+% expanded.
+thrown = '';
+try
+    modfile.expand_macros(sprintf('@#define C = ["US", "EA"]\n@#define i = 1\nvar y_@{C[@{i}]};\n'));
+catch ME
+    thrown = ME.identifier;
+end
+assert(strcmp(thrown, 'modfile:expand_macros:badEval'), sprintf('Expected expand_macros:badEval, got "%s".', thrown));
+
 % --- @#if / @#elseif / @#else / @#endif ------------------------------------------------
 conditional = @(flag) modfile.expand_macros(sprintf('@#define Open = %s\n@#if Open\nyes\n@#else\nno\n@#endif\n', flag));
 assert(contains(conditional('true'), 'yes') && ~contains(conditional('true'), 'no'), 'The taken branch should survive.');
