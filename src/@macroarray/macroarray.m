@@ -45,6 +45,12 @@ classdef macroarray < macrolist
         %
         % REMARKS:
         % - To build one from a cell array, expand it: macroarray(items{:}).
+        % - A numeric vector as the only argument gives one element per entry: that is
+        %   how a generated script writes a range, macroarray(1:3). A vector is no value
+        %   of the macro language, so nothing else could be meant.
+            if isscalar(varargin) && isnumeric(varargin{1}) && ~isscalar(varargin{1})
+                varargin = num2cell(varargin{1});
+            end
             o@macrolist(varargin);
         end % function
 

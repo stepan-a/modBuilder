@@ -168,6 +168,45 @@ assert_id(@() macro('Missing').eval(env), 'macro:eval:undefinedVariable');
 assert_id(@() macro('1 + "a"').eval(env), 'macro:eval_binop:typeError');
 assert_id(@() macro('Countries[9]').eval(env), 'macro:eval_index:outOfBounds');
 
+% --- What Dynare's own macro-processor self-test checks ---------------------------------
+% inf and nan are numbers, rendered in lower case as the preprocessor does.
+assert(strcmp(value('inf'), 'inf') && strcmp(value('-inf'), '-inf') && strcmp(value('nan'), 'nan'), 'inf and nan are literals.');
+assert(strcmp(value('log(0) == -inf && 1/0 == inf'), 'true'), 'Arithmetic reaches the infinities.');
+assert(strcmp(value('5 < nan || 5 >= inf'), 'false'), 'Comparisons with nan and inf.');
+
+% Strings order by character code.
+assert(strcmp(value('"Aaaaaaaa" > "B" || "AA" != "AA"'), 'false'), 'String ordering is lexicographic by code.');
+
+% An index list may hold ranges, which are flattened into it.
+env.vars("Phrase") = macro.mkstring('La crise economique');
+value = @(expr) macro.tostring(macro(expr).eval(env)); % an anonymous function captures env when made
+assert(strcmp(value('Phrase[1,8,3,7,4,10,13,2,5,16,12,9,11,14,15,6,17:19]'), 'Le scenario comique'), 'A comma list of indices, with a range inside.');
+assert(strcmp(value('(1:5)[1:2, 4]'), '[1, 2, 4]'), 'A range in an index list is flattened.');
+
+% && and || short-circuit, so the right operand may be anything when it is not needed.
+assert(strcmp(value('true || "A"'), 'true') && strcmp(value('0 && "A"'), 'false'), 'Short-circuit evaluation.');
+
+% The bool cast of a string reads true and false in any case, and a number otherwise.
+assert(strcmp(value('(bool)"FaLse" || !(bool)"TRUE" || (bool)"0" || !(bool)"-3"'), 'false'), 'String to bool cast.');
+
+% Casts chain, and a real turns into a one-element array.
+assert(strcmp(value('[1] + (array)(real) "2"'), '[1, 2]'), 'Chained casts.');
+
+% Ranges with a negative, zero or overshooting step.
+assert(strcmp(value('-3:-1.5:3'), '[]') && strcmp(value('3:-1:-0.1'), '[3, 2, 1, 0]') && strcmp(value('1:0:1'), '[]') && strcmp(value('0:0'), '[0]') && strcmp(value('-1:5:-1'), '[-1]'), 'Range edge cases.');
+
+% A range renders as an array of the language, a subscript as a MATLAB vector.
+env.vars("N") = macro.mkreal(3);
+env.vars("Arr") = macro.mkarray({macro.mkreal(10), macro.mkreal(20), macro.mkreal(30), macro.mkreal(40)});
+render = @(expr) macro(expr).to_matlab(env);
+assert(strcmp(render('1:N'), 'macroarray(1:N)'), sprintf('A range should render as a macroarray, got %s.', render('1:N')));
+assert(strcmp(render('Arr[2:3]'), 'Arr(2:3)') && strcmp(render('Arr[1, 3:4]'), 'Arr([1, 3:4])') && strcmp(render('Arr[2]'), 'Arr{2}'), 'Subscripts render as MATLAB vectors.');
+
+% The casts of a string: real reads the number, bool has no MATLAB form and is declined.
+assert(strcmp(render('(real) "2"'), 'str2double(''2'')'), 'The real cast of a string reads it.');
+[~, ok] = macro('(bool) "FaLse"').to_matlab(env);
+assert(~ok, 'The bool cast of a string should be declined, so that the literal is emitted.');
+
 fprintf('t06_expressions.m: All tests passed\n');
 
 function str = local_render(tree, env)

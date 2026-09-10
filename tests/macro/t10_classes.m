@@ -43,6 +43,8 @@ assert(length(product) == 4, 'The Cartesian product has one element per pair.');
 assert(isa(product{1}, 'macrotuple'), 'Its elements are tuples.');
 assert(isequal(cell(product{1}), {1, 'x'}) && isequal(cell(product{4}), {2, 'y'}), 'Last index varies fastest.');
 
+assert(isequal(cell(macroarray(1:3)), {1, 2, 3}) && isempty(macroarray(3:1)) && isequal(cell(macroarray(5)), {5}), 'A numeric vector spreads into elements, as a range renders.');
+
 square = macroarray(1, 2) ^ 2;
 assert(length(square) == 4 && isequal(cell(square{2}), {1, 2}), 'The Cartesian power is the product of the array with itself.');
 cube = macroarray(1, 2) ^ 3;

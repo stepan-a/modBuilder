@@ -48,6 +48,10 @@ function [text, info] = expand_macros(text, filename, options)
 % - Directives inside a branch that is not taken are tracked for nesting but their
 %   expressions are not evaluated: such a branch may legitimately mention variables that
 %   only the other branch defines.
+% - A macro variable that is defined again is emitted under a fresh name, a_2, a_3, ...,
+%   and the renders that follow refer to that name. The script hoists the defines above
+%   the control flow that reads them, so reusing the name would hand every reader the
+%   last value.
     arguments
         text                  (1,:) char
         filename              (1,:) char = '<string>'
@@ -77,7 +81,7 @@ function [text, info] = expand_macros(text, filename, options)
             info.defines(end+1, :) = {seeded{i}, source};
         end
     end
-    state = struct('filename', filename, 'includepaths', {options.IncludePaths}, 'stack', {{filename}}, 'ctx', {modfile.macro_frame()}, 'force', options.Force);
+    state = struct('filename', filename, 'includepaths', {options.IncludePaths}, 'stack', {{filename}}, 'ctx', {modfile.macro_frame()}, 'force', options.Force, 'loopvars', {{}});
 
     lines = local_lines(text);
     [out, env, info] = local_run(lines, env, info, state);
@@ -87,8 +91,26 @@ end
 
 function lines = local_lines(text)
 % Split into lines, keeping their number, and carrying the source line of each.
+%
+% A directive line ending with \\ continues on the next one, as in Dynare's tokeniser,
+% where a // comment may still follow the backslashes. The continuation is folded into
+% the directive's line here, so that the scanner only ever sees whole directives.
     raw = strsplit(text, newline, 'CollapseDelimiters', false);
-    lines = struct('text', raw(:)', 'line', num2cell(1:numel(raw)));
+    numbers = 1:numel(raw);
+    k = 1;
+    while k < numel(raw)
+        if ~isempty(regexp(raw{k}, '^\s*@#', 'once'))
+            stripped = local_strip_comment(strtrim(raw{k}));
+            if endsWith(stripped, '\\')
+                raw{k} = [stripped(1:end-2), ' ', raw{k+1}];
+                raw(k+1) = [];
+                numbers(k+1) = [];
+                continue
+            end
+        end
+        k = k + 1;
+    end
+    lines = struct('text', raw(:)', 'line', num2cell(numbers));
 end
 
 function [out, env, info] = local_run(lines, env, info, state)
@@ -209,7 +231,7 @@ function [out, env, info] = local_run(lines, env, info, state)
 
           case 'define'
             if local_active(frames)
-                [env, info] = local_define(rest, env, info, state.filename, line.line);
+                [env, info] = local_define(rest, env, info, state, line.line);
             end
             i = i + 1;
 
@@ -397,8 +419,9 @@ function taken = local_condition(keyword, rest, env, filename, line)
     end
 end
 
-function [env, info] = local_define(rest, env, info, filename, line)
+function [env, info] = local_define(rest, env, info, state, line)
 % Handle @#define, in its variable and function forms.
+    filename = state.filename;
     token = regexp(rest, '^([A-Za-z_]\w*)\s*\(([^)]*)\)\s*=\s*(.*)$', 'tokens', 'once');
     if ~isempty(token)
         args = strtrim(strsplit(token{2}, ','));
@@ -412,8 +435,9 @@ function [env, info] = local_define(rest, env, info, filename, line)
         if isempty(regexp(name, '^[A-Za-z_]\w*$', 'once'))
             error('modfile:expand_macros:badDefine', '%s (line %u): cannot read the @#define "%s".', filename, line, rest)
         end
+        [env, emitted] = local_alias(env, info, name);
         env.vars(string(name)) = macro.mkbool(true);
-        info.defines(end+1, :) = {name, 'true'};
+        info.defines(end+1, :) = {emitted, 'true'};
         return
     end
 
@@ -428,14 +452,40 @@ function [env, info] = local_define(rest, env, info, filename, line)
     % Render the definition for the generated script. When the expression has no faithful
     % MATLAB form, fall back to the value it evaluated to, which is always renderable.
     [source, ok] = tree.to_matlab(env);
+    if ok && ~isempty(state.loopvars) && ~isempty(regexp(source, ['(?<![\w.])(' strjoin(state.loopvars, '|') ')(?!\w)'], 'once'))
+        % Inside a @#for the index is bound here but is no local of the script, whose
+        % defines are emitted flat, one per iteration: w = w + [elt] must render the
+        % value each iteration gave it rather than mention elt.
+        ok = false;
+    end
     if ~ok
         source = local_literal(value);
     end
 
+    % The source is rendered before the alias moves, so that b = b + 1 reads the b it had.
+    [env, emitted] = local_alias(env, info, name);
     env.vars(string(name)) = value;
     if ~isempty(source)
-        info.defines(end+1, :) = {name, source};
+        info.defines(end+1, :) = {emitted, source};
     end
+end
+
+function [env, emitted] = local_alias(env, info, name)
+% The name a define is emitted under. A macro variable may be redefined, and the script
+% hoists the defines above the control flow that reads them, so a second definition
+% cannot reuse the name: whatever read the first value would then see the last. It is
+% emitted as name_2, name_3, ... and what is rendered afterwards refers to that.
+    emitted = name;
+    if ~isKey(env.vars, string(name))
+        return
+    end
+    taken = [cellstr(keys(env.vars)); info.defines(:,1)];
+    k = 2;
+    while ismember(sprintf('%s_%u', name, k), taken)
+        k = k + 1;
+    end
+    emitted = sprintf('%s_%u', name, k);
+    env.alias(string(name)) = string(emitted);
 end
 
 function str = local_literal(v)
@@ -518,6 +568,7 @@ function [out, env, info] = local_for(header, body, env, info, state, line)
         end
         iteration = iteration + 1;
         inner = state;
+        inner.loopvars = [state.loopvars, indexnames];
         inner.ctx(end+1) = modfile.macro_frame('for', modfile.construct_id(state.filename, line), iteration, '', false, local_bound(indexnames, values.data{k}), indexnames, line);
         [chunk, env, info] = local_run(body, env, info, inner);
         out = [out, chunk]; %#ok<AGROW>

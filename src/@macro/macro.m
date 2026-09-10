@@ -137,7 +137,18 @@ classdef macro
               case 'unop'
                 v = macro.eval_unop(o.value, o.children{1}.eval(env));
               case 'binop'
-                v = macro.eval_binop(o.value, o.children{1}.eval(env), o.children{2}.eval(env));
+                if any(strcmp(o.value, {'&&', '||'}))
+                    % Short-circuit, as in Dynare: the right operand is not evaluated
+                    % when the left one settles the result, so true || "A" is true.
+                    left = macro.truth(o.children{1}.eval(env));
+                    if (strcmp(o.value, '&&') && ~left) || (strcmp(o.value, '||') && left)
+                        v = macro.mkbool(left);
+                    else
+                        v = macro.mkbool(macro.truth(o.children{2}.eval(env)));
+                    end
+                else
+                    v = macro.eval_binop(o.value, o.children{1}.eval(env), o.children{2}.eval(env));
+                end
               case 'range'
                 v = macro.eval_range(cellfun(@(c) c.eval(env), o.children, 'UniformOutput', false));
               case 'index'
@@ -197,13 +208,22 @@ classdef macro
               case 'bool'
                 str = macro.ternary(o.value, 'true', 'false');
               case 'sym'
-                str = o.value;
+                if isKey(env.alias, string(o.value))
+                    % A redefined variable renders as the name its latest definition
+                    % was emitted under.
+                    str = char(env.alias(string(o.value)));
+                else
+                    str = o.value;
+                end
               case {'arr', 'tup'}
                 [parts, ok] = macro.children_to_matlab(o.children, env);
                 str = macro.render_list(o, parts, env);
               case 'range'
+                % A range is an array of the language, so it renders as one: a bare a:b
+                % would be a double vector, which map, filter and the kind predicates do
+                % not recognise. macroarray spreads a numeric vector into its elements.
                 [parts, ok] = macro.children_to_matlab(o.children, env);
-                str = strjoin(parts, ':');
+                str = sprintf('macroarray(%s)', strjoin(parts, ':'));
               case 'unop'
                 [inner, ok] = o.children{1}.to_matlab(env);
                 switch o.value
@@ -314,14 +334,18 @@ classdef macro
         %                        value of each field is converted with macro.fromnative
         %
         % OUTPUTS:
-        % - env       [struct]   fields 'vars' and 'funcs', both dictionaries, and 'base',
-        %                        empty for the environment a file is read in and, in the
-        %                        scope a function call opens, that global environment
+        % - env       [struct]   fields 'vars' and 'funcs', both dictionaries; 'base', empty
+        %                        for the environment a file is read in and, in the scope a
+        %                        function call opens, that global environment; and 'alias',
+        %                        a dictionary from a redefined variable to the name its
+        %                        latest definition is emitted under (see the REMARKS of
+        %                        modfile.expand_macros)
             arguments
                 defines struct = struct()
             end
             env = struct('vars', configureDictionary('string', 'struct'), ...
-                         'funcs', configureDictionary('string', 'struct'), 'base', []);
+                         'funcs', configureDictionary('string', 'struct'), 'base', [], ...
+                         'alias', configureDictionary('string', 'string'));
             keys = fieldnames(defines);
             for i = 1:numel(keys)
                 env.vars(string(keys{i})) = macro.fromnative(defines.(keys{i}));
@@ -623,9 +647,17 @@ classdef macro
             [node, pos] = macro.parse_atom(tokens, pos);
             while pos <= numel(tokens) && strcmp(tokens{pos}.type, 'lbracket')
                 pos = pos + 1;
-                [idx, pos] = macro.parse_expr(tokens, pos);
-                pos = macro.expect(tokens, pos, 'rbracket', ']');
-                node = macro('index', [], {node, idx});
+                [idx, pos] = macro.parse_list(tokens, pos, 'rbracket', ']');
+                if isempty(idx)
+                    error('macro:parse:missingToken', 'Expected an index in a macro expression.')
+                end
+                % Dynare reads y[1:2, 2] as the index array [[1, 2], 2], which Variable::eval
+                % flattens when subscripting. A single index stays the expression it is.
+                if isscalar(idx)
+                    node = macro('index', [], {node, idx{1}});
+                else
+                    node = macro('index', [], {node, macro('arr', [], idx)});
+                end
             end
         end % function
 
@@ -650,6 +682,10 @@ classdef macro
                     pos = pos + 1;
                   case 'false'
                     node = macro('bool', false, {});
+                    pos = pos + 1;
+                  case {'inf', 'nan'}
+                    % Numbers in Dynare's tokeniser, alongside the digits.
+                    node = macro('num', str2double(token.value), {});
                     pos = pos + 1;
                   otherwise
                     if pos < numel(tokens) && strcmp(tokens{pos+1}.type, 'lparen')
@@ -919,8 +955,13 @@ classdef macro
 
         function str = render_real(x)
         % Render a real the way Dynare's macro processor does: an integer without a
-        % decimal point, anything else with enough digits to survive a round trip.
-            if x == fix(x) && abs(x) < 1e15
+        % decimal point, anything else with enough digits to survive a round trip, and
+        % the non-finite values in lower case as C++ formats them.
+            if isnan(x)
+                str = 'nan';
+            elseif isinf(x)
+                str = macro.ternary(x > 0, 'inf', '-inf');
+            elseif x == fix(x) && abs(x) < 1e15
                 str = sprintf('%d', x);
             else
                 str = sprintf('%.15g', x);
@@ -1073,8 +1114,39 @@ classdef macro
             if strcmp(kinds{2}, 'real')
                 str = sprintf('%s{%s}', parts{1}, parts{2});
             else
-                % A range of indices gives back a list, not its contents.
-                str = sprintf('%s(%s)', parts{1}, parts{2});
+                % A range of indices gives back a list, not its contents. The positions
+                % are a MATLAB subscript, so they render as a numeric vector rather than
+                % as the macroarray the same range is elsewhere.
+                [positions, ok] = macro.positions_to_matlab(o.children{2}, env);
+                if ~ok
+                    [str, ok] = macro.decline();
+                    return
+                end
+                str = sprintf('%s(%s)', parts{1}, positions);
+            end
+        end % function
+
+        function [str, ok] = positions_to_matlab(node, env)
+        % Render an index list as a MATLAB subscript: a range as a:b, a list of numbers
+        % and ranges as [..], anything else is declined.
+            ok = true;
+            switch node.type
+              case 'num'
+                str = macro.render_real(node.value);
+              case 'range'
+                [parts, ok] = macro.children_to_matlab(node.children, env);
+                str = strjoin(parts, ':');
+              case 'arr'
+                items = cell(1, numel(node.children));
+                for i = 1:numel(node.children)
+                    [items{i}, ok] = macro.positions_to_matlab(node.children{i}, env);
+                    if ~ok
+                        break
+                    end
+                end
+                str = sprintf('[%s]', strjoin(items, ', '));
+              otherwise
+                [str, ok] = macro.decline();
             end
         end % function
 
@@ -1118,9 +1190,20 @@ classdef macro
               case 'isempty'
                 str = sprintf('isempty(%s)', parts{1});
               case 'real'
-                str = sprintf('double(%s)', parts{1});
+                if strcmp(macro.kind_of(o.children{1}, env), 'string')
+                    % double('2') would give the character code.
+                    str = sprintf('str2double(%s)', parts{1});
+                else
+                    str = sprintf('double(%s)', parts{1});
+                end
               case 'bool'
-                str = sprintf('logical(%s)', parts{1});
+                if strcmp(macro.kind_of(o.children{1}, env), 'string')
+                    % true, false or a number, read the way String::cast_bool does: no
+                    % MATLAB one-liner says it, so the evaluated literal is emitted.
+                    [str, ok] = macro.decline();
+                else
+                    str = sprintf('logical(%s)', parts{1});
+                end
               case {'isboolean', 'isreal', 'isstring', 'isarray', 'istuple'}
                 [str, ok] = macro.predicate_to_matlab(name, parts{1}, o.children{1}, env);
               case 'string'
@@ -1329,7 +1412,19 @@ classdef macro
               case 'real'
                 positions = idx.data;
               case 'array'
-                positions = cellfun(@(x) x.data, idx.data);
+                % One level of nesting is flattened, as Dynare's Variable::eval does for
+                % y[1:2, 2], which indexes with [1, 2, 2].
+                positions = zeros(1, 0);
+                for i = 1:numel(idx.data)
+                    item = idx.data{i};
+                    if strcmp(item.kind, 'real')
+                        positions(end+1) = item.data; %#ok<AGROW>
+                    elseif strcmp(item.kind, 'array') && all(cellfun(@(x) strcmp(x.kind, 'real'), item.data))
+                        positions = [positions, cellfun(@(x) x.data, item.data)]; %#ok<AGROW>
+                    else
+                        error('macro:eval_index:typeError', 'An index must be a real or an array of reals, not a %s.', item.kind)
+                    end
+                end
               otherwise
                 error('macro:eval_index:typeError', 'An index must be a real or an array of reals, not a %s.', idx.kind)
             end
@@ -1511,7 +1606,23 @@ classdef macro
             a = args{1};
             switch name
               case 'bool'
-                v = macro.mkbool(macro.truth(a));
+                if strcmp(a.kind, 'string')
+                    % As String::cast_bool: true and false in any case, else a number,
+                    % true when it is not zero.
+                    if strcmpi(a.data, 'true')
+                        v = macro.mkbool(true);
+                    elseif strcmpi(a.data, 'false')
+                        v = macro.mkbool(false);
+                    else
+                        number = str2double(a.data);
+                        if isnan(number)
+                            error('macro:eval_cast:typeError', '"%s" cannot be converted to a boolean.', a.data)
+                        end
+                        v = macro.mkbool(number ~= 0);
+                    end
+                else
+                    v = macro.mkbool(macro.truth(a));
+                end
               case 'real'
                 switch a.kind
                   case 'real'

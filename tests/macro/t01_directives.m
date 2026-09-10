@@ -66,6 +66,11 @@ assert(strcmp(strtrim(out), sprintf('var y_a//b_3;\nvar w_1;\nvar w_2;')), sprin
 assert(strcmp(info.defines{1,2}, '3') && strcmp(info.defines{2,2}, '''a//b'''), 'The comment should not reach the rendered define.');
 assert(strcmp(info.conditionals(1).conds{1}, '(N > 2)'), 'The comment should not reach the rendered condition.');
 
+% A directive line ending with \\ continues on the next one, and a // comment may follow
+% the backslashes.
+out = modfile.expand_macros(sprintf('@#define L = [1, \\\\\n   2] // two\n@#if L != [1, 2] \\\\ // never\n   || false\n@#error "continuation"\n@#endif\nvar y_@{L[2]};\n'));
+assert(strcmp(strtrim(out), 'var y_2;'), sprintf('Unexpected expansion with continued directives: %s', out));
+
 % --- @#if / @#elseif / @#else / @#endif ------------------------------------------------
 conditional = @(flag) modfile.expand_macros(sprintf('@#define Open = %s\n@#if Open\nyes\n@#else\nno\n@#endif\n', flag));
 assert(contains(conditional('true'), 'yes') && ~contains(conditional('true'), 'no'), 'The taken branch should survive.');
@@ -175,6 +180,21 @@ assert(contains(out, 'var y_6;'), 'A function macro should be applied.');
 % never the formals of the function that called it. This is Dynare's own self-test.
 out = modfile.expand_macros(sprintf('@#define a = 1\n@#define f(x) = x + a\n@#define a = 2\n@#define g(a) = f(1) + a\n@#define a = 3\n@#define h(a) = g(2) + a\nvar y_@{f(1)}_@{g(2)}_@{h(1)};\n'));
 assert(contains(out, 'var y_4_6_7;'), sprintf('Function scoping should match Dynare, got: %s', out));
+
+% --- A define inside a loop ------------------------------------------------------------
+% The loop index is no local of the generated script, whose defines are emitted flat, one
+% per iteration: such a define renders the value it took rather than mention the index.
+[out, info] = modfile.expand_macros(sprintf('@#define w = [1]\n@#for elt in [2, 3]\n@#define w = w + [elt]\n@#endfor\nvar y_@{w[3]};\n'));
+assert(contains(out, 'var y_3;'), 'The define should accumulate over the loop.');
+assert(~any(contains(info.defines(:,2), 'elt')), sprintf('A define in a loop should not mention the index, got: %s', strjoin(info.defines(:,2), ' | ')));
+
+% --- A redefined variable -------------------------------------------------------------
+% The script hoists the defines above the control flow that reads them, so a later
+% definition is emitted under a fresh name, and what is rendered afterwards refers to it.
+[out, info] = modfile.expand_macros(sprintf('@#define a = 1\n@#if a != 1\n@#error "first"\n@#endif\n@#define a = a + 1\n@#if a != 2\n@#error "second"\n@#endif\nvar y_@{a};\n'));
+assert(contains(out, 'var y_2;'), 'The redefinition should take effect.');
+assert(isequal(info.defines(:,1)', {'a', 'a_2'}) && strcmp(info.defines{2,2}, '(a + 1)'), sprintf('Expected a and a_2 = (a + 1), got: %s', strjoin(strcat(info.defines(:,1)', {' = '}, info.defines(:,2)'), ', ')));
+assert(strcmp(info.conditionals(2).conds{1}, '(a_2 ~= 2)'), sprintf('The later condition should read the alias, got: %s', info.conditionals(2).conds{1}));
 
 % --- @#include -------------------------------------------------------------------------
 fid = fopen('t01_included.inc', 'w');

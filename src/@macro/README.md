@@ -200,6 +200,8 @@ the rendered MATLAB computes what the macro engine computes:
 | `A & B` | `(A & B)` | intersection, left operand's order |
 | `A * B` | `(A * B)` | Cartesian product, elements are tuples |
 | `A ^ n` | `(A ^ n)` | Cartesian power |
+| `1:N` | `macroarray(1:N)` | a range is an array, and a bare vector would not answer `isarray` |
+| `A[2:3]`, `A[1, 3:4]` | `A(2:3)`, `A([1, 3:4])` | a subscript stays a MATLAB vector |
 | `x in A` | `ismember(x, A)` | |
 | `A[i]` | `A{i}` | an element |
 | `A[i:j]` | `A(i:j)` | a sub-list |
