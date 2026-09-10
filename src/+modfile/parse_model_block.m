@@ -85,12 +85,14 @@ function [tags, remainder] = local_take_tags(chunk, filename, line)
     tags = struct();
     s = strtrim(chunk);
     while ~isempty(s) && s(1) == '['
-        stop = find(s == ']', 1);
+        % A value may hold a comma or a bracket, name='FOC wages, eq. (2)', so the group
+        % is closed by the first ']' outside quotes and cut at the commas outside them.
+        [stop, cuts] = local_scan_tag_group(s);
         if isempty(stop)
             error('modfile:parse_model_block:unterminatedTag', '%s (line %u): tag group is not closed.', filename, line)
         end
         inner = s(2:stop-1);
-        entries = regexp(inner, '[^,]+', 'match');
+        entries = local_split_at(inner, cuts - 1);
         for i = 1:numel(entries)
             entry = strtrim(entries{i});
             if isempty(entry)
@@ -109,6 +111,34 @@ function [tags, remainder] = local_take_tags(chunk, filename, line)
         s = strtrim(s(stop+1:end));
     end
     remainder = s;
+end
+
+function [stop, cuts] = local_scan_tag_group(s)
+% The position of the ']' closing the tag group s starts with, and of the commas that
+% separate its entries, both taken outside single quotes.
+    stop = [];
+    cuts = [];
+    quoted = false;
+    for i = 2:length(s)
+        c = s(i);
+        if c == ''''
+            quoted = ~quoted;
+        elseif ~quoted && c == ','
+            cuts(end+1) = i; %#ok<AGROW>
+        elseif ~quoted && c == ']'
+            stop = i;
+            return
+        end
+    end
+end
+
+function parts = local_split_at(text, cuts)
+% Split a text at the given positions, dropping the separators.
+    bounds = [0, cuts, length(text) + 1];
+    parts = cell(1, numel(bounds) - 1);
+    for k = 1:numel(parts)
+        parts{k} = text(bounds(k)+1:bounds(k+1)-1);
+    end
 end
 
 function s = local_flatten(s)

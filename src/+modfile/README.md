@@ -405,3 +405,7 @@ cost that prefers, in order, one the static residual pins down, one it holds as
 a factor, and one only the leads and lags carry. The matching is maximal first,
 so the cheap edges give way where a perfect pairing needs them to. A `name` tag
 that is a declared variable settles the association before any of this.
+
+A tag value may hold a comma or a bracket, `[name='FOC wages, eq. (2)']`: the
+group is closed by the first `]` outside quotes and cut at the commas outside
+them.
