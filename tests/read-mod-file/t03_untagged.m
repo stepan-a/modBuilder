@@ -61,4 +61,18 @@ catch ME
 end
 assert(thrown, 'Expected name_equations:ambiguousEquation.');
 
+% --- Equations the steady state does not settle -----------------------------------------
+% junk = 0.9*junk(+1), 0 = lambda, a bare x and Y/Y(-1) = g pin nothing at the steady
+% state under the non-zero convention, yet each is plainly the equation of one variable.
+% What the static matching leaves is paired on the dynamic equation, left-hand side first.
+source3 = 't03_dynamic.mod';
+fid = fopen(source3, 'w');
+fprintf(fid, 'var junk lambda x Y g y;\nvarexo e;\nparameters rho;\nrho = 0.9;\n');
+fprintf(fid, 'model;\njunk = 0.9*junk(+1);\n0 = lambda;\nx;\nY/Y(-1) = g;\ng = rho*y;\ny = rho*y(-1) + e;\nend;\n');
+fclose(fid);
+cleanup3 = onCleanup(@() delete(source3));
+m3 = modBuilder(source3);
+keyof = @(start) m3.equations{startsWith(strtrim(m3.equations(:,2)), start), 1};
+assert(strcmp(keyof('junk'), 'junk') && strcmp(keyof('0 = lambda'), 'lambda') && strcmp(keyof('Y/Y(-1)'), 'Y') && strcmp(keyof('g ='), 'g') && any(strcmp(m3.equations(:,1), 'x')), sprintf('Unexpected keys: %s', strjoin(m3.equations(:,1)', ' ')));
+
 fprintf('t03_untagged.m: All tests passed\n');

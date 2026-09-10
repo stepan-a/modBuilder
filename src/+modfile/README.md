@@ -394,6 +394,14 @@ Equations are kept verbatim and never re-rendered through `ast`, because
 `ast.string()` normalises spacing and a `write()` of the result would no longer
 match the source.
 
-Equation-to-variable association reuses `modBuilder.matchequations`, the same
-bipartite matcher the Dynare-based constructor uses, so both entry points agree
-including on their diagnostics.
+Equation-to-variable association is a minimum-cost bipartite matching, as in
+`modBuilder.matchequations`, the matcher of the Dynare-based constructor. That
+matcher answers a steady-state question, which variable an equation pins down,
+and admits an edge only when the variable survives the static residual without
+factoring out of it. The reader asks which variable an equation is *for*, which
+has an answer for `junk = 0.9*junk(+1)`, `0 = lambda`, a bare `x` or
+`Y/Y(-1) = g` as well: every variable of the dynamic equation is admitted, at a
+cost that prefers, in order, one the static residual pins down, one it holds as
+a factor, and one only the leads and lags carry. The matching is maximal first,
+so the cheap edges give way where a perfect pairing needs them to. A `name` tag
+that is a declared variable settles the association before any of this.
