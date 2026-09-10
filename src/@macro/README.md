@@ -64,7 +64,8 @@ unary   ::= ('-'|'+'|'!') unary | power
 power   ::= postfix ['^' unary]                    (right-associative)
 postfix ::= atom ('[' expr ']')*
 atom    ::= NUMBER | STRING | 'true' | 'false' | IDENT | IDENT '(' args ')'
-          | '(' expr (',' expr)* ')' | bracket
+          | '(' expr (',' expr)* ')' | '(' CAST ')' unary | bracket
+CAST    ::= 'bool' | 'real' | 'string' | 'tuple' | 'array'    the C-style spelling of a cast
 bracket ::= '[' [expr (',' expr)*] ']'                      an array
           | '[' expr 'for' indices 'in' expr ['when' expr] ']'
           | '[' indices 'in' expr 'when' expr ']'
@@ -85,6 +86,7 @@ Following `preprocessor/src/macro/Expressions.cc`:
 | `["US","EA"] \| ["EA","JP"]` | `[US, EA, JP]` — union |
 | `["US","EA"] & ["EA","JP"]` | `[EA]` — intersection |
 | `[1,2] * ["a","b"]` | `[(1, a), (1, b), (2, a), (2, b)]` — Cartesian product |
+| `[1,2]^2` | `[(1, 1), (1, 2), (2, 1), (2, 2)]` — Cartesian power |
 | `"EA" in Countries` | `true` |
 
 ## Comprehensions
@@ -194,6 +196,7 @@ the rendered MATLAB computes what the macro engine computes:
 | `A \| B` | `(A \| B)` | union, order of first appearance |
 | `A & B` | `(A & B)` | intersection, left operand's order |
 | `A * B` | `(A * B)` | Cartesian product, elements are tuples |
+| `A ^ n` | `(A ^ n)` | Cartesian power |
 | `x in A` | `ismember(x, A)` | |
 | `A[i]` | `A{i}` | an element |
 | `A[i:j]` | `A(i:j)` | a sub-list |

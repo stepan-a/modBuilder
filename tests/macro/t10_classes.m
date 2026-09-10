@@ -43,6 +43,12 @@ assert(length(product) == 4, 'The Cartesian product has one element per pair.');
 assert(isa(product{1}, 'macrotuple'), 'Its elements are tuples.');
 assert(isequal(cell(product{1}), {1, 'x'}) && isequal(cell(product{4}), {2, 'y'}), 'Last index varies fastest.');
 
+square = macroarray(1, 2) ^ 2;
+assert(length(square) == 4 && isequal(cell(square{2}), {1, 2}), 'The Cartesian power is the product of the array with itself.');
+cube = macroarray(1, 2) ^ 3;
+assert(length(cube) == 8 && numel(cell(cube{8})) == 3, 'A higher power keeps flat tuples.');
+assert(isequal(cell(macroarray(1, 2) ^ 1), {1, 2}), 'The first power is the array itself.');
+
 assert(ismember('EA', a) && ~ismember('FR', a), 'ismember is what "in" asks.');
 assert(sum(macroarray(1, 2, 3)) == 6, 'sum over the elements.');
 

@@ -23,8 +23,8 @@ classdef macroarray < macrolist
 % array holding the same elements.
 %
 % The operators follow Dynare's preprocessor/src/macro/Expressions.cc: + concatenates,
-% - is the set difference, * is the Cartesian product, | is the union and & the
-% intersection.
+% - is the set difference, * is the Cartesian product, ^ the Cartesian power, | is the
+% union and & the intersection.
 
     methods
 
@@ -102,6 +102,22 @@ classdef macroarray < macrolist
         function c = times(a, b)
         % Elementwise * is the same product; the macro language has one multiplication.
             c = mtimes(a, b);
+        end % function
+
+        function c = mpower(a, n)
+        % Cartesian power: the product of the array with itself, n-1 times.
+            if ~isa(a, 'macroarray') || ~isnumeric(n) || ~isscalar(n) || n ~= fix(n)
+                error('macroarray:mpower:typeError', 'The exponent of an array must be an integer.')
+            end
+            c = a;
+            for i = 2:n
+                c = c * a;
+            end
+        end % function
+
+        function c = power(a, n)
+        % Elementwise ^ is the same power; the macro language has one exponentiation.
+            c = mpower(a, n);
         end % function
 
         function c = map(o, f)

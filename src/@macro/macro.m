@@ -652,6 +652,16 @@ classdef macro
                     end
                 end
               case 'lparen'
+                if pos + 2 <= numel(tokens) && strcmp(tokens{pos+1}.type, 'identifier') && ismember(tokens{pos+1}.value, macro.CASTS) && strcmp(tokens{pos+2}.type, 'rparen')
+                    % A C-style cast, (string) x, is the call string(x) in another
+                    % spelling. In Dynare's grammar it binds tighter than a unary sign
+                    % and looser than '^', which is what parsing its operand as a unary
+                    % expression gives.
+                    name = tokens{pos+1}.value;
+                    [operand, pos] = macro.parse_unary(tokens, pos+3);
+                    node = macro('call', name, {operand});
+                    return
+                end
                 [items, pos] = macro.parse_list(tokens, pos+1, 'rparen', ')');
                 if isscalar(items)
                     % Plain grouping; a tuple needs at least a comma.
@@ -987,6 +997,9 @@ classdef macro
                 elseif strcmp(o.value, '*') && both('array')
                     % macroarray overloads '*' as the Cartesian product.
                     str = sprintf('(%s * %s)', parts{1}, parts{2});
+                elseif strcmp(o.value, '^') && strcmp(kinds{1}, 'array') && strcmp(kinds{2}, 'real')
+                    % and '^' as the Cartesian power.
+                    str = sprintf('(%s ^ %s)', parts{1}, parts{2});
                 else
                     [str, ok] = macro.decline();
                 end
@@ -1223,9 +1236,22 @@ classdef macro
                 macro.require(b, {'real'}, op);
                 v = macro.mkreal(a.data / b.data);
               case '^'
-                macro.require(a, {'real'}, op);
-                macro.require(b, {'real'}, op);
-                v = macro.mkreal(a.data ^ b.data);
+                if strcmp(a.kind, 'array')
+                    % Cartesian power, as in Dynare's Array::power: the product of the
+                    % array with itself, taken exponent minus one times.
+                    macro.require(b, {'real'}, op);
+                    if b.data ~= fix(b.data)
+                        error('macro:eval_binop:typeError', 'The exponent of an array must be an integer.')
+                    end
+                    v = a;
+                    for i = 2:b.data
+                        v = macro.eval_binop('*', v, a);
+                    end
+                else
+                    macro.require(a, {'real'}, op);
+                    macro.require(b, {'real'}, op);
+                    v = macro.mkreal(a.data ^ b.data);
+                end
               case {'<', '>', '<=', '>='}
                 v = macro.mkbool(macro.compare(op, a, b));
               case '=='

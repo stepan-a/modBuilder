@@ -36,6 +36,9 @@ assert(strcmp(value('["US","EA"] - ["EA"]'), '[US]'), '- is the set difference.'
 assert(strcmp(value('["US","EA"] | ["EA","JP"]'), '[US, EA, JP]'), '| is the union.');
 assert(strcmp(value('["US","EA"] & ["EA","JP"]'), '[EA]'), '& is the intersection.');
 assert(strcmp(value('[1,2] * ["a","b"]'), '[(1, a), (1, b), (2, a), (2, b)]'), '* is the Cartesian product.');
+assert(strcmp(value('[1,2]^2'), '[(1, 1), (1, 2), (2, 1), (2, 2)]'), '^ is the Cartesian power.');
+assert(strcmp(value('[1,2]^3'), '[(1, 1, 1), (1, 1, 2), (1, 2, 1), (1, 2, 2), (2, 1, 1), (2, 1, 2), (2, 2, 1), (2, 2, 2)]'), 'A Cartesian power flattens its tuples, as the product does.');
+assert(strcmp(value('[1,2]^1'), '[1, 2]'), 'The first Cartesian power is the array itself.');
 assert(strcmp(value('"EA" in Countries'), 'true'), 'in tests membership.');
 assert(strcmp(value('"JP" in Countries'), 'false'), 'in tests membership.');
 
@@ -56,6 +59,10 @@ assert(strcmp(value('floor(2.7)'), '2'), 'floor.');
 assert(strcmp(value('ln(1)'), '0'), 'ln is an alias for log.');
 assert(strcmp(value('real("2.5")'), '2.5'), 'The real cast parses a string.');
 assert(strcmp(value('string(3)'), '3'), 'The string cast renders a value.');
+assert(strcmp(value('(string) 3'), '3'), 'A cast may be spelled C-style.');
+assert(strcmp(value('(string) 2 + "x"'), '2x'), 'A C-style cast binds tighter than +.');
+assert(strcmp(value('(real) "2" + 1'), '3'), 'The cast applies before the addition.');
+assert(strcmp(value('(string) 2 ^ 2 + "x"'), '4x'), 'A C-style cast binds looser than ^.');
 assert(strcmp(value('isarray(Countries)'), 'true'), 'isarray.');
 assert(strcmp(value('istuple((1,2))'), 'true'), 'istuple distinguishes tuples from arrays.');
 assert(strcmp(value('isarray((1,2))'), 'false'), 'A tuple is not an array.');
