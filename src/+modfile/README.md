@@ -315,7 +315,9 @@ already carried them.
 Imported: `var`, `varexo`, `parameters` (with `$tex$` and `(long_name='...')`),
 top-level parameter assignments, the `model` block with its equation tags and
 its `#` model-local variables, `steady_state_model`, `initval`, and the options
-of the `steady` and `check` commands.
+of the `steady` and `check` commands. An `initval` value may use the parameters,
+which are locals of the script, and the values given to other variables, which
+it reaches through the object: `z = log(beta) + y` becomes `log(beta) + m.y`.
 
 Refused, because skipping them would silently build a *different* model:
 `predetermined_variables`, `varexo_det`, `trend_var`, deflators, heterogeneity,

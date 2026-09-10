@@ -550,6 +550,7 @@ function items = local_section_items(prep, which)
         end
 
       case 'initval'
+        symbols = [mod.endo(:,1); mod.exo(:,1)];
         for i = 1:size(mod.initval, 1)
             name = mod.initval{i,1};
             if ismember(name, exonames)
@@ -557,7 +558,8 @@ function items = local_section_items(prep, which)
             else
                 method = 'endogenous';
             end
-            items(end+1) = local_item(context, mod.initval{i,3}, {name, mod.initval{i,2}}, ...
+            value = local_through_object(mod.initval{i,2}, symbols, obj);
+            items(end+1) = local_item(context, mod.initval{i,3}, {name, value}, ...
                                       @(s, tail) sprintf('%s.%s(%s, %s%s);', obj, method, local_quote(s{1}), s{2}, tail)); %#ok<AGROW>
         end
     end
@@ -590,6 +592,19 @@ function tf = local_is_external_call(expr, known)
                 tf = (i == length(s));
                 return
             end
+        end
+    end
+end
+
+function expr = local_through_object(expr, symbols, obj)
+% Refer to the model's variables through the object in an initval expression. The
+% parameters are locals of the script, but the value a variable was given is held by
+% the object alone, so z = log(beta) + y needs m.y where the file says y.
+    [names, starts, stops] = regexp(expr, '(?<![\w.])[A-Za-z_]\w*', 'match', 'start', 'end');
+    for k = numel(names):-1:1
+        called = ~isempty(regexp(expr(stops(k)+1:end), '^\s*\(', 'once'));
+        if ismember(names{k}, symbols) && ~called
+            expr = [expr(1:starts(k)-1), obj, '.', names{k}, expr(stops(k)+1:end)];
         end
     end
 end

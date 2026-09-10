@@ -429,4 +429,21 @@ cleanup41 = onCleanup(@() delete(script20));
 assert(m20.beta_H == 0.9 && m20.beta_F == 0.9, 'The parameters declared in a loop should carry their calibration.');
 assert(modfile.build(script20) == m20, 'The script should rebuild the same model.');
 
+% --- An initial value may refer to another variable's ----------------------------------
+% Parameters are locals of the script, but the value a variable was given lives in the
+% object, so the reference goes through it.
+source21 = 't09_initref.mod';
+fid = fopen(source21, 'w');
+fprintf(fid, '@#define C = [1, 2]\nvar\n@#for c in C\n  y_@{c}\n@#endfor\n z;\nvarexo e;\nparameters beta;\nbeta = 0.9;\n\n');
+fprintf(fid, 'model;\n@#for c in C\n[name = ''y_@{c}'']\ny_@{c} = beta*e;\n@#endfor\n[name = ''z'']\nz = y_1 + y_2;\nend;\n\n');
+fprintf(fid, 'initval;\ne = 0.5;\n@#for c in C\ny_@{c} = @{c}*beta;\n@#endfor\nz = y_1 + y_2 + e;\nend;\n');
+fclose(fid);
+cleanup42 = onCleanup(@() delete(source21));
+
+[m21, script21] = modfile.load(source21, Script='t09_initref_gen.m');
+cleanup43 = onCleanup(@() delete(script21));
+assert(abs(m21.y_2 - 1.8) < 1e-12 && abs(m21.z - 3.2) < 1e-12, sprintf('Initial values should see each other, got y_2 = %g, z = %g.', m21.y_2, m21.z));
+assert(contains(fileread(script21), 'm.y_1 + m.y_2 + m.e'), 'The reference should go through the object.');
+assert(modfile.build(script21) == m21, 'The script should rebuild the same model.');
+
 fprintf('t09_emission.m: All tests passed\n');
