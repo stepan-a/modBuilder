@@ -25,4 +25,16 @@ catch ME
 end
 assert(strcmp(thrown, 'modfile:parse_model_block:unterminatedTag'), sprintf('Expected unterminatedTag, got "%s".', thrown));
 
+% An occbin model writes one equation per regime under the same name. The equations of
+% the binding regimes, tagged bind=, are dropped with a warning; the reference regime is
+% the model.
+source2 = 't13_occbin.mod';
+fid = fopen(source2, 'w');
+fprintf(fid, 'var c i lambdak; varexo e; parameters PHI;\nPHI = 1;\nmodel;\nc = e;\ni = c;\n[name=''investment'',bind=''IRR'']\ni - log(PHI) = 0;\n[name=''investment'',relax=''IRR'']\nlambdak = 0;\n[name=''investment'',bind=''IRR'',relax=''INEG'']\ni - log(PHI) = 0;\nend;\n');
+fclose(fid);
+cleanup2 = onCleanup(@() delete(source2));
+[warned, m2] = evalc('modBuilder(source2)');
+assert(m2.size('equations') == 3 && any(strcmp(m2.equations(:,1), 'lambdak')), sprintf('The reference regime should be kept, got: %s', strjoin(m2.equations(:,1)', ' ')));
+assert(contains(regexprep(warned, '\s+', ' '), '2 equation(s) tagged bind='), sprintf('The binding regimes should be reported, got: %s', warned));
+
 fprintf('t13_tags.m: All tests passed\n');

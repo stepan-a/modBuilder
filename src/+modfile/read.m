@@ -135,6 +135,15 @@ function mod = read(filename, options)
                 local_report(options.Strict, filename, s.line, 'modfile:read:ignoredStatement', 'the model options "(%s)" are solver hints and are ignored', s.options);
             end
             [mod.equations, mod.locals] = modfile.parse_model_block(s.body, filename, s.line);
+            % An occbin model writes one equation per regime under the same name, the
+            % regimes told apart by bind and relax tags. The reference regime, where no
+            % constraint binds, is the model; the equations of the binding regimes are
+            % dropped, since a variable has one equation here.
+            binding = arrayfun(@(e) isfield(e.tags, 'bind'), mod.equations);
+            if any(binding)
+                local_report(options.Strict, filename, s.line, 'modfile:read:occbinRegime', '%u equation(s) tagged bind= belong to the binding regimes of the occbin constraints and are ignored; the reference regime is kept', sum(binding));
+                mod.equations = mod.equations(~binding);
+            end
             mod.has_model = true;
 
           case 'steady_state_model'

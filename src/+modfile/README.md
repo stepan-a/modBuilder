@@ -408,4 +408,7 @@ that is a declared variable settles the association before any of this.
 
 A tag value may hold a comma or a bracket, `[name='FOC wages, eq. (2)']`: the
 group is closed by the first `]` outside quotes and cut at the commas outside
-them.
+them. An occbin model writes one equation per regime under the same name, told
+apart by `bind` and `relax` tags; the equations tagged `bind=` belong to the
+binding regimes and are dropped with a warning, the reference regime being the
+model.
