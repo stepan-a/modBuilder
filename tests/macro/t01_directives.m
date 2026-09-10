@@ -58,6 +58,14 @@ catch ME
 end
 assert(strcmp(thrown, 'modfile:expand_macros:badEval'), sprintf('Expected expand_macros:badEval, got "%s".', thrown));
 
+% A directive line may end with a // comment, which is dropped; a // inside a quoted
+% string is not a comment.
+src = sprintf('@#define N = 3 // three\n@#define S = "a//b" // path-like\n@#if N > 2 // big\nvar y_@{S}_@{N};\n@#else // small\nvar z;\n@#endif // done\n@#for i in [1, 2] // loop\nvar w_@{i};\n@#endfor // end\n');
+[out, info] = modfile.expand_macros(src);
+assert(strcmp(strtrim(out), sprintf('var y_a//b_3;\nvar w_1;\nvar w_2;')), sprintf('Unexpected expansion with commented directives: %s', out));
+assert(strcmp(info.defines{1,2}, '3') && strcmp(info.defines{2,2}, '''a//b'''), 'The comment should not reach the rendered define.');
+assert(strcmp(info.conditionals(1).conds{1}, '(N > 2)'), 'The comment should not reach the rendered condition.');
+
 % --- @#if / @#elseif / @#else / @#endif ------------------------------------------------
 conditional = @(flag) modfile.expand_macros(sprintf('@#define Open = %s\n@#if Open\nyes\n@#else\nno\n@#endif\n', flag));
 assert(contains(conditional('true'), 'yes') && ~contains(conditional('true'), 'no'), 'The taken branch should survive.');

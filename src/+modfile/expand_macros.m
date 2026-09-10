@@ -118,7 +118,7 @@ function [out, env, info] = local_run(lines, env, info, state)
         end
 
         keyword = directive{1};
-        rest = strtrim(directive{2});
+        rest = local_strip_comment(strtrim(directive{2}));
 
         switch keyword
           case {'if', 'ifdef', 'ifndef'}
@@ -266,6 +266,20 @@ function [out, env, info] = local_run(lines, env, info, state)
 
     if ~isempty(frames)
         error('modfile:expand_macros:unterminatedDirective', '%s: the conditional opened at line %u is never closed by @#endif.', state.filename, frames(end).line)
+    end
+end
+
+function rest = local_strip_comment(rest)
+% Drop the // comment a directive line may end with, as Dynare's tokeniser does. A //
+% inside a quoted string is part of the string.
+    quoted = false;
+    for i = 1:length(rest)
+        if rest(i) == '"'
+            quoted = ~quoted;
+        elseif ~quoted && i < length(rest) && strcmp(rest(i:i+1), '//')
+            rest = strtrim(rest(1:i-1));
+            return
+        end
     end
 end
 
