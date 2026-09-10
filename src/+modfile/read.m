@@ -91,6 +91,7 @@ function mod = read(filename, options)
                  'has_model', false, 'has_steady_state_model', false, 'has_initval', false, ...
                  'steady_cmd', false, 'steady_options', '', 'check_cmd', false, ...
                  'skipped', {{}}, 'macro', macroinfo);
+    natives = cell(0, 3);
 
     for i = 1:numel(stmts)
         s = stmts(i);
@@ -99,8 +100,15 @@ function mod = read(filename, options)
         if strcmp(s.kind, 'native')
             % A MATLAB statement, which Dynare passes through to the session that runs
             % the model. The model has no use for it, and the script cannot carry it.
-            mod.skipped{end+1} = s.keyword; %#ok<AGROW>
-            local_report(options.Strict, filename, s.line, 'modfile:read:nativeStatement', 'the MATLAB statement "%s" is not part of the model and is ignored', local_excerpt(s.rest));
+            % One that assigns a name is set aside, though: a calibration or an initial
+            % value may use that name, and then the script needs it as a local.
+            token = regexp(s.rest, '^([A-Za-z_]\w*)\s*=(?!=)\s*(.*?);?\s*$', 'tokens', 'once');
+            if ~isempty(token) && count(s.rest, ';') <= 1
+                natives(end+1, :) = {token{1}, regexprep(strtrim(token{2}), '\s*\n\s*', ' '), s.line}; %#ok<AGROW>
+            else
+                mod.skipped{end+1} = s.keyword; %#ok<AGROW>
+                local_report(options.Strict, filename, s.line, 'modfile:read:nativeStatement', 'the MATLAB statement "%s" is not part of the model and is ignored', local_excerpt(s.rest));
+            end
             continue
         end
 
@@ -164,6 +172,16 @@ function mod = read(filename, options)
     if ~mod.has_model
         error('modfile:read:missingModel', '%s: no model block found.', filename)
     end
+
+    % The native assignments an imported expression refers to become locals of the
+    % script, in file order among the calibrations; the others are skipped like any
+    % other native statement.
+    keep = local_referenced(natives, mod);
+    for i = find(~keep)'
+        mod.skipped{end+1} = natives{i,1}; %#ok<AGROW>
+        local_report(options.Strict, filename, natives{i,3}, 'modfile:read:nativeStatement', 'the MATLAB statement "%s" is not part of the model and is ignored', local_excerpt(sprintf('%s = %s;', natives{i,1}, natives{i,2})));
+    end
+    mod.calib = sortrows([mod.calib; natives(keep, :)], 3);
 
     mod.branches = local_read_branches(filename, mod, options);
 end
@@ -242,6 +260,27 @@ function branches = local_read_branches(filename, mod, options)
             branches(end+1) = struct('id', c.id, 'line', c.line, 'branch', b, 'cond', c.conds{b}, 'position', c.position, 'mod', variant, 'refused', refused); %#ok<AGROW>
         end
     end
+end
+
+function keep = local_referenced(natives, mod)
+% Which native assignments an imported expression refers to, directly or through
+% another native assignment that is kept.
+    exprs = [mod.calib(:,2); mod.initval(:,2); {mod.steady.expr}'];
+    names = local_identifiers(strjoin(exprs', ' '));
+    keep = false(size(natives, 1), 1);
+    while true
+        wanted = ismember(natives(:,1), names) & ~keep;
+        if ~any(wanted)
+            break
+        end
+        keep = keep | wanted;
+        names = [names, local_identifiers(strjoin(natives(wanted, 2)', ' '))]; %#ok<AGROW>
+    end
+end
+
+function names = local_identifiers(text)
+% The identifiers of a text, a struct field access counting as its root only.
+    names = regexp(text, '(?<![\w.])[A-Za-z_]\w*', 'match');
 end
 
 function text = local_excerpt(text)

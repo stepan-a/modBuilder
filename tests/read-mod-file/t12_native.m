@@ -62,4 +62,16 @@ stmts = modfile.split_statements(sprintf('var y; varexo e;\nverbatim;\nx = y'';\
 assert(numel(stmts) == 4 && strcmp(stmts(3).kind, 'block') && strcmp(stmts(3).keyword, 'verbatim') && strcmp(stmts(4).keyword, 'parameters'), 'The verbatim block should end on the bare end; line.');
 assert(contains(stmts(3).body, 'if x') && contains(stmts(3).body, 'z = 1;'), 'The body should be the whole block.');
 
+% A native assignment an imported expression refers to becomes a local of the script.
+source2 = 't12_native_assign.mod';
+fid = fopen(source2, 'w');
+fprintf(fid, 'var y; varexo e; parameters alpha;\nalpha = 0.3;\nbetabar = alpha*2;  %% undeclared, used below\nresults = struct();  %% undeclared, unused\n');
+fprintf(fid, 'model;\n[name=''y'']\ny = alpha*y(-1) + e;\nend;\ninitval;\ny = 1/betabar;\nend;\n');
+fclose(fid);
+cleanup2 = onCleanup(@() delete(source2));
+[warned, m2] = evalc('modBuilder(source2)');
+warned = regexprep(warned, '\s+', ' ');  % MATLAB wraps long warnings
+assert(abs(m2.y - 1/0.6) < 1e-12, sprintf('The initial value should see the native assignment, got y = %g.', m2.y));
+assert(~contains(warned, 'betabar') && contains(warned, 'results = struct();'), sprintf('Only the unused assignment should be reported, got: %s', warned));
+
 fprintf('t12_native.m: All tests passed\n');
