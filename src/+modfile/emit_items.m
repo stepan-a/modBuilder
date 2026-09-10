@@ -332,6 +332,13 @@ function template = local_template(iterations, depth)
         end
     end
 
+    if local_bare_placeholder(candidate)
+        % A slot the renderer leaves unquoted, such as the value of a parameter, holds an
+        % expression. A placeholder there would put a string where a number is expected,
+        % so a loop whose values vary is emitted flat.
+        return
+    end
+
     % Verify the whole thing once more, so that whatever way the template was arrived at,
     % what is emitted provably reproduces the calls it replaces.
     for k = 1:numel(iterations)
@@ -346,6 +353,22 @@ function template = local_template(iterations, depth)
     end
 
     template = candidate;
+end
+
+function tf = local_bare_placeholder(items)
+% True when a templated argument lands in a slot the renderer does not quote.
+    tf = false;
+    for i = 1:numel(items)
+        markers = arrayfun(@(s) local_marker(s), 1:numel(items(i).strings), 'UniformOutput', false);
+        line = items(i).render(markers, '');
+        for s = 1:numel(items(i).strings)
+            bare = ~contains(line, ['''' markers{s} '''']) && contains(line, markers{s});
+            if bare && ~isempty(regexp(items(i).strings{s}, '\$\d+', 'once'))
+                tf = true;
+                return
+            end
+        end
+    end
 end
 
 function [tmpl, ok] = local_template_string(variants, values)

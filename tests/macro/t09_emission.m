@@ -414,4 +414,19 @@ for outer = {'true', 'false'}
     delete('t09_nestedif_flipped.m');
 end
 
+% --- A value that varies across iterations is not templated ----------------------------
+% The value of a parameter is an expression, not a string: a placeholder there would hand
+% the call a char array. Such a loop is emitted flat.
+source20 = 't09_rawvalue.mod';
+fid = fopen(source20, 'w');
+fprintf(fid, '@#define C = ["H", "F"]\n\nvar\n@#for c in C\n  y_@{c}\n@#endfor\n;\nvarexo e;\n\n@#for c in C\nparameters beta_@{c};\n@#endfor\n\n@#for c in C\nbeta_@{c} = 0.9;\n@#endfor\n\n');
+fprintf(fid, 'model;\n@#for c in C\n[name = ''y_@{c}'']\ny_@{c} = beta_@{c}*e;\n@#endfor\nend;\n');
+fclose(fid);
+cleanup40 = onCleanup(@() delete(source20));
+
+[m20, script20] = modfile.load(source20, Script='t09_rawvalue_gen.m');
+cleanup41 = onCleanup(@() delete(script20));
+assert(m20.beta_H == 0.9 && m20.beta_F == 0.9, 'The parameters declared in a loop should carry their calibration.');
+assert(modfile.build(script20) == m20, 'The script should rebuild the same model.');
+
 fprintf('t09_emission.m: All tests passed\n');
