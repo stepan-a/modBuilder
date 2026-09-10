@@ -38,10 +38,10 @@ function stmts = split_statements(txt, filename)
 %   Their body is returned uncut, because each block has its own sub-scanner: the
 %   model block, for instance, keeps equations verbatim. Inside a block nothing is
 %   native: a 'var y; stderr 0.01;' of a shocks block starts with no keyword.
-% - A 'verbatim' block holds arbitrary MATLAB code whose own 'end' keywords are not
-%   always followed by ';'. Such a block terminates at the first ';'-terminated 'end',
-%   which is what Dynare's lexer does as well; the statement is warned about and
-%   skipped anyway, so the imprecision does not reach the model.
+% - A 'verbatim' block holds arbitrary MATLAB code, whose quotes are transposes and
+%   whose 'end' keywords close ifs and loops. Its body is not scanned: the block ends
+%   at the first line that is exactly 'end;', which is what Dynare's lexer does as
+%   well, and the statement is skipped whole.
 % - The declared symbols are collected from the declarations as they are met, which
 %   is also how Dynare knows them: a declaration precedes every use of its symbols.
 % - A Dynare statement that no ';' closes raises
@@ -84,7 +84,14 @@ function stmts = split_statements(txt, filename)
             declared = [declared, regexp(chunk.text, '[A-Za-z_]\w*', 'match')]; %#ok<AGROW>
         end
 
-        if ismember(lower(keyword), BLOCK_KEYWORDS)
+        if strcmp(lower(keyword), 'verbatim')
+            [start, stop] = regexp(txt(chunk.last+1:end), '^[ \t]*end[ \t]*;[ \t]*$', 'once', 'start', 'end', 'lineanchors');
+            if isempty(start)
+                error('modfile:split_statements:unterminatedBlock', '%s: block "%s" opened at line %u is never closed by "end;".', filename, keyword, linum(i))
+            end
+            stmts(end+1) = struct('kind', 'block', 'keyword', keyword, 'options', options, 'rest', rest, 'body', txt(chunk.last+1:chunk.last+start-1), 'line', linum(i)); %#ok<AGROW>
+            i = local_skip_blanks(txt, chunk.last + stop + 1);
+        elseif ismember(lower(keyword), BLOCK_KEYWORDS)
             % Gather the chunks up to the matching 'end', nested blocks included.
             depth = 1;
             j = local_skip_blanks(txt, chunk.last + 1);

@@ -56,4 +56,10 @@ catch ME
 end
 assert(strcmp(thrown, 'modfile:split_statements:trailingText'), sprintf('Expected split_statements:trailingText, got "%s".', thrown));
 
+% A verbatim block ends at the first line that is exactly 'end;', as in Dynare: its
+% MATLAB body may hold transposes and the 'end' of an if.
+stmts = modfile.split_statements(sprintf('var y; varexo e;\nverbatim;\nx = y'';\nif x\n    z = 1;\nend\nend;   \nparameters alpha;\n'));
+assert(numel(stmts) == 4 && strcmp(stmts(3).kind, 'block') && strcmp(stmts(3).keyword, 'verbatim') && strcmp(stmts(4).keyword, 'parameters'), 'The verbatim block should end on the bare end; line.');
+assert(contains(stmts(3).body, 'if x') && contains(stmts(3).body, 'z = 1;'), 'The body should be the whole block.');
+
 fprintf('t12_native.m: All tests passed\n');
