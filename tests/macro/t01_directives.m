@@ -171,6 +171,11 @@ assert(strcmp(strtrim(out), 'var y;'), '@#echomacrovars should contribute nothin
 out = modfile.expand_macros(sprintf('@#define f(x) = 2*x\n@#define n = f(3)\nvar y_@{n};\n'));
 assert(contains(out, 'var y_6;'), 'A function macro should be applied.');
 
+% The body of a function sees its formals, then the globals at the time of the call, and
+% never the formals of the function that called it. This is Dynare's own self-test.
+out = modfile.expand_macros(sprintf('@#define a = 1\n@#define f(x) = x + a\n@#define a = 2\n@#define g(a) = f(1) + a\n@#define a = 3\n@#define h(a) = g(2) + a\nvar y_@{f(1)}_@{g(2)}_@{h(1)};\n'));
+assert(contains(out, 'var y_4_6_7;'), sprintf('Function scoping should match Dynare, got: %s', out));
+
 % --- @#include -------------------------------------------------------------------------
 fid = fopen('t01_included.inc', 'w');
 fprintf(fid, 'varexo e_shared;\n');

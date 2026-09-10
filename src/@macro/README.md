@@ -139,8 +139,11 @@ Evaluate against an environment, returning a tagged value. `env` is a struct
 with two `dictionary` fields, `vars` and `funcs`; build one with
 `macro.environment(defines)`.
 
-Function macros are **dynamically scoped**, matching Dynare: the body sees the
-caller's variables with the formals bound on top.
+A function body sees its formals and then the **global** variables, matching
+Dynare's `Environment::getVariable`: a name that is not a formal is looked up in
+the environment the file is read in, not in the caller's, so `g(a) = f(1) + a`
+passes its own `a` to nothing. The globals are those at the time of the call,
+not of the definition.
 
 ### `[str, ok] = t.to_matlab(env)`
 

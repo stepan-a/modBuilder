@@ -314,15 +314,24 @@ classdef macro
         %                        value of each field is converted with macro.fromnative
         %
         % OUTPUTS:
-        % - env       [struct]   fields 'vars' and 'funcs', both dictionaries
+        % - env       [struct]   fields 'vars' and 'funcs', both dictionaries, and 'base',
+        %                        empty for the environment a file is read in and, in the
+        %                        scope a function call opens, that global environment
             arguments
                 defines struct = struct()
             end
             env = struct('vars', configureDictionary('string', 'struct'), ...
-                         'funcs', configureDictionary('string', 'struct'));
+                         'funcs', configureDictionary('string', 'struct'), 'base', []);
             keys = fieldnames(defines);
             for i = 1:numel(keys)
                 env.vars(string(keys{i})) = macro.fromnative(defines.(keys{i}));
+            end
+        end % function
+
+        function env = globals(env)
+        % The environment a file is read in, from any scope opened on top of it.
+            if ~isempty(env.base)
+                env = env.base;
             end
         end % function
 
@@ -1458,10 +1467,13 @@ classdef macro
                 if numel(fn.args) ~= numel(o.children)
                     error('macro:eval_call:badArity', 'Macro function "%s" takes %u argument(s), %u given.', name, numel(fn.args), numel(o.children))
                 end
-                % Dynare's function macros are dynamically scoped: the body sees the
-                % caller's variables, with the formals bound on top. dictionary is a
-                % value type, so this copy is cheap.
-                child = env;
+                % A function body sees its formals and then the global variables: in
+                % Dynare's Environment::getVariable a name that is not a formal is
+                % looked up in the global environment, not in the caller's. So the scope
+                % of the call is opened on the globals, whatever environment the call
+                % is made from. dictionary is a value type, so the copies are cheap.
+                child = macro.globals(env);
+                child.base = macro.globals(env);
                 for i = 1:numel(fn.args)
                     child.vars(string(fn.args{i})) = o.children{i}.eval(env);
                 end
