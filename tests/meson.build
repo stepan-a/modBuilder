@@ -306,6 +306,7 @@ listoftests = [
   'read-mod-file/t09_unsupported.m',
   'read-mod-file/t10_json_parity.m',
   'read-mod-file/t11_script.m',
+  'read-mod-file/t12_native.m',
   'read-mod-file/roundtrip_fixtures.m',
   'normal/t01.m',
   'normal/t02.m',

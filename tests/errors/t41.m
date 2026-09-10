@@ -8,7 +8,8 @@ addpath ../utils
 % --- Lexical layer ---------------------------------------------------------------------
 assert_id(@() modfile.strip_comments('var x $tex;'),                'modfile:strip_comments:unterminatedTexName');
 assert_id(@() modfile.strip_comments('var a; /* never closed'),     'modfile:strip_comments:unterminatedComment');
-assert_id(@() modfile.split_statements('var a; trailing text'),     'modfile:split_statements:trailingText');
+assert_id(@() modfile.split_statements(sprintf('var x (long_name=''oops);\nvarexo e;')), 'modfile:split_statements:unterminatedString');
+assert_id(@() modfile.split_statements('var a; varexo e'),           'modfile:split_statements:trailingText');
 assert_id(@() modfile.split_statements('model; y = 1;'),            'modfile:split_statements:unterminatedBlock');
 assert_id(@() modfile.parse_declaration('a 1b', 'var'),             'modfile:parse_declaration:badSymbol');
 

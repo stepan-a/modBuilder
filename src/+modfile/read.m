@@ -88,6 +88,14 @@ function mod = read(filename, options)
         s = stmts(i);
         key = lower(s.keyword);
 
+        if strcmp(s.kind, 'native')
+            % A MATLAB statement, which Dynare passes through to the session that runs
+            % the model. The model has no use for it, and the script cannot carry it.
+            mod.skipped{end+1} = s.keyword; %#ok<AGROW>
+            local_report(options.Strict, filename, s.line, 'modfile:read:nativeStatement', 'the MATLAB statement "%s" is not part of the model and is ignored', local_excerpt(s.rest));
+            continue
+        end
+
         switch key
           case {'var', 'varexo', 'parameters'}
             if ~isempty(s.options)
@@ -214,6 +222,14 @@ function branches = local_read_branches(filename, mod, options)
             end
             branches(end+1) = struct('id', c.id, 'line', c.line, 'branch', b, 'cond', c.conds{b}, 'position', c.position, 'mod', variant, 'refused', refused); %#ok<AGROW>
         end
+    end
+end
+
+function text = local_excerpt(text)
+% The start of a native line, enough to recognise it in a warning.
+    text = regexprep(text, '\s+', ' ');
+    if length(text) > 60
+        text = [text(1:57) '...'];
     end
 end
 

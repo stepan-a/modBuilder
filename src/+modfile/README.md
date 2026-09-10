@@ -324,7 +324,16 @@ Refused, because skipping them would silently build a *different* model:
 `external_function`, the optimal-policy statements, and a second `model` block.
 
 Skipped with a warning: everything computational (`stoch_simul`, `estimation`,
-`shocks`, `varobs`, …). `Strict=true` turns those warnings into errors.
+`shocks`, `varobs`, …), and every native MATLAB statement. `Strict=true` turns
+those warnings into errors.
+
+A native statement is told apart the way Dynare's lexer tells it: a line whose
+first token is neither a Dynare keyword (the list in `statement_keywords.m`
+comes from `DynareFlex.ll`) nor a declared symbol is MATLAB, and runs to the end
+of the line, continuing while the line ends with `...`. So `oo_ = ...`, an
+`if ... end` around a check, or `x = y'` never merge with the Dynare statement
+that follows. Inside a block nothing is native. A `verbatim` block is a block
+like any other, and is skipped whole.
 
 Model-local variables (`#name = expr;`) are inlined into the equations that use
 them, on the tree rather than textually, so that precedence and lags come out
@@ -357,7 +366,7 @@ file has identical parameter, exogenous, equation, tag and symbol tables.
 | `build(scriptpath)` | run a generated script and return the model |
 | `expand_macros(text, ...)` | run the macro directives |
 | `strip_comments(text)` | blank the comments, preserving every offset |
-| `split_statements(text)` | cut into top-level statements and blocks |
+| `split_statements(text)` | cut into top-level statements, blocks and native MATLAB lines |
 | `parse_declaration(body, keyword)` | read a `var`/`varexo`/`parameters` list |
 | `parse_model_block(body)` | read equations, tags and model-local variables |
 | `parse_steady_state_model(body)` | read the analytical steady state |
@@ -370,6 +379,7 @@ file has identical parameter, exogenous, equation, tag and symbol tables.
 | `resolve_include(...)` | locate an `@#include` target |
 | `parse_options(text)` | read a command option group |
 | `statement_policy(keyword)` | refuse or skip an unimported statement |
+| `statement_keywords()` | the keywords that open a Dynare statement, from Dynare's lexer |
 
 ## Notes on the implementation
 
