@@ -3,7 +3,7 @@ TECHDOCS = ast.pdf steadystate.pdf
 
 all: introduction.pdf $(TECHDOCS) clean push
 
-introduction.pdf: introduction.tex ../models/rbc12.mod ../models/rbc12b.mod
+introduction.pdf: introduction.tex ../models/rbc12.mod
 	@latexmk -pdf introduction
 	@latexmk -c
 

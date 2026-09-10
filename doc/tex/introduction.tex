@@ -246,8 +246,6 @@ model =
 
   \begin{itemize}
   \item No Dynare run, no JSON file: the \texttt{.mod} file is read directly.
-  \item The route through \texttt{modBuilder(M\_, oo\_, jsonfile)} still works when
-    the preprocessor output is already at hand.
   \end{itemize}
 
 \end{frame}
@@ -389,31 +387,6 @@ Add a "name" tag to these:
   Of the 280 files of Dynare's test suite that use the macro language, 222 load as
   they are. Most of the rest hit a refused statement, an operator the parser does not
   know yet (\texttt{$\perp$}), or a \texttt{-D} flag the test runner supplies.
-
-\end{frame}
-
-
-\begin{frame}[fragile]
-  \frametitle{Instantiate a model from a \texttt{.mod} file -- II' --}
-
-  \lstinputlisting[firstline=21,lastline=41,frame=none,basicstyle=\footnotesize,language=Dynare]{../models/rbc12b.mod}
-
-\end{frame}
-
-
-\begin{frame}[fragile]
-  \frametitle{Instantiate a model from a \texttt{.mod} file -- III' --}
-
-  \begin{itemize}
-  \item When the JSON has no equation \texttt{name} tag, the constructor auto-matches each equation to one of the endogenous variables it contains by bipartite matching, with a static-cancellation filter that skips variables which drop out at the steady state. No tag preparation needed.
-  \end{itemize}
-
-  \medskip
-
-  \begin{lstlisting}[style=MatlabConsole]
-
-    >> model = modBuilder(M_, oo_, 'rbc12b/model/json/modfile-original.json');
-   \end{lstlisting}
 
 \end{frame}
 
