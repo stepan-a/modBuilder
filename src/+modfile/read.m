@@ -10,6 +10,13 @@ function mod = read(filename, options)
 % - Macro        [logical]   scalar, run the macro directives (default true)
 % - Defines      [struct]    macro variables to seed, the equivalent of Dynare's -D
 % - IncludePaths [cell]      directories searched by @#include
+% - Force, Branches, Depth, Explored
+%                            how the branches the conditionals did not take are read:
+%                            Force pins conditionals onto branches (k×2 [id branch]),
+%                            Branches asks for that exploration (default true), Depth
+%                            bounds its nesting (default 3) and Explored lists the
+%                            conditionals an enclosing read has already covered. Only
+%                            the reader itself passes them, when it reads a variant.
 %
 % OUTPUTS:
 % - mod        [struct]    description of the file:
@@ -53,6 +60,7 @@ function mod = read(filename, options)
         options.Force         double = zeros(0, 2)
         options.Branches      (1,1) logical = true
         options.Depth         (1,1) double {mustBeNonnegative, mustBeInteger} = 3
+        options.Explored      (1,:) double = zeros(1, 0)
     end
 
     txt = fileread(filename);
@@ -178,8 +186,19 @@ function branches = local_read_branches(filename, mod, options)
         return
     end
 
-    for i = 1:numel(mod.macro.conditionals)
+    % One exploration per construct: a conditional inside a @#for is recorded once per
+    % iteration under the same id, and its branches read the same whichever iteration
+    % asks. A conditional an enclosing read has already explored is left alone too, so
+    % that a variant only reads what it alone reaches, the conditionals nested in the
+    % branch it was forced onto. Without both, a file with a few flags and many loops
+    % reads itself tens of thousands of times.
+    [~, first] = unique([mod.macro.conditionals.id], 'stable');
+    explored = [options.Explored, unique([mod.macro.conditionals.id])];
+    for i = first(:)'
         c = mod.macro.conditionals(i);
+        if ismember(c.id, options.Explored)
+            continue
+        end
         for b = 1:c.nbranches
             if b == c.taken
                 continue
@@ -203,7 +222,7 @@ function branches = local_read_branches(filename, mod, options)
                 % bounds that recursion; each level costs one read per branch.
                 variant = modfile.read(filename, Strict=false, Macro=true, ...
                                        Defines=options.Defines, IncludePaths=options.IncludePaths, ...
-                                       Force=force, Branches=true, Depth=options.Depth-1);
+                                       Force=force, Branches=true, Depth=options.Depth-1, Explored=explored);
             catch err
                 if ~strcmp(err.identifier, 'modfile:expand_macros:userError')
                     % A branch that does not stand on its own, typically because it
