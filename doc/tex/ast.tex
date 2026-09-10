@@ -82,7 +82,7 @@
   \end{itemize}
 \end{frame}
 
-\begin{frame}\frametitle{Seven node types}
+\begin{frame}\frametitle{Eight node types}
   Every node carries a \code{type}, a \code{value} whose shape depends on the
   type, and a \code{children} cell array.
 
@@ -96,6 +96,7 @@
     \code{sym}    & bare symbol (current period) & name & \code{\{\}} \\
     \code{tsym}   & lead/lag of a variable & \code{\{name,lag\}} & \code{\{\}} \\
     \code{ss}     & steady-state operator & \code{[]} & \code{\{arg\}} \\
+    \code{expect} & dated expectation \code{EXPECTATION(k)(arg)} & \code{k} & \code{\{arg\}} \\
     \code{call}   & built-in function call & fname & \code{\{arg$_1$,\dots\}} \\
     \code{binop}  & binary $+\ -\ *\ /\ \wedge$ & op & \code{\{L,R\}} \\
     \code{uminus} & unary minus & \code{[]} & \code{\{operand\}} \\
@@ -105,9 +106,11 @@
 
   \medskip
   \begin{itemize}
-  \item Leaves: \code{num}, \code{sym}, \code{tsym}. The rest are internal.\newline
+  \item Leaves: \code{num}, \code{sym}, \code{tsym}. The rest are internal.
   \item \code{ss} is unary: \code{STEADY\_STATE(k/y)} is a constant w.r.t. the
-    dynamics but still references \code{k} and \code{y}.\newline
+    dynamics but still references \code{k} and \code{y}.
+  \item \code{expect} carries \code{EXPECTATION(-1)(x(+1))} as written, for Dynare to
+    expand; the steady state and the derivatives see through it.
   \item A subscript of zero (\code{x(0)}) collapses to a bare \code{sym} at parse
     time, so \code{x(0)} and \code{x} compare equal.
   \end{itemize}
@@ -128,6 +131,7 @@ power ::= atom '^' unary | atom
 atom  ::= NUMBER | SYMBOL | SYMBOL '(' signed_int ')'
         | FNAME '(' expr (',' expr)* ')'
         | 'STEADY_STATE' '(' expr ')' | '(' expr ')'
+        | 'EXPECTATION' '(' signed_int ')' '(' expr ')'
 \end{lstlisting}
 
   \begin{itemize}
@@ -136,8 +140,8 @@ atom  ::= NUMBER | SYMBOL | SYMBOL '(' signed_int ')'
   \item One token of lookahead $\Rightarrow$ recursive descent, no backtracking.\newline
   \item Disambiguation is by \textbf{name}: an identifier in
     \code{ast.RESERVED\_FNAMES} is a \code{call}; \code{STEADY\_STATE} is an
-    \code{ss}; any other identifier followed by \code{(} expects a signed integer
-    subscript.
+    \code{ss}; \code{EXPECTATION} is an \code{expect}; any other identifier followed
+    by \code{(} expects a signed integer subscript.
   \end{itemize}
 \end{frame}
 
@@ -443,7 +447,8 @@ function o = staticise(o)
   \emph{not} canonicalise, so the caller controls the algebraic form.
   \begin{itemize}\small
   \item \code{tsym} \ra\ subscripts ($K(-1)\to K_{t-1}$); \code{ss} \ra\
-    $\cdot^{\star}$; \code{exp} \ra\ $e^{\cdot}$; division \ra\ \code{\textbackslash frac};
+    $\cdot^{\star}$; \code{expect} \ra\ $\mathbb{E}_{t+k}[\cdot]$; \code{exp} \ra\ $e^{\cdot}$;
+    division \ra\ \code{\textbackslash frac};
   \item every product of inverse factors renders as ONE fraction
     ($E x^{-1} y^{-1} \to \frac{E}{xy}$); a lone $x^{-1}\to\frac{1}{x}$;
   \item a sum leads with a non-negated term when it has one;
@@ -524,7 +529,7 @@ function o = staticise(o)
 
 \begin{frame}\frametitle{Summary}
   \begin{itemize}
-  \item A value-class AST of seven node types, parsed by recursive descent.\newline
+  \item A value-class AST of eight node types, parsed by recursive descent.\newline
   \item \code{canonicalise} gives a normal form; \code{simplify} reaches a
     local fixed point on it; \code{expand}/\code{factor}/\code{single\_fraction}
     reshape it, \code{complexity} choosing between shapes.\newline

@@ -152,7 +152,7 @@
 
 \title{modBuilder}
 \author[]{\texttt{stephane.adjemian@univ-lemans.fr}}
-\date{July,  2026}
+\date{September, 2026}
 
 \begin{frame}
   \titlepage{}
@@ -287,7 +287,7 @@ m.parameter('alpha', alpha, 'declared', true);
 \begin{frame}[fragile]
   \frametitle{Instantiate a model from a \texttt{.mod} file -- macros --}
 
-  Macro directives are read too, and their control flow survives into the script
+  The macro language is read in full, and its control flow survives into the script
   rather than disappearing into the expansion.
 
   \begin{lstlisting}[language=Dynare]
@@ -323,17 +323,72 @@ end
   \frametitle{Instantiate a model from a \texttt{.mod} file -- macros II --}
 
   \begin{itemize}
-  \item \texttt{Defines=struct(...)} plays the role of Dynare's \texttt{-D}.
+  \item Covered: \texttt{@\#define} for variables and functions, with Dynare's own
+    scoping; \texttt{@\#if}, \texttt{@\#ifdef}, \texttt{@\#ifndef};
+    \texttt{@\#for} over tuples and with a \texttt{when} guard; \texttt{@\#include};
+    comprehensions, casts, set operations and ranges; \texttt{@\#echo} and
+    \texttt{@\#error}; continuation lines. Dynare's own macro-processor self-test
+    loads end to end.\newline
+  \item \texttt{Defines=struct(...)} plays the role of Dynare's \texttt{-D}.\newline
   \item A loop becomes one implicit-loop call when a \texttt{\$N} template reproduces
     every iteration, and a MATLAB \texttt{for} loop otherwise. The template is guessed
     and then verified against the iterations, so a wrong guess is discarded rather than
-    emitted.
+    emitted.\newline
   \item A \texttt{@\#if} becomes a MATLAB \texttt{if}/\texttt{elseif}/\texttt{else}
     carrying every branch. A branch that is not selected produces no text, so the file is
     read again with the conditional forced onto it; the model itself always comes from
     the unforced read. Changing the flag in the script then gives the model the
     \texttt{.mod} file would have given with that setting.
   \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Instantiate a model from a \texttt{.mod} file -- what is read --}
+
+  \begin{itemize}
+  \item \textbf{Imported:} the declarations, the calibration, the \texttt{model} block
+    with its tags and its \texttt{\#} model-local variables, \texttt{steady\_state\_model},
+    \texttt{initval}, and the options of \texttt{steady} and \texttt{check}.\newline
+  \item \textbf{Skipped, with a warning:} everything computational
+    (\texttt{stoch\_simul}, \texttt{estimation}, \texttt{shocks}, \dots) and every native
+    MATLAB line, told apart by Dynare's own rule: a line whose first token is neither a
+    keyword nor a declared symbol is MATLAB. A native assignment that a calibration or an
+    initial value uses is kept as a local of the script.
+    \texttt{Strict=true} turns the warnings into errors.\newline
+  \item \textbf{Refused}, because skipping them would silently build a different model:
+    \texttt{predetermined\_variables}, \texttt{varexo\_det}, trend variables, external
+    functions, the optimal-policy statements, a second \texttt{model} block.
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Instantiate a model from a \texttt{.mod} file -- naming equations --}
+
+  A \texttt{modBuilder} equation is keyed to one endogenous variable. A \texttt{name}
+  tag that is a declared variable settles it; the rest are paired by a bipartite
+  matching that asks which variable each equation is \emph{for}: a variable the static
+  residual pins down comes first, then one it holds as a factor, then one only the leads
+  and lags carry, so \mbox{\texttt{junk = 0.9*junk(+1)}} or \mbox{\texttt{Y/Y(-1) = g}}
+  get their variable too. When no perfect pairing exists, the error names what to tag:
+
+  \begin{lstlisting}[style=MatlabConsole]
+    >> modBuilder('twoeqs.mod')
+Error using modfile.name_equations
+twoeqs.mod: unable to associate every equation
+with a unique endogenous variable.
+Add a "name" tag to these:
+  line 7: y = 2*e
+  unmatched endogenous variables: c
+  \end{lstlisting}
+
+  \medskip
+  Of the 280 files of Dynare's test suite that use the macro language, 222 load as
+  they are. Most of the rest hit a refused statement, an operator the parser does not
+  know yet (\texttt{$\perp$}), or a \texttt{-D} flag the test runner supplies.
 
 \end{frame}
 
