@@ -60,4 +60,11 @@ catch ME
 end
 assert(thrown, 'Expected strip_comments:unterminatedComment.');
 
+% A quote with no closing quote on its line is a transpose, not a string opener: native
+% MATLAB lines carry them, and a comment after one is still a comment.
+native = sprintf('x = y'';  %% transposed\nvar y $y$;\n');
+stripped = strsplit(modfile.strip_comments(native), newline);
+assert(strcmp(strtrim(stripped{1}), 'x = y'';') && strcmp(stripped{2}, 'var y $y$;'), sprintf('Unexpected stripping of a transpose line: "%s"', stripped{1}));
+assert(strcmp(strtrim(modfile.strip_comments('z = [a'' b''] * c''; // comment')), 'z = [a'' b''] * c'';'), 'Paired transposes should not open a string either.');
+
 fprintf('t08_comments.m: All tests passed\n');

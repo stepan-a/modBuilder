@@ -23,7 +23,12 @@ function txt = strip_comments(txt, filename)
 %       that apostrophe open a string and corrupts the remainder of the file.
 % - A TeX name may not span lines: an unterminated '$' raises
 %   modfile:strip_comments:unterminatedTexName rather than silently swallowing the
-%   rest of the file. Unterminated quotes and block comments raise likewise.
+%   rest of the file. An unterminated block comment raises likewise.
+% - A quote with no closing quote on its line does not open a string: it is the
+%   transpose of a native MATLAB line, x = y', which Dynare passes through untouched.
+%   Neither language lets a string span lines, so nothing is lost by reading it so;
+%   a Dynare statement that leaves a quote open is reported by modfile.split_statements,
+%   which knows which lines are Dynare's.
     arguments
         txt      (1,:) char
         filename (1,:) char = '<string>'
@@ -45,16 +50,13 @@ function txt = strip_comments(txt, filename)
             if strcmp(state, 'tex')
                 error('modfile:strip_comments:unterminatedTexName', '%s: TeX name opened at line %u is not closed before the end of the line.', filename, opened)
             end
-            if strcmp(state, 'quote')
-                error('modfile:strip_comments:unterminatedString', '%s: quoted value opened at line %u is not closed before the end of the line.', filename, opened)
-            end
             i = i + 1;
             continue
         end
 
         switch state
           case 'normal'
-            if c == ''''
+            if c == '''' && local_closed_on_line(txt, i)
                 state = 'quote';
                 opened = line;
                 i = i + 1;
@@ -109,7 +111,18 @@ function txt = strip_comments(txt, filename)
         error('modfile:strip_comments:unterminatedComment', '%s: block comment opened at line %u is not closed.', filename, opened)
       case 'tex'
         error('modfile:strip_comments:unterminatedTexName', '%s: TeX name opened at line %u is not closed.', filename, opened)
-      case 'quote'
-        error('modfile:strip_comments:unterminatedString', '%s: quoted value opened at line %u is not closed.', filename, opened)
     end
+end
+
+function tf = local_closed_on_line(txt, i)
+% True when the quote at position i has a closing quote before the end of its line.
+    j = i + 1;
+    while j <= length(txt) && txt(j) ~= newline
+        if txt(j) == ''''
+            tf = true;
+            return
+        end
+        j = j + 1;
+    end
+    tf = false;
 end
