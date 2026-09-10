@@ -27,6 +27,11 @@ classdef ast
 %            STEADY_STATE(k) or STEADY_STATE(k/y)). The value of expr at the
 %            steady state; a constant w.r.t. the dynamic variables it references.
 %            value = []                           children = {expr}
+%   'expect' dated expectation of an expression, EXPECTATION(k)(expr): expr as
+%            expected with the information of period t+k, e.g. EXPECTATION(-1)(x(+1)).
+%            Dynare handles it through auxiliary variables; here it is carried as
+%            written, and the steady state and the derivatives see through it.
+%            value = double (the offset k)        children = {expr}
 %   'call'   function call: built-in mathematical function applied to one or
 %            more arguments (exp(x), log(a+b), max(a, b)). The function name
 %            must belong to ast.RESERVED_FNAMES.
@@ -181,6 +186,8 @@ classdef ast
                     % STEADY_STATE(expr): render the child expression with no outer
                     % parentheses (the STEADY_STATE(...) already delimits it).
                     str = sprintf('STEADY_STATE(%s)', o.children{1}.string());
+                case 'expect'
+                    str = sprintf('EXPECTATION(%d)(%s)', o.value, o.children{1}.string());
                 case 'call'
                     args = cell(1, numel(o.children));
                     for i = 1:numel(o.children)
@@ -264,12 +271,16 @@ classdef ast
         % - Used to obtain the static version of a dynamic equation before checking whether
         %   a candidate endogenous variable cancels out (see check_factor).
         % - Other node types ('num', 'sym', 'ss', 'call', 'binop', 'uminus') are recursed
-        %   into but otherwise unchanged.
+        %   into but otherwise unchanged. An 'expect' node gives way to its argument: at
+        %   the steady state an expectation is the value it expects.
             changed = false;
             if strcmp(o.type, 'tsym')
                 % tsym is the only leaf that knows about time; replace it with
                 % a plain sym carrying the same name, dropping the lag.
                 o = ast('sym', o.value{1}, {});
+                changed = true;
+            elseif strcmp(o.type, 'expect')
+                o = o.children{1}.staticise();
                 changed = true;
             else
                 % Other leaves have no children to recurse into (loop is a no-op);
@@ -407,6 +418,12 @@ classdef ast
                     end
                 case 'ss'
                     % steady-state values are time-invariant
+                case 'expect'
+                    % The information set moves with the expression it dates.
+                    [o.children{1}, ~] = o.children{1}.shift_lag(k, parameter_names);
+                    o.value = o.value + k;
+                    changed = true;
+                    o.skey = ast.build_key(o); o.canon = false;
                 otherwise
                     for i = 1:numel(o.children)
                         [o.children{i}, ci] = o.children{i}.shift_lag(k, parameter_names);
@@ -465,9 +482,10 @@ classdef ast
                 case 'uminus'
                     % Sign flip preserves the multiplicative-factor structure.
                     [has, cancels, xpow] = o.children{1}.check_factor(varname);
-                case 'call'
+                case {'call', 'expect'}
                     % varname appearing inside a non-linear function f(...) cannot be
-                    % factored out of f; just report presence.
+                    % factored out of f; just report presence. An expectation is as
+                    % opaque: E[x*f] is not x*E[f] in general.
                     has = false;
                     for i = 1:numel(o.children)
                         if o.children{i}.check_factor(varname)
@@ -698,10 +716,10 @@ classdef ast
                     v = ast.lookup_value(o.value, values);
                 case 'tsym'
                     v = ast.lookup_value(o.value{1}, values);
-                case 'ss'
+                case {'ss', 'expect'}
                     % STEADY_STATE(expr): evaluate the child. The value map carries
                     % steady-state values, so this yields the steady-state value of
-                    % the expression.
+                    % the expression. An expectation of it is that same value.
                     v = o.children{1}.eval(values);
                 case 'uminus'
                     v = -o.children{1}.eval(values);
@@ -859,6 +877,10 @@ classdef ast
                     end
                 case 'call'
                     str = ast.latex_call(o, texname_map, dated);
+                case 'expect'
+                    % The information set as a subscript of the expectation operator.
+                    cs = o.children{1}.to_latex(texname_map, dated, '', false);
+                    str = sprintf('\\mathbb{E}_{t%+d}\\left[%s\\right]', o.value, cs);
                 case 'uminus'
                     child = o.children{1};
                     cs = child.to_latex(texname_map, dated, '', false);
@@ -1493,9 +1515,10 @@ classdef ast
                     if isKey(var_index, o.value)
                         deg(var_index(o.value)) = 1;
                     end
-                case 'ss'
+                case {'ss', 'expect'}
                     % STEADY_STATE(expr) scales as expr does (its steady-state level):
-                    % STEADY_STATE(x) is degree 1 in x, STEADY_STATE(k/y) degree 0.
+                    % STEADY_STATE(x) is degree 1 in x, STEADY_STATE(k/y) degree 0. So
+                    % does an expectation of expr.
                     [deg, cons, ok] = o.children{1}.scaling_degree(var_index, nvar, values);
                 case 'tsym'
                     if isKey(var_index, o.value{1})
@@ -2170,6 +2193,32 @@ classdef ast
                         end
                         pos = pos + 1;
                         node = ast('ss', [], {arg});
+                    elseif strcmp(name, 'EXPECTATION')
+                        % EXPECTATION(k)(expr), Dynare's dated expectation: two
+                        % parenthesised groups, the first a signed integer (the grammar
+                        % rule is EXPECTATION '(' signed_integer ')' '(' model_expression ')').
+                        sign_mult = 1;
+                        if pos <= length(tokens) && strcmp(tokens{pos}.type, 'plus')
+                            pos = pos + 1;
+                        elseif pos <= length(tokens) && strcmp(tokens{pos}.type, 'minus')
+                            sign_mult = -1;
+                            pos = pos + 1;
+                        end
+                        if pos > length(tokens) || ~strcmp(tokens{pos}.type, 'number') || tokens{pos}.value ~= round(tokens{pos}.value)
+                            error('ast:parse', 'EXPECTATION: the information set must be a signed integer, EXPECTATION(k)(expr).');
+                        end
+                        k = sign_mult * tokens{pos}.value;
+                        pos = pos + 1;
+                        if pos + 1 > length(tokens) || ~strcmp(tokens{pos}.type, 'rparen') || ~strcmp(tokens{pos+1}.type, 'lparen')
+                            error('ast:parse', 'EXPECTATION: expected ")(" after the information set.');
+                        end
+                        pos = pos + 2;
+                        [arg, pos] = ast.parse_expr(tokens, pos);
+                        if pos > length(tokens) || ~strcmp(tokens{pos}.type, 'rparen')
+                            error('ast:parse', 'EXPECTATION: missing ")".');
+                        end
+                        pos = pos + 1;
+                        node = ast('expect', k, {arg});
                     elseif ismember(name, ast.RESERVED_FNAMES)
                         % Function call: collect at least one argument, then any
                         % comma-separated extras (for multi-arg calls like max(a, b)).
@@ -2881,6 +2930,9 @@ classdef ast
                     ok = true; n = double(is_target(o.value{1}));
                 case 'ss'
                     ok = true; n = 0;
+                case 'expect'
+                    % An expectation is linear in what it expects.
+                    [ok, n] = ast.linear_walk_impl(o.children{1}, is_target);
                 case 'call'
                     n = 0;
                     for i = 1:numel(o.children)
@@ -4158,6 +4210,8 @@ classdef ast
                     k = sprintf('1_sym_%s_%d', o.value{1}, o.value{2});
                 case 'ss'
                     k = sprintf('2_ss_%s', ast.sort_key(o.children{1}));
+                case 'expect'
+                    k = sprintf('2_expect_%d_%s', o.value, ast.sort_key(o.children{1}));
                 case 'uminus'
                     k = sprintf('3_neg_%s', ast.sort_key(o.children{1}));
                 case 'call'
@@ -4198,6 +4252,13 @@ classdef ast
                         return
                     end
                     k = ['2_ss_' ck];
+                case 'expect'
+                    ck = o.children{1}.skey;
+                    if isempty(ck) || numel(ck) > 512
+                        k = '';
+                        return
+                    end
+                    k = sprintf('2_expect_%d_%s', o.value, ck);
                 case 'uminus'
                     ck = o.children{1}.skey;
                     if isempty(ck) || numel(ck) > 512
@@ -4267,6 +4328,9 @@ classdef ast
                 case 'ss'
                     % STEADY_STATE(x) is a constant w.r.t. the dynamic variable x.
                     d = ast('num', 0, {});
+                case 'expect'
+                    % The derivative passes through the expectation: d E[f]/dx = E[df/dx].
+                    d = ast('expect', node.value, {ast.diff_node(node.children{1}, target, target_lag)});
                 case 'uminus'
                     d = ast('uminus', [], {ast.diff_node(node.children{1}, target, target_lag)});
                 case 'binop'

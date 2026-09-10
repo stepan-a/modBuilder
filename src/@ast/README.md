@@ -32,6 +32,7 @@ array.
 | `sym`    | Bare symbol at the current period (parameter, endogenous, exogenous)     | char (name)          | `{}`                |
 | `tsym`   | Lead or lag of a variable (`Consumption(-1)`, `K(+1)`)                   | `{name, lag}`        | `{}`                |
 | `ss`     | Steady-state operator on an expression (`STEADY_STATE(x)`, `STEADY_STATE(k/y)`) | `[]`          | `{argument}`        |
+| `expect` | Dated expectation (`EXPECTATION(-1)(x(+1))`): the argument as expected with the information of t+k | double (k) | `{argument}`   |
 | `call`   | Built-in function call (`exp(x)`, `log(a+b)`, `max(a, b)`)               | char (function name) | `{arg1, arg2, ...}` |
 | `binop`  | Binary operator `+ - * / ^` (`^` right-associative, the rest left-)      | char (operator)      | `{left, right}`     |
 | `uminus` | Unary minus (`-x`)                                                       | `[]`                 | `{operand}`         |
