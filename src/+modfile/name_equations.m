@@ -14,6 +14,9 @@ function names = name_equations(eqs, endonames, tagname, filename)
 % - An equation carrying tagname is keyed to that tag when its value is a declared
 %   endogenous variable. The tag is the association, not a claim about the left-hand
 %   side: tests/load-mod-file/rbc1.true.mod tags 'k = exp(b)*(y-c)+...' with name='c'.
+%   A tag that names no variable is not an association and the equation is paired like
+%   an untagged one; two equations tagged with the same variable are an error, raised
+%   here with both lines rather than by the script.
 % - The remaining equations are paired with the variables by a minimum-cost bipartite
 %   matching, as in modBuilder.matchequations, the matcher of the steady-state plan.
 %   That one admits an edge only when the static residual pins the variable, see
@@ -44,6 +47,12 @@ function names = name_equations(eqs, endonames, tagname, filename)
         if isfield(eqs(i).tags, tagname)
             candidate = eqs(i).tags.(tagname);
             if ischar(candidate) && ismember(candidate, endonames)
+                earlier = find(strcmp(names, candidate), 1);
+                if ~isempty(earlier)
+                    % Reported here, with both lines, rather than by the script, whose
+                    % add would refuse the second equation and suggest change.
+                    error('modfile:name_equations:duplicateTag', '%s: the equations at lines %u and %u both carry %s=''%s''; a variable has one equation.', filename, eqs(earlier).line, eqs(i).line, tagname, candidate)
+                end
                 names{i} = candidate;
                 hastag(i) = true;
             end
@@ -97,7 +106,7 @@ function names = name_equations(eqs, endonames, tagname, filename)
         names{untagged(k)} = eq2var{k};
     end
 
-    modfile.warn('modfile:name_equations:autoMatch', '%s: %u equation(s) without a "%s" tag were matched automatically to endogenous variables.', filename, nu, tagname);
+    modfile.warn('modfile:name_equations:autoMatch', '%s: %u equation(s) not keyed by a "%s" tag were paired with endogenous variables automatically.', filename, nu, tagname);
 end
 
 function [eq2var, umeqs, umvars] = local_match(statics, dynamic, lhs, candidates)

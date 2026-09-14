@@ -405,7 +405,8 @@ equation is *for*, which has an answer for the Euler equation or for
 cost that prefers one the static residual pins over one it leaves free. The
 matching is maximal first, so the cheap edges give way where a perfect pairing
 needs them to. A `name` tag that is a declared variable settles the association
-before any of this.
+before any of this; a tag that names no variable is ignored, and the same
+variable tagged on two equations is refused, with both lines.
 
 A tag value may hold a comma or a bracket, `[name='FOC wages, eq. (2)']`: the
 group is closed by the first `]` outside quotes and cut at the commas outside

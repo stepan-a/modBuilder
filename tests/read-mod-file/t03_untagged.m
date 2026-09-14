@@ -75,4 +75,39 @@ m3 = modBuilder(source3);
 keyof = @(start) m3.equations{startsWith(strtrim(m3.equations(:,2)), start), 1};
 assert(strcmp(keyof('junk'), 'junk') && strcmp(keyof('0 = lambda'), 'lambda') && strcmp(keyof('Y/Y(-1)'), 'Y') && strcmp(keyof('g ='), 'g') && any(strcmp(m3.equations(:,1), 'x')), sprintf('Unexpected keys: %s', strjoin(m3.equations(:,1)', ' ')));
 
+% --- A subset of tags ------------------------------------------------------------------
+% Tagged equations are keyed first, the rest paired among the variables the tags left.
+% A tag that names no variable is ignored; the same tag on two equations is an error
+% raised by the reader, with both lines, before any script runs.
+source4 = 't03_partial.mod';
+fid = fopen(source4, 'w');
+fprintf(fid, 'var y c k;\nvarexo e;\nparameters alpha delta;\nalpha = 0.3;\ndelta = 0.1;\n');
+fprintf(fid, 'model;\n[name = ''c'']\ny = c + delta*k;\n[name = ''output'']\nc = alpha*k(-1) + e;\nk = (1-delta)*k(-1) + y;\nend;\n');
+fclose(fid);
+cleanup4 = onCleanup(@() delete(source4));
+warning('on', 'modfile:name_equations:autoMatch');
+[warned, m4] = evalc('modBuilder(source4)');
+warning('off', 'modfile:name_equations:autoMatch');
+keyof = @(start) m4.equations{startsWith(strtrim(m4.equations(:,2)), start), 1};
+% The tag takes c; of the two others, c = alpha*k(-1) + e mentions no y and must take k,
+% which leaves y to the last equation.
+assert(strcmp(keyof('y = c'), 'c') && strcmp(keyof('c = alpha'), 'k') && strcmp(keyof('k ='), 'y'), sprintf('The tag should win and the rest be paired around it, got: %s', strjoin(m4.equations(:,1)', ' ')));
+assert(contains(regexprep(warned, '\s+', ' '), '2 equation(s) not keyed by a "name" tag'), sprintf('The warning should count the equations the tags did not key, got: %s', warned));
+
+source5 = 't03_duplicate.mod';
+fid = fopen(source5, 'w');
+fprintf(fid, 'var y c;\nvarexo e;\nparameters alpha;\nalpha = 0.3;\nmodel;\n[name = ''y'']\ny = alpha*e;\n[name = ''y'']\nc = y;\nend;\n');
+fclose(fid);
+cleanup5 = onCleanup(@() delete(source5));
+thrown = '';
+message = '';
+try
+    modBuilder(source5);
+catch ME
+    thrown = ME.identifier;
+    message = ME.message;
+end
+assert(strcmp(thrown, 'modfile:name_equations:duplicateTag'), sprintf('Expected name_equations:duplicateTag, got "%s".', thrown));
+assert(~isempty(regexp(message, 'lines [0-9]+ and [0-9]+ both carry name=''y''', 'once')), sprintf('The error should name both lines, got: %s', message));
+
 fprintf('t03_untagged.m: All tests passed\n');
