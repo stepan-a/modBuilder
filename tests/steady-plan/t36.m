@@ -61,3 +61,33 @@ end
 assert(all(ismember({'R', 'b', 'c'}, resolved)), 'the closed model must resolve R, b and c in closed form');
 
 fprintf('steady-plan/t36: endogenous unit roots are flagged at the pairing, closed models stay silent\n');
+
+% --- A residual that is a multiple of the variable with a constant cofactor ---------
+% junk = 0.9*junk(+1) reduces to 0.1*junk = 0, which fixes junk at zero: the cofactor
+% cannot vanish, so the pairing admits junk for its own equation and no unit root is
+% reported. The Euler equation above is different in kind: its cofactor 1 - beta*R is
+% zero at this calibration, and c is genuinely free.
+m4 = modBuilder();
+m4.add('y', 'y = alpha*k(-1) + e');
+m4.add('k', 'k = (1-delta)*k(-1) + i');
+m4.add('i', 'i = s*y');
+m4.add('junk', 'junk = 0.9*junk(+1)');
+m4.parameter('alpha', 0.3);
+m4.parameter('delta', 0.1);
+m4.parameter('s', 0.2);
+m4.exogenous('e', 0);
+
+lastwarn('');
+b4 = m4.steady_plan(Match=true);
+[~, id] = lastwarn();
+assert(~strcmp(id, 'modBuilder:steady_plan:endogenousUnitRoot'), 'a factored residual with a constant cofactor pins its variable and must not raise the unit-root warning');
+found = false;
+for k = 1:numel(b4)
+    for j = 1:numel(b4(k).closed_form)
+        if strcmp(b4(k).closed_form(j).var, 'junk')
+            found = strcmp(b4(k).closed_form(j).expr, '0');
+        end
+    end
+end
+assert(found, 'junk should be closed at zero');
+

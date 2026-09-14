@@ -15,20 +15,15 @@ function names = name_equations(eqs, endonames, tagname, filename)
 %   endogenous variable. The tag is the association, not a claim about the left-hand
 %   side: tests/load-mod-file/rbc1.true.mod tags 'k = exp(b)*(y-c)+...' with name='c'.
 % - The remaining equations are paired with the variables by a minimum-cost bipartite
-%   matching, as in modBuilder.matchequations, the matcher of the Dynare-based
-%   constructor. That one answers a steady-state question, which variable an equation
-%   pins down, and admits an edge only when the variable survives the static residual
-%   without factoring out of it: a residual that is a multiple of the variable vanishes
-%   through its other factor when that factor can, as c^(-sigma)*(1 - beta*R) does,
-%   pinning R and leaving c free; 0.1*junk has no such factor and fixes junk at zero,
-%   but the matcher looks at the power of the variable, not at the cofactor, and reads
-%   both the Euler way. The question here is
-%   which variable an equation is FOR, which has an answer for junk = 0.9*junk(+1),
-%   0 = lambda, a bare x or Y/Y(-1) = g as well. So every variable of the dynamic
-%   equation is admitted, at a cost that prefers, in order, a variable the static
-%   residual pins down, one it holds as a factor, and one that only the leads and lags
-%   carry. The matching is maximal first, so the cheap edges give way where a perfect
-%   pairing needs them to.
+%   matching, as in modBuilder.matchequations, the matcher of the steady-state plan.
+%   That one admits an edge only when the static residual pins the variable, see
+%   modBuilder.pins: c^(-sigma)*(1 - beta*R) pins R and leaves c free, 0.1*junk fixes
+%   junk at zero. The question here is which variable an equation is FOR, which has an
+%   answer for the Euler equation or for Y/Y(-1) = g as well. So every variable of the
+%   dynamic equation is admitted, at a cost that prefers one the static residual pins
+%   over one it leaves free. The matching is maximal first, so the cheap edges give way
+%   where a perfect pairing needs them to. No calibration is consulted: which variable
+%   an equation is for does not depend on a coincidence of the parameter values.
 % - Within a tier the costs are those of matchequations: a bonus for the left-hand side,
 %   a penalty for a candidate many equations could take, and a stable tie-break.
 % - ast.symbol_names is used where the constructor uses the private modBuilder.getsymbols;
@@ -106,7 +101,10 @@ function names = name_equations(eqs, endonames, tagname, filename)
 end
 
 function [eq2var, umeqs, umvars] = local_match(statics, dynamic, lhs, candidates)
-% Pair the equations with the variables, see the REMARKS of name_equations.
+% Pair the equations with the variables, see the REMARKS of name_equations. The cost of
+% a pair is its tier, 1 when the static residual pins the variable and 2 when the
+% variable is free at the steady state, less a bonus for the left-hand side, plus a
+% penalty for a candidate many equations could take, and a stable tie-break.
     n = numel(statics);
     m = numel(candidates);
     eq2var = repmat({''}, n, 1);
@@ -120,13 +118,10 @@ function [eq2var, umeqs, umvars] = local_match(statics, dynamic, lhs, candidates
             if ~any(strcmp(v, dynamic{i}))
                 continue
             end
-            [has, cancels] = statics{i}.check_factor(v);
-            if has && ~cancels
+            if modBuilder.pins(statics{i}, v, candidates)
                 tier(i, j) = 1;
-            elseif has
-                tier(i, j) = 2;
             else
-                tier(i, j) = 3;
+                tier(i, j) = 2;
             end
         end
     end

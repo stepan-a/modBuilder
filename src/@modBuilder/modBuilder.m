@@ -3423,8 +3423,9 @@ classdef modBuilder < handle
                     if ~isempty(freed_params)
                         cand = [cand; freed_params(:)];
                     end
+                    pair_values = modBuilder.calibration_map(o);
                     [eq2var_r, ~, umvars_r] = ...
-                        modBuilder.matchequations(eqasts_s(real_idx), eqlhs_s(real_idx), cand);
+                        modBuilder.matchequations(eqasts_s(real_idx), eqlhs_s(real_idx), cand, pair_values);
                     % Complete the matching. First fill genuinely deficient equations
                     % (a variable cancels out of every residual) from leftover
                     % candidates; then absorb the anchor-induced surplus: each still
@@ -3467,8 +3468,7 @@ classdef modBuilder < handle
                             % undetermined and the pairing exists only to keep the plan
                             % square. Warn here, where the reduced residual is available.
                             if forced
-                                [has, cancels] = eqasts_s{i}.check_factor(v);
-                                if ~has || cancels
+                                if ~modBuilder.pins(eqasts_s{i}, v, cand, pair_values)
                                     forced_pair(i) = true;
                                     modBuilder.warn_silent('modBuilder:steady_plan:endogenousUnitRoot', 'Equation "%s" pins none of the remaining variables at the steady state (its static residual reduces to %s = 0), leaving the level of %s undetermined -- an endogenous unit root (e.g. incomplete-markets open economy). Close the model or fix the level of %s (declared steady-state value or anchor).', keys{i}, eqasts_s{i}.string(), v, v);
                                 end
@@ -3644,19 +3644,7 @@ classdef modBuilder < handle
             % scale-ray determinant probe, and the knife-edge checks (a pinning
             % coefficient or block determinant that is symbolically non-zero but
             % vanishes at the calibrated point -- a unit root at this calibration).
-            calib_values = struct();
-            for i = 1:size(o.params, 1)
-                val = o.params{i, modBuilder.COL_VALUE};
-                if isnumeric(val) && isscalar(val) && isfinite(val)
-                    calib_values.(o.params{i, modBuilder.COL_NAME}) = val;
-                end
-            end
-            for i = 1:size(o.varexo, 1)
-                val = o.varexo{i, modBuilder.COL_VALUE};
-                if isnumeric(val) && isscalar(val) && isfinite(val)
-                    calib_values.(o.varexo{i, modBuilder.COL_NAME}) = val;
-                end
-            end
+            calib_values = modBuilder.calibration_map(o);
             endo_names_all = o.var(:, modBuilder.COL_NAME)';
             known_names = {}; known_asts = {};
             if propagate && ~isempty(o.steady_state)
@@ -3998,13 +3986,78 @@ classdef modBuilder < handle
             w = w.simplify();
         end % function
 
-        function [eq2var, unmatched_eqs, unmatched_vars] = matchequations(eqasts, eqlhs_symbols, candidates)
+        function values = calibration_map(o)
+        % The calibrated parameters and exogenous values as a struct, for ast.eval.
+            values = struct();
+            for i = 1:size(o.params, 1)
+                val = o.params{i, modBuilder.COL_VALUE};
+                if isnumeric(val) && isscalar(val) && isfinite(val)
+                    values.(o.params{i, modBuilder.COL_NAME}) = val;
+                end
+            end
+            for i = 1:size(o.varexo, 1)
+                val = o.varexo{i, modBuilder.COL_VALUE};
+                if isnumeric(val) && isscalar(val) && isfinite(val)
+                    values.(o.varexo{i, modBuilder.COL_NAME}) = val;
+                end
+            end
+        end % function
+
+        function tf = pins(residual, varname, unknowns, values)
+        % Whether a static residual pins a variable at the steady state.
+        %
+        % INPUTS:
+        % - residual   [ast]      staticised, simplified residual of an equation
+        % - varname    [char]     the variable
+        % - unknowns   [cell]     the names still to be determined
+        % - values     [struct]   calibrated values for ast.eval (default none)
+        %
+        % OUTPUTS:
+        % - tf         [logical]  scalar
+        %
+        % REMARKS:
+        % - The residual pins the variable when it holds it outright. When the variable
+        %   only factors out, residual = varname^k * cofactor, the equation is satisfied
+        %   either by the variable or by the cofactor: c^(-sigma)*(1 - beta*R) pins R
+        %   and leaves c free, while 0.1*junk fixes junk at zero. The cofactor decides:
+        %   the equation pins the variable iff the cofactor cannot vanish, that is,
+        %   holds no unknown and, when values are given, evaluates to a non-zero number.
+        %   Without values a cofactor of parameters is taken as non-zero, the convention
+        %   the rest of the steady-state machinery applies to parameters; with them a
+        %   calibration that makes it vanish, beta*R = 1, is seen for what it is.
+            [has, cancels] = residual.check_factor(varname);
+            if ~has
+                tf = false;
+                return
+            end
+            if ~cancels
+                tf = true;
+                return
+            end
+            cofactor = residual.substitute(varname, ast('1')).simplify();
+            if any(ismember(cofactor.symbol_names(), unknowns))
+                tf = false;
+                return
+            end
+            if nargin < 4 || isempty(fieldnames(values))
+                tf = true;
+                return
+            end
+            try
+                c = cofactor.eval(values);
+                tf = isfinite(c) && abs(c) > 1e-12;
+            catch
+                tf = false;
+            end
+        end % function
+
+        function [eq2var, unmatched_eqs, unmatched_vars] = matchequations(eqasts, eqlhs_symbols, candidates, values)
         % Match each equation to a unique endogenous variable using bipartite matching.
         %
         % Builds a bipartite graph where an edge connects equation i to candidate
-        % variable j iff j appears in equation i AND does not cancel out of the
-        % static reduction of equation i (tested via ast.check_factor on the
-        % staticised residual). A minimum-cost perfect matching is then computed
+        % variable j iff the static residual of equation i pins j (see modBuilder.pins:
+        % j appears in it and, when it only factors out, the cofactor cannot vanish).
+        % A minimum-cost perfect matching is then computed
         % with matchpairs (Duff-Koster). Edge weights apply stable tie-breakers:
         % prefer a variable that appears on the LHS of the equation, then prefer
         % rarer candidates (Hall-style scarcity), then break remaining ties
@@ -4018,6 +4071,8 @@ classdef modBuilder < handle
         % - eqlhs_symbols   [cell]    n×1, each element is a cell array of symbols appearing in the LHS
         %                             of equation i (used as a tie-breaker hint, not for the admission rule).
         % - candidates      [cell]    m×1, names of candidate endogenous variables
+        % - values          [struct]  calibrated values, so that a cofactor of parameters is
+        %                             evaluated rather than assumed non-zero (default none)
         %
         % OUTPUTS:
         % - eq2var          [cell]    n×1, matched variable name for each equation ('' if unmatched)
@@ -4046,6 +4101,9 @@ classdef modBuilder < handle
         % - I. S. Duff and J. Koster, "On Algorithms for Permuting Large Entries
         %   to the Diagonal of a Sparse Matrix", SIAM J. Matrix Anal. Appl.,
         %   22(4):973-996, 2001.
+            if nargin < 4
+                values = struct();
+            end
             n = numel(eqasts);
             m = numel(candidates);
             eq2var = repmat({''}, n, 1);
@@ -4069,8 +4127,7 @@ classdef modBuilder < handle
                     if ~any(strcmp(v, eqnames_set{i}))
                         continue
                     end
-                    [has, cancels] = eqasts{i}.check_factor(v);
-                    if has && ~cancels
+                    if modBuilder.pins(eqasts{i}, v, candidates, values)
                         contains_eq(i, j) = true;
                     end
                 end
