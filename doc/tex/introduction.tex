@@ -40,8 +40,20 @@
 \usepackage{listings}
 \usepackage{xcolor}
 
+\definecolor{eclipseBlue}{RGB}{42,0.0,255}
+\definecolor{eclipseGreen}{RGB}{63,127,95}
+\definecolor{eclipsePurple}{RGB}{127,0,85}
+\definecolor{eclipseEmph}{RGB}{0,0,0}
+\definecolor{macroOrange}{RGB}{176,79,0}
+
+% MATLAB console sessions and generated scripts: MATLAB's keywords, comments and
+% strings are coloured as in the editor; the prompt and the output stay plain.
 \lstdefinestyle{MatlabConsole}{
+  language=Matlab,
   basicstyle=\ttfamily\small,
+  keywordstyle=\color{eclipsePurple}\bfseries,
+  commentstyle=\color{eclipseGreen},
+  stringstyle=\color{eclipseBlue},
   backgroundcolor=\color{black!5},
   frame=single,
   breaklines=true,
@@ -72,17 +84,26 @@
     perfect_foresight_solver,
     initval,
     endval,
+    histval,
+    stoch_simul,
+    check,
+    resid,
+    estimation,
+    varobs,
+    verbatim,
+    predetermined_variables,
   },
   sensitive=false, % keywords are not case-sensitive
   morecomment=[l]{//}, % l is for line comment
+  morecomment=[l]{\%},
   morecomment=[s]{/*}{*/}, % s is for start and end delimiter
-  morestring=[b]'          % defines that strings are enclosed in double quotes
+  morestring=[b]',         % defines that strings are enclosed in single quotes
+  morestring=[b]",
+  % The macro language: a directive line from its @# to the end of the line, and a
+  % substitution @{...} inside the text, in a colour of their own.
+  moredelim=[l][\color{macroOrange}\bfseries]{@\#},
+  moredelim=[s][\color{macroOrange}]{@\{}{\}},
 }
-
-\definecolor{eclipseBlue}{RGB}{42,0.0,255}
-\definecolor{eclipseGreen}{RGB}{63,127,95}
-\definecolor{eclipsePurple}{RGB}{127,0,85}
-\definecolor{eclipseEmph}{RGB}{0,0,0}
 
 % Set Language
 \lstset{
@@ -267,13 +288,14 @@ model =
 m = modBuilder();
 
 % Equations
-m.add('y', 'y = exp(a)*(k(-1)^alpha)*(h^(1-alpha))');
-
+m.add('a', 'a = rho*a(-1)+tau*b(-1)+e');
+m.add('y', 'y = exp(a)*k(-1)^alpha*h^(1-alpha)');
+...
 % Calibration
 alpha = 0.360000;
-
+...
 % Parameters
-m.parameter('alpha', alpha, 'declared', true);
+m.parameter('alpha', alpha, 'texname', '\alpha', 'declared', true);
   \end{lstlisting}
 
 \end{frame}
