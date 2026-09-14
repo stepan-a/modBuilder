@@ -147,11 +147,13 @@
 
 \begin{frame}\frametitle{Bipartite matching (\texttt{matchequations})}
   \begin{itemize}
-  \item \textbf{Edge} $i \sim j$ iff variable $j$ appears in equation $i$
-    \emph{and does not cancel} from its static residual --- tested by
-    \code{ast.check\_factor} on \code{staticise().simplify()}. The cancellation
-    filter is what keeps the matcher from pinning an equation to a variable that
-    drops out at the steady state.\newline
+  \item \textbf{Edge} $i \sim j$ iff the static residual of equation $i$
+    \emph{pins} variable $j$ (\code{modBuilder.pins}): $j$ appears in it and, when
+    it only factors out, $r = x_j^k\,f$ by \code{ast.check\_factor}, the cofactor $f$
+    cannot vanish --- no unknown in it, and a non-zero value at the calibration.
+    $c^{-\sigma}(1-\beta R)$ pins $R$, not $c$; $0.1\,\code{junk}$ pins \code{junk},
+    at zero. This is what keeps the matcher from pinning an equation to a variable
+    that the steady state leaves free.\newline
   \item \textbf{Minimum-cost perfect matching} by \code{matchpairs}
     (Duff--Koster). Edge weights encode stable tie-breaks:
     \begin{enumerate}\small

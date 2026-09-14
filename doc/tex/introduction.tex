@@ -461,17 +461,17 @@ endogenous variable. Add a "name" tag to these:
   distinct variable it can stand for.
 
   \medskip
-  An equation may stand for a variable it mentions. Three cases, from best to worst:
+  An equation may stand for a variable it mentions. Two cases, decided on the static
+  equation, leads and lags dropped and the result simplified:
   \begin{enumerate}\small
-  \item the variable is still there once leads and lags are dropped and the equation
-    simplified: \texttt{y = alpha*k(-1) + e} may stand for \texttt{y} or for \texttt{k};
-  \item it survives only as a common factor: \texttt{junk = 0.9*junk(+1)} reduces to
-    $\texttt{junk}\cdot 0.1 = 0$, which fixes \texttt{junk} at zero. But an Euler
-    equation reduces to $c^{-\sigma}(1 - \beta R) = 0$, which pins $R$ and leaves $c$
-    free: whether such an equation is the variable's depends on the other factor, and
-    the pairing only ranks the case below the first;
-  \item it disappears altogether: \texttt{Y/Y(-1) = g} reduces to \texttt{1 = g}, yet
-    this is the equation that gives the level of \texttt{Y}.
+  \item the static equation pins the variable: it holds it outright, as
+    \texttt{y = alpha*k(-1) + e} holds \texttt{y} and \texttt{k}, or as a multiple whose
+    other factor cannot vanish, as \texttt{junk = 0.9*junk(+1)}, which reduces to
+    $0.1\,\texttt{junk} = 0$ and fixes \texttt{junk} at zero;
+  \item the static equation leaves the variable free: an Euler equation reduces to
+    $c^{-\sigma}(1 - \beta R) = 0$, which pins $R$ and says nothing about $c$; and
+    \texttt{Y/Y(-1) = g} reduces to \texttt{1 = g}, with \texttt{Y} gone. Both are
+    still the equations of \texttt{c} and of \texttt{Y}, only weaker claims.
   \end{enumerate}
 
   \medskip
@@ -484,8 +484,8 @@ endogenous variable. Add a "name" tag to these:
 \begin{frame}[fragile]
   \frametitle{Instantiate a model from a \texttt{.mod} file -- pairing, the choice --}
 
-  Each possible pair is given a price: the case number, a discount for the left-hand
-  side, a small surcharge when many equations want the same variable. Leaving an
+  Each possible pair is given a price: one or two by the case, a discount for the
+  left-hand side, a small surcharge when many equations want the same variable. Leaving an
   equation without a variable is priced above any pair. The cheapest complete assignment
   is then computed exactly; it is the problem of assigning $n$ workers to $n$ jobs at the
   least total cost, and MATLAB solves it (\texttt{matchpairs}). Good pairs are used
@@ -497,12 +497,12 @@ endogenous variable. Add a "name" tag to these:
     \texttt{y = alpha*k(-1) + e}     & \textbf{1} & 1          &            &               \\
     \texttt{k = (1-delta)*k(-1) + i} &            & \textbf{1} & 1          &               \\
     \texttt{i = s*y}                 & 1          &            & \textbf{1} &               \\
-    \texttt{junk = 0.9*junk(+1)}     &            &            &            & \textbf{2}    \\
+    \texttt{junk = 0.9*junk(+1)}     &            &            &            & \textbf{1}    \\
   \end{tabular}
   \end{center}
   \small The case of each possible pair, in bold the assignment chosen: the left-hand
-  side settles the first three rows, and the last equation takes \texttt{junk} although
-  it only holds it as a factor, since nothing else can.
+  side settles the first three rows, and the last equation takes \texttt{junk}, which it
+  pins at zero.
 
   When no complete assignment exists, some variable appears in no equation left for it,
   the reader stops and lists the equations to tag rather than guess. A \texttt{name} tag

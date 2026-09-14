@@ -395,19 +395,17 @@ Equations are kept verbatim and never re-rendered through `ast`, because
 match the source.
 
 Equation-to-variable association is a minimum-cost bipartite matching, as in
-`modBuilder.matchequations`, the matcher of the Dynare-based constructor. That
-matcher answers a steady-state question, which variable an equation pins down,
-and admits an edge only when the variable survives the static residual without
-factoring out of it: a residual that is a multiple of the variable is read as
-vanishing through its other factor, which is right for an Euler equation,
-`c^(-sigma)*(1 - beta*R)`, and wrong for `0.1*junk`, whose other factor is a
-constant. The reader asks which variable an equation is *for*, which
-has an answer for `junk = 0.9*junk(+1)`, `0 = lambda`, a bare `x` or
+`modBuilder.matchequations`, the matcher of the steady-state plan. That matcher
+admits an edge only when the static residual pins the variable, see
+`modBuilder.pins`: a residual that is a multiple of the variable pins it only if
+the other factor cannot vanish, so `c^(-sigma)*(1 - beta*R)` pins `R` and leaves
+`c` free while `0.1*junk` fixes `junk` at zero. The reader asks which variable an
+equation is *for*, which has an answer for the Euler equation or for
 `Y/Y(-1) = g` as well: every variable of the dynamic equation is admitted, at a
-cost that prefers, in order, one the static residual pins down, one it holds as
-a factor, and one only the leads and lags carry. The matching is maximal first,
-so the cheap edges give way where a perfect pairing needs them to. A `name` tag
-that is a declared variable settles the association before any of this.
+cost that prefers one the static residual pins over one it leaves free. The
+matching is maximal first, so the cheap edges give way where a perfect pairing
+needs them to. A `name` tag that is a declared variable settles the association
+before any of this.
 
 A tag value may hold a comma or a bracket, `[name='FOC wages, eq. (2)']`: the
 group is closed by the first `]` outside quotes and cut at the commas outside
