@@ -398,7 +398,9 @@ Equation-to-variable association is a minimum-cost bipartite matching, as in
 `modBuilder.matchequations`, the matcher of the Dynare-based constructor. That
 matcher answers a steady-state question, which variable an equation pins down,
 and admits an edge only when the variable survives the static residual without
-factoring out of it. The reader asks which variable an equation is *for*, which
+factoring out of it, since a residual that is a multiple of the variable may fix
+it at zero or leave its level free, as an Euler equation does. The reader asks
+which variable an equation is *for*, which
 has an answer for `junk = 0.9*junk(+1)`, `0 = lambda`, a bare `x` or
 `Y/Y(-1) = g` as well: every variable of the dynamic equation is admitted, at a
 cost that prefers, in order, one the static residual pins down, one it holds as

@@ -466,9 +466,9 @@ endogenous variable. Add a "name" tag to these:
   \item the variable is still there once leads and lags are dropped and the equation
     simplified: \texttt{y = alpha*k(-1) + e} may stand for \texttt{y} or for \texttt{k};
   \item it survives only as a common factor: \texttt{junk = 0.9*junk(+1)} reduces to
-    \texttt{0.1*junk = 0}. That does fix \texttt{junk}, at zero, but the steady-state
-    solver treats levels as non-zero, it divides by them and cancels them, and sets
-    such an equation aside; it is plainly the equation of \texttt{junk} all the same;
+    \texttt{0.1*junk = 0}, which fixes \texttt{junk} at zero. The shape is ambiguous,
+    though: an Euler equation leaves the same one, $c^{-\sigma} = \beta R\, c^{-\sigma}$,
+    with the level of $c$ free. So the claim is weaker than in the first case;
   \item it disappears altogether: \texttt{Y/Y(-1) = g} reduces to \texttt{1 = g}, yet
     this is the equation that gives the level of \texttt{Y}.
   \end{enumerate}

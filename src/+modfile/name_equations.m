@@ -17,14 +17,16 @@ function names = name_equations(eqs, endonames, tagname, filename)
 % - The remaining equations are paired with the variables by a minimum-cost bipartite
 %   matching, as in modBuilder.matchequations, the matcher of the Dynare-based
 %   constructor. That one answers a steady-state question, which variable an equation
-%   pins down under the convention that no variable is zero, and admits an edge only
-%   when the variable survives the static residual without factoring out of it. The
-%   question here is which variable an equation is FOR, which has an answer for
-%   junk = 0.9*junk(+1), 0 = lambda, a bare x or Y/Y(-1) = g as well. So every
-%   variable of the dynamic equation is admitted, at a cost that prefers, in order, a
-%   variable the static residual pins down, one it holds as a factor, and one that only
-%   the leads and lags carry. The matching is maximal first, so the cheap edges give
-%   way where a perfect pairing needs them to.
+%   pins down, and admits an edge only when the variable survives the static residual
+%   without factoring out of it: a residual that is a multiple of the variable may fix
+%   it at zero, as 0.1*junk does, or leave its level free, as an Euler equation does
+%   once c(t)/c(t+1) is one, and the matcher cannot tell which. The question here is
+%   which variable an equation is FOR, which has an answer for junk = 0.9*junk(+1),
+%   0 = lambda, a bare x or Y/Y(-1) = g as well. So every variable of the dynamic
+%   equation is admitted, at a cost that prefers, in order, a variable the static
+%   residual pins down, one it holds as a factor, and one that only the leads and lags
+%   carry. The matching is maximal first, so the cheap edges give way where a perfect
+%   pairing needs them to.
 % - Within a tier the costs are those of matchequations: a bonus for the left-hand side,
 %   a penalty for a candidate many equations could take, and a stable tie-break.
 % - ast.symbol_names is used where the constructor uses the private modBuilder.getsymbols;
