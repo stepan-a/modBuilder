@@ -427,7 +427,6 @@ end
 
   \begin{lstlisting}[style=MatlabConsole]
     >> modBuilder('twoeqs.mod')
-Error using modfile.name_equations
 twoeqs.mod: unable to associate every equation
 with a unique endogenous variable.
 Add a "name" tag to these:
@@ -437,8 +436,9 @@ Add a "name" tag to these:
 
   \medskip
   Of the 280 files of Dynare's test suite that use the macro language, 222 load as
-  they are. Most of the rest hit a refused statement, an operator the parser does not
-  know yet (\texttt{$\perp$}), or a \texttt{-D} flag the test runner supplies.
+  they are. Most of the rest hit a refused statement or an operator the parser does not
+  know yet (\texttt{$\perp$}); a few expect a macro variable that Dynare's test runner
+  sets with \texttt{-D}, and load once \texttt{Defines=} sets it.
 
 \end{frame}
 
