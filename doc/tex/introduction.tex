@@ -453,25 +453,43 @@ endogenous variable. Add a "name" tag to these:
 
 
 \begin{frame}[fragile]
-  \frametitle{Instantiate a model from a \texttt{.mod} file -- the matching --}
+  \frametitle{Instantiate a model from a \texttt{.mod} file -- pairing --}
 
-  Which variable is each equation \emph{for}? A bipartite graph joins an equation to
-  every endogenous variable it mentions, at a cost that ranks how the equation holds it:
-
-  \begin{enumerate}\small
-  \item the static residual pins it down: \texttt{y = alpha*e} $\to$ \texttt{y - alpha*e};
-  \item it only factors out of the static residual: \texttt{junk = 0.9*junk(+1)} $\to$
-    \texttt{0.1*junk};
-  \item only a lead or a lag carries it: \texttt{Y/Y(-1) = g} $\to$ \texttt{1 - g}.
-  \end{enumerate}
-
-  Within a tier, a variable on the left-hand side is cheaper, then one few equations
-  could take. Leaving an equation unmatched costs more than any edge, so the matching
-  is as large as it can be first, and as cheap as it can be then (\texttt{matchpairs},
-  Duff and Koster). A perfect matching keys every equation; none means the error.
+  Every equation of a \texttt{modBuilder} model is the equation \emph{of} one endogenous
+  variable, and every variable has one. Without \texttt{name} tags the reader has to
+  decide which is which: $n$ equations, $n$ variables, each equation to be given a
+  distinct variable it can stand for.
 
   \medskip
-  \begin{center}\scriptsize
+  An equation may stand for a variable it mentions. Three cases, from best to worst:
+  \begin{enumerate}\small
+  \item the variable is still there once leads and lags are dropped and the equation
+    simplified: \texttt{y = alpha*k(-1) + e} may stand for \texttt{y} or for \texttt{k};
+  \item it survives only as a common factor: \texttt{junk = 0.9*junk(+1)} reduces to
+    \texttt{0.1*junk = 0}, which says nothing about the level of \texttt{junk} at the
+    steady state, yet is plainly its equation;
+  \item it disappears altogether: \texttt{Y/Y(-1) = g} reduces to \texttt{1 = g}, yet
+    this is the equation that gives the level of \texttt{Y}.
+  \end{enumerate}
+
+  \medskip
+  Among the variables an equation may stand for, the one on its left-hand side comes
+  first, then one that few other equations could take, so that it is not left stranded.
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Instantiate a model from a \texttt{.mod} file -- pairing, the choice --}
+
+  Each possible pair is given a price: the case number, a discount for the left-hand
+  side, a small surcharge when many equations want the same variable. Leaving an
+  equation without a variable is priced above any pair. The cheapest complete assignment
+  is then computed exactly; it is the problem of assigning $n$ workers to $n$ jobs at the
+  least total cost, and MATLAB solves it (\texttt{matchpairs}). Good pairs are used
+  wherever they can be, and give way only where the assignment as a whole needs it.
+
+  \begin{center}\small
   \begin{tabular}{l|cccc}
                                      & \texttt{y} & \texttt{k} & \texttt{i} & \texttt{junk} \\ \hline
     \texttt{y = alpha*k(-1) + e}     & \textbf{1} & 1          &            &               \\
@@ -480,9 +498,13 @@ endogenous variable. Add a "name" tag to these:
     \texttt{junk = 0.9*junk(+1)}     &            &            &            & \textbf{2}    \\
   \end{tabular}
   \end{center}
-  \scriptsize Tiers of each edge; in bold the pairing chosen, the left-hand side deciding
-  the ties. The steady-state plan keeps its own matcher, which admits tier 1 only: it
-  asks which variable an equation pins down at the steady state, not which it is for.
+  \small The case of each possible pair, in bold the assignment chosen: the left-hand
+  side settles the first three rows, and the last equation takes \texttt{junk} although
+  it only holds it as a factor, since nothing else can.
+
+  When no complete assignment exists, some variable appears in no equation left for it,
+  the reader stops and lists the equations to tag rather than guess. A \texttt{name} tag
+  always wins over the assignment.
 
 \end{frame}
 
