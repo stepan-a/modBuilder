@@ -412,6 +412,12 @@ end
     functions, the optimal-policy statements, a second \texttt{model} block.
   \end{itemize}
 
+  \medskip
+  \small Of the 280 files of Dynare's test suite that use the macro language, 222 load
+  as they are. Most of the rest hit a refused statement or an operator the parser does
+  not know yet (\texttt{$\perp$}); a few expect a macro variable that Dynare's test
+  runner sets with \texttt{-D}, and load once \texttt{Defines=} sets it.
+
 \end{frame}
 
 
@@ -419,26 +425,64 @@ end
   \frametitle{Instantiate a model from a \texttt{.mod} file -- naming equations --}
 
   A \texttt{modBuilder} equation is keyed to one endogenous variable. A \texttt{name}
-  tag that is a declared variable settles it; the rest are paired by a bipartite
-  matching that asks which variable each equation is \emph{for}: a variable the static
-  residual pins down comes first, then one it holds as a factor, then one only the leads
-  and lags carry, so \mbox{\texttt{junk = 0.9*junk(+1)}} or \mbox{\texttt{Y/Y(-1) = g}}
-  get their variable too. When no perfect pairing exists, the error names what to tag:
+  tag that is a declared variable settles it. Without tags the reader pairs equations
+  and variables itself (next frame), and when no pairing covers every variable, the
+  error names what to tag. Here neither equation mentions \texttt{c}:
 
-  \begin{lstlisting}[style=MatlabConsole]
-    >> modBuilder('twoeqs.mod')
-twoeqs.mod: unable to associate every equation
-with a unique endogenous variable.
-Add a "name" tag to these:
-  line 7: y = 2*e
+  \begin{lstlisting}[language=Dynare,basicstyle=\scriptsize\ttfamily]
+var y c;
+varexo e;
+parameters alpha;
+alpha = 0.5;
+
+model;
+y = alpha*e;
+y = 2*e;
+end;
+  \end{lstlisting}
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\scriptsize]
+>> modBuilder('twoeqs.mod')
+twoeqs.mod: unable to associate every equation with a unique
+endogenous variable. Add a "name" tag to these:
+  line 8: y = 2*e
   unmatched endogenous variables: c
   \end{lstlisting}
 
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Instantiate a model from a \texttt{.mod} file -- the matching --}
+
+  Which variable is each equation \emph{for}? A bipartite graph joins an equation to
+  every endogenous variable it mentions, at a cost that ranks how the equation holds it:
+
+  \begin{enumerate}\small
+  \item the static residual pins it down: \texttt{y = alpha*e} $\to$ \texttt{y - alpha*e};
+  \item it only factors out of the static residual: \texttt{junk = 0.9*junk(+1)} $\to$
+    \texttt{0.1*junk};
+  \item only a lead or a lag carries it: \texttt{Y/Y(-1) = g} $\to$ \texttt{1 - g}.
+  \end{enumerate}
+
+  Within a tier, a variable on the left-hand side is cheaper, then one few equations
+  could take. Leaving an equation unmatched costs more than any edge, so the matching
+  is as large as it can be first, and as cheap as it can be then (\texttt{matchpairs},
+  Duff and Koster). A perfect matching keys every equation; none means the error.
+
   \medskip
-  Of the 280 files of Dynare's test suite that use the macro language, 222 load as
-  they are. Most of the rest hit a refused statement or an operator the parser does not
-  know yet (\texttt{$\perp$}); a few expect a macro variable that Dynare's test runner
-  sets with \texttt{-D}, and load once \texttt{Defines=} sets it.
+  \begin{center}\scriptsize
+  \begin{tabular}{l|cccc}
+                                     & \texttt{y} & \texttt{k} & \texttt{i} & \texttt{junk} \\ \hline
+    \texttt{y = alpha*k(-1) + e}     & \textbf{1} & 1          &            &               \\
+    \texttt{k = (1-delta)*k(-1) + i} &            & \textbf{1} & 1          &               \\
+    \texttt{i = s*y}                 & 1          &            & \textbf{1} &               \\
+    \texttt{junk = 0.9*junk(+1)}     &            &            &            & \textbf{2}    \\
+  \end{tabular}
+  \end{center}
+  \scriptsize Tiers of each edge; in bold the pairing chosen, the left-hand side deciding
+  the ties. The steady-state plan keeps its own matcher, which admits tier 1 only: it
+  asks which variable an equation pins down at the steady state, not which it is for.
 
 \end{frame}
 
