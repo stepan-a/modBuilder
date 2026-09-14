@@ -3375,8 +3375,8 @@ classdef modBuilder < handle
                 % same block (its own lags for an AR/ARMA, the block members for a VAR),
                 % and the block is driven by at least one exogenous innovation. Such a
                 % block is a sink of the declaration-paired dependency graph -- nothing in
-                % the rest of the model determines it -- so its variables are free anchors
-                % for the steady-state matching, excluded from it so the matcher cannot
+                % the rest of the model determines it, its own process sets its level -- so
+                % its variables are kept out of the steady-state matching, which cannot then
                 % steal a shock variable to pin a real equation.
                 is_anchor = modBuilder.exogenous_processes(keys, rawsyms, @(nm) o.isexogenous(nm));
 
@@ -8547,12 +8547,14 @@ classdef modBuilder < handle
         %                      require either further symbolic reduction or a numerical solver.
         % - 'anchor':          (Match=true only) an economically exogenous variable -- one belonging to an
         %                      AR/ARMA/VAR driving process (a sink block of the dependency graph fed by an
-        %                      exogenous innovation), whose steady-state value is a free anchor supplied by
-        %                      the user rather than pinned by the rest of the model. A multivariate process
-        %                      (VAR) is kept as a single 'anchor' block of size > 1: its joint static
-        %                      system (I-K)x = c is closed like a simultaneous block, so the closed forms
-        %                      come out in evaluation order and the determinant probe catches unit-root
-        %                      processes (det(I-K) = 0 at the calibration).
+        %                      exogenous innovation). Its level is set by the process itself, not by the
+        %                      rest of the model: the block is closed from its own static system,
+        %                      (I-K)x = c, and needs no value from the user. A multivariate process (VAR)
+        %                      is kept as a single 'anchor' block of size > 1, its joint system closed like
+        %                      a simultaneous block, so the closed forms come out in evaluation order and
+        %                      the determinant probe catches unit-root processes (det(I-K) = 0 at the
+        %                      calibration). The variables passed through options.Anchors are anchors
+        %                      too; their level is the one the user supplies.
         % - The dependency analysis collects symbol names from each equation via the AST, regardless of
         %   lag. The static dependency graph and its SCC structure are identical to what one obtains by
         %   first staticising every equation, since name equality is unchanged by staticise.
