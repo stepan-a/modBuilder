@@ -212,7 +212,11 @@ function lines = local_emit_loop(run, depth, indent, reserved, blocks)
     % original order.
     [sets, cartesian] = local_cartesian(values);
     if cartesian && isscalar(template) && local_placeholders_ok(template, size(values, 2))
-        tail = sprintf(', %s', strjoin(cellfun(@local_render_set, sets, 'UniformOutput', false), ', '));
+        rendered = cell(1, numel(sets));
+        for j = 1:numel(sets)
+            rendered{j} = local_render_index(sets{j}, frame, j);
+        end
+        tail = sprintf(', %s', strjoin(rendered, ', '));
         lines = cell(1, numel(template));
         for k = 1:numel(template)
             lines{k} = [indent template(k).render(template(k).strings, tail)];
@@ -254,7 +258,9 @@ function run = local_merge_nested(run, depth)
             end
             merged = modfile.macro_frame('for', outer.id, counter, '', false, ...
                                          [outer.values, run(i).ctx(depth+2).values], ...
-                                         [outer.names, run(i).ctx(depth+2).names]);
+                                         [outer.names, run(i).ctx(depth+2).names], outer.line, ...
+                                         [outer.sets, run(i).ctx(depth+2).sets], ...
+                                         [outer.sizes, run(i).ctx(depth+2).sizes]);
             run(i).ctx = [run(i).ctx(1:depth), merged, run(i).ctx(depth+3:end)];
         end
     end
@@ -556,6 +562,17 @@ function u = local_unique(column)
     end
 end
 
+function str = local_render_index(set, frame, j)
+% Render the set of index j: as the expression the .mod file wrote when the frame
+% carries one and the loop was seen to run over all of its values, so that the script
+% reads and stays adjustable through that local; as the values otherwise.
+    if numel(frame.sets) >= j && ~isempty(frame.sets{j}) && numel(set) == frame.sizes(j)
+        str = frame.sets{j};
+    else
+        str = local_render_set(set);
+    end
+end
+
 function str = local_render_set(set)
 % Render one index set as the cell array a modBuilder implicit loop takes.
     parts = cellfun(@local_render_value, set, 'UniformOutput', false);
@@ -578,11 +595,17 @@ function lines = local_emit_matlab_for(template, values, frame, indent, reserved
 
     lines = {};
     for j = 1:n
-        lines{end+1} = sprintf('%s%s = %s;', indent, names{j}, local_render_set(values(:,j)')); %#ok<AGROW>
+        % A single index whose set the frame names, and that ran over all of it, reads
+        % from the local; a multi-index loop runs over rows and keeps the values.
+        if n == 1 && ~isempty(frame.sets) && ~isempty(frame.sets{1}) && size(values, 1) == frame.sizes(1)
+            lines{end+1} = sprintf('%s%s = %s;', indent, names{j}, frame.sets{1}); %#ok<AGROW>
+        else
+            lines{end+1} = sprintf('%s%s = %s;', indent, names{j}, local_render_set(values(:,j)')); %#ok<AGROW>
+        end
     end
 
     counter = local_unique_name('it', [reserved, names]);
-    lines{end+1} = sprintf('%sfor %s = 1:%u', indent, counter, size(values, 1));
+    lines{end+1} = sprintf('%sfor %s = 1:length(%s)', indent, counter, names{1});
 
     body = [indent '    '];
     for i = 1:numel(template)

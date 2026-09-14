@@ -45,6 +45,13 @@ assert(isequal(cell(product{1}), {1, 'x'}) && isequal(cell(product{4}), {2, 'y'}
 
 assert(isequal(cell(macroarray(1:3)), {1, 2, 3}) && isempty(macroarray(3:1)) && isequal(cell(macroarray(5)), {5}), 'A numeric vector spreads into elements, as a range renders.');
 
+% An implicit loop of modBuilder takes a macroarray as an index list, since that is what
+% a generated script holds its sets in.
+mm = modBuilder();
+mm.add('y_$1', 'y_$1 = e_$1', macroarray('US', 'EA'));
+mm.exogenous('e_$1', NaN, macroarray('US', 'EA'));
+assert(isequal(mm.var(:,1)', {'y_US', 'y_EA'}) && isequal(mm.varexo(:,1)', {'e_US', 'e_EA'}), 'A macroarray should serve as an index list.');
+
 square = macroarray(1, 2) ^ 2;
 assert(length(square) == 4 && isequal(cell(square{2}), {1, 2}), 'The Cartesian power is the product of the array with itself.');
 cube = macroarray(1, 2) ^ 3;

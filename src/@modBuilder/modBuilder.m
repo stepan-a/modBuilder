@@ -337,6 +337,8 @@ classdef modBuilder < handle
                 varargin
             end
 
+            varargin = cellfun(@modBuilder.as_index_list, varargin, 'UniformOutput', false);
+
             % Find all indices in the symbol name (e.g., $1, $2)
             inames = modBuilder.placeholders(symbol_name);
             nindices = numel(inames);
@@ -2395,6 +2397,15 @@ classdef modBuilder < handle
             end
         end % function
 
+        function x = as_index_list(x)
+        % An index list as a cell array: a macroarray, the array of the macro language
+        % that a script generated from a .mod file holds its index sets in, is given as
+        % its elements; anything else is returned as it is.
+            if isa(x, 'macrolist')
+                x = cell(x);
+            end
+        end % function
+
         function expanded = expand_templates(templates, index_values)
         % Expand implicit loop templates into concrete strings.
         %
@@ -2415,6 +2426,7 @@ classdef modBuilder < handle
                 index_values cell
             end
 
+            index_values = cellfun(@modBuilder.as_index_list, index_values, 'UniformOutput', false);
             inames = modBuilder.placeholders(templates{1});
             nindices = numel(inames);
 

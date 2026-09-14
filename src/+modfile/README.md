@@ -66,12 +66,12 @@ OpenEconomy = true;
 and the control flow becomes MATLAB control flow:
 
 ```matlab
-% one call per index set
-m.add('y_$1', 'y_$1 = alpha + e_$1', {'US', 'EA'});
+% one call per index set, over the local the @#define became
+m.add('y_$1', 'y_$1 = alpha + e_$1', Countries);
 
 % or a MATLAB loop when an implicit loop cannot express it
-c_values = {'US', 'EA'};
-for it = 1:2
+c_values = Countries;
+for it = 1:length(c_values)
     m.add(sprintf('y_%s', c_values{it}), sprintf('y_%s = alpha*e', c_values{it}));
     m.add(sprintf('k_%s', c_values{it}), sprintf('k_%s = y_%s', c_values{it}, c_values{it}));
 end

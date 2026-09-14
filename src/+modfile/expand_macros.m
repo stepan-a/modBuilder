@@ -559,6 +559,8 @@ function [out, env, info] = local_for(header, body, env, info, state, line)
     % consumes. Each iteration tags its lines with the values it bound, and only the
     % iterations that actually ran are recorded: a 'when' guard then shows up as a shorter
     % list of values rather than as a case of its own.
+    [sets, sizes] = local_index_sets(setexpr, guard, indexnames, values, env, state);
+
     out = struct('text', {}, 'ctx', {});
     iteration = 0;
     for k = 1:numel(values.data)
@@ -569,9 +571,80 @@ function [out, env, info] = local_for(header, body, env, info, state, line)
         iteration = iteration + 1;
         inner = state;
         inner.loopvars = [state.loopvars, indexnames];
-        inner.ctx(end+1) = modfile.macro_frame('for', modfile.construct_id(state.filename, line), iteration, '', false, local_bound(indexnames, values.data{k}), indexnames, line);
+        inner.ctx(end+1) = modfile.macro_frame('for', modfile.construct_id(state.filename, line), iteration, '', false, local_bound(indexnames, values.data{k}), indexnames, line, sets, sizes);
         [chunk, env, info] = local_run(body, env, info, inner);
         out = [out, chunk]; %#ok<AGROW>
+    end
+    % A guard keeps some values out; the set the emitter may name is the filtered one,
+    % whose size is the number of iterations that ran. The frames already emitted carry
+    % the unfiltered size, so they are fixed up here.
+    if ~isempty(guard) && ~isempty(sets{1})
+        for i = 1:numel(out)
+            out(i).ctx(numel(state.ctx)+1).sizes = iteration;
+        end
+    end
+end
+
+function [sets, sizes] = local_index_sets(setexpr, guard, indexnames, values, env, state)
+% The MATLAB source of each index's set, for the emitter to write in place of the values
+% the loop bound, and the number of values each holds.
+%
+% A source is given only when the script can evaluate it to exactly the values the loop
+% ran over: the set renders, it mentions no index of an enclosing loop (the script has no
+% local for those), a tuple loop runs over a plain product of one set per index, and a
+% guard renders as a filter on a single index. Otherwise the emitter writes the values.
+    n = numel(indexnames);
+    sets = repmat({''}, 1, n);
+    sizes = zeros(1, n);
+    tree = macro(setexpr);
+    if n == 1
+        parts = {tree};
+    else
+        parts = local_product_factors(tree);
+        if numel(parts) ~= n
+            return
+        end
+    end
+    sources = cell(1, n);
+    for j = 1:n
+        [src, ok] = parts{j}.to_matlab(env);
+        if ~ok || (~isempty(state.loopvars) && ~isempty(regexp(src, ['(?<![\w.])(' strjoin(state.loopvars, '|') ')(?!\w)'], 'once')))
+            return
+        end
+        try
+            v = parts{j}.eval(env);
+        catch
+            return
+        end
+        if ~strcmp(v.kind, 'array')
+            return
+        end
+        sources{j} = src;
+        sizes(j) = numel(v.data);
+    end
+    if ~isempty(guard)
+        if n ~= 1 || isempty(values.data)
+            sizes(:) = 0;
+            return
+        end
+        bound = env;
+        bound.vars(string(indexnames{1})) = values.data{1};
+        [g, ok] = macro(guard).to_matlab(bound);
+        if ~ok
+            sizes(:) = 0;
+            return
+        end
+        sources{1} = sprintf('filter(%s, @(%s) %s)', sources{1}, indexnames{1}, g);
+    end
+    sets = sources;
+end
+
+function parts = local_product_factors(tree)
+% The factors of a Cartesian product A * B * C, as the trees of A, B and C.
+    if strcmp(tree.type, 'binop') && strcmp(tree.value, '*')
+        parts = [local_product_factors(tree.children{1}), local_product_factors(tree.children{2})];
+    else
+        parts = {tree};
     end
 end
 

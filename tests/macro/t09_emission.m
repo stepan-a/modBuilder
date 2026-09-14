@@ -17,8 +17,8 @@ cleanup = onCleanup(@() delete(source));
 cleanup2 = onCleanup(@() delete(script));
 text = fileread(script);
 
-assert(contains(text, 'm.add(''y_$1'', ''y_$1 = alpha + e_$1'', {''US'', ''EA'', ''JP''});'), sprintf('Expected one implicit-loop add, got:\n%s', text));
-assert(contains(text, 'm.exogenous(''e_$1'', NaN, ''declared'', true, {''US'', ''EA'', ''JP''});'), 'Expected one implicit-loop exogenous declaration.');
+assert(contains(text, 'm.add(''y_$1'', ''y_$1 = alpha + e_$1'', Countries);'), sprintf('Expected one implicit-loop add over the named set, got:\n%s', text));
+assert(contains(text, 'm.exogenous(''e_$1'', NaN, ''declared'', true, Countries);'), 'Expected one implicit-loop exogenous declaration over the named set.');
 assert(count(text, 'm.add(') == 1, 'The three equations should be one call.');
 
 % Running the script rebuilds the same model, so the compact form is not a shortcut.
@@ -110,7 +110,7 @@ cleanup8 = onCleanup(@() delete(source4));
 cleanup9 = onCleanup(@() delete(script4));
 text4 = fileread(script4);
 
-assert(contains(text4, 'for it = 1:2'), sprintf('Expected a MATLAB for loop, got:\n%s', text4));
+assert(contains(text4, 'for it = 1:length(i_values)'), sprintf('Expected a MATLAB for loop, got:\n%s', text4));
 assert(contains(text4, 'i_values = {1, 2};'), 'The first index values should be listed before the loop.');
 assert(contains(text4, 'j_values = {''a'', ''b''};'), 'The second index values should be listed before the loop.');
 assert(contains(text4, 'sprintf('), 'The loop should build the names with sprintf.');
@@ -135,7 +135,7 @@ cleanup10 = onCleanup(@() delete(source5));
 cleanup11 = onCleanup(@() delete(script5));
 
 assert(isequal(m5.var(:,1)', {'y_US', 'k_US', 'y_EA', 'k_EA'}), sprintf('The loop should keep its order, got: %s', strjoin(m5.var(:,1)', ' ')));
-assert(contains(fileread(script5), 'for it = 1:2'), 'A multi-equation body should become a MATLAB for loop.');
+assert(contains(fileread(script5), 'for it = 1:length(c_values)'), 'A multi-equation body should become a MATLAB for loop.');
 assert(modfile.build(script5) == m5, 'The generated loop should rebuild the same model.');
 
 % --- Nested @#for fold into one multi-index loop ---------------------------------------
@@ -152,7 +152,7 @@ cleanup12 = onCleanup(@() delete(source6));
 cleanup13 = onCleanup(@() delete(script6));
 text6 = fileread(script6);
 
-assert(contains(text6, 'm.add(''y_$1_$2'', ''y_$1_$2 = alpha*e'', {''US'', ''EA''}, {1, 2});'), sprintf('Nested loops should fold into one two-index loop, got:\n%s', text6));
+assert(contains(text6, 'm.add(''y_$1_$2'', ''y_$1_$2 = alpha*e'', C, S);'), sprintf('Nested loops should fold into one two-index loop over the named sets, got:\n%s', text6));
 assert(isequal(m6.var(:,1)', {'y_US_1', 'y_US_2', 'y_EA_1', 'y_EA_2'}), 'Nested loops should keep their expansion order.');
 assert(modfile.build(script6) == m6, 'The folded loop should rebuild the same model.');
 
@@ -445,5 +445,27 @@ cleanup43 = onCleanup(@() delete(script21));
 assert(abs(m21.y_2 - 1.8) < 1e-12 && abs(m21.z - 3.2) < 1e-12, sprintf('Initial values should see each other, got y_2 = %g, z = %g.', m21.y_2, m21.z));
 assert(contains(fileread(script21), 'm.y_1 + m.y_2 + m.e'), 'The reference should go through the object.');
 assert(modfile.build(script21) == m21, 'The script should rebuild the same model.');
+
+% --- A loop over a named set reads from the local --------------------------------------
+% The set of a @#for is a macro variable of the script; the loop names it rather than
+% listing its values, so that changing the local changes the model. A guard renders as a
+% filter, a product of named sets names each factor, and a set that depends on the index
+% of an enclosing loop, which no local carries, falls back to the values.
+source30 = 't09_namedset.mod';
+fid = fopen(source30, 'w');
+fprintf(fid, '@#define C = ["US", "EA"]\n@#define S = [1, 2, 3]\n\nvar\n@#for c in C\n  y_@{c}\n@#endfor\n@#for c in C\n@#for s in S\n  k_@{c}_@{s}\n@#endfor\n@#endfor\n@#for s in S when s > 1\n  z_@{s}\n@#endfor\n@#for i in 1:2\n@#for j in 1:i\n  w_@{i}_@{j}\n@#endfor\n@#endfor\n;\nvarexo e;\n\n');
+fprintf(fid, 'model;\n@#for c in C\n[name = ''y_@{c}'']\ny_@{c} = e;\n@#endfor\n@#for c in C\n@#for s in S\n[name = ''k_@{c}_@{s}'']\nk_@{c}_@{s} = y_@{c};\n@#endfor\n@#endfor\n@#for s in S when s > 1\n[name = ''z_@{s}'']\nz_@{s} = e;\n@#endfor\n@#for i in 1:2\n@#for j in 1:i\n[name = ''w_@{i}_@{j}'']\nw_@{i}_@{j} = e;\n@#endfor\n@#endfor\nend;\n');
+fclose(fid);
+cleanup50 = onCleanup(@() delete(source30));
+
+[m30, script30] = modfile.load(source30, Script='t09_namedset_gen.m');
+cleanup51 = onCleanup(@() delete(script30));
+text30 = fileread(script30);
+assert(contains(text30, 'm.add(''y_$1'', ''y_$1 = e'', C);'), sprintf('The loop should name its set, got:\n%s', text30));
+assert(contains(text30, 'm.add(''k_$1_$2'', ''k_$1_$2 = y_$1'', C, S);'), sprintf('A product of named sets should name each factor, got:\n%s', text30));
+assert(contains(text30, 'filter(S, @(s) (s > 1))'), sprintf('A guarded loop should render as a filter, got:\n%s', text30));
+assert(contains(text30, 'm.add(''w_2_1'', ''w_2_1 = e'');') && ~contains(text30, '1:i'), sprintf('A set depending on the outer index is no product, and is emitted flat, got:\n%s', text30));
+assert(~contains(text30, '{''US'', ''EA''}'), 'The values of a named set should not be listed.');
+assert(modfile.build(script30) == m30, 'The script should rebuild the same model.');
 
 fprintf('t09_emission.m: All tests passed\n');
