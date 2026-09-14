@@ -622,6 +622,115 @@ m.add('h', 'h = theta*y');
 \end{frame}
 
 
+\begin{frame}[fragile]
+  \frametitle{Tag equations -- an example --}
+
+  Two sectors, \verb+m+ and \verb+s+. Tags are set with implicit loops, and a tag
+  value may use the index:
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\scriptsize]
+m = modBuilder();
+m.add('Y_$1', 'Y_$1 = A_$1*K_$1(-1)^alpha*L_$1^(1-alpha)', ...
+      {'m', 's'});
+m.add('K_$1', 'K_$1 = (1-delta)*K_$1(-1) + I_$1', {'m', 's'});
+m.add('C', 'C = Y_m + Y_s - I_m - I_s');
+% parameters and exogenous variables declared as usual
+m.tag('Y_$1', 'type', 'production', {'m', 's'});
+m.tag('K_$1', 'type', 'accumulation', {'m', 's'});
+m.tag('Y_$1', 'sector', '$1', {'m', 's'});
+m.tag('K_$1', 'sector', '$1', {'m', 's'});
+m.tag('C', 'type', 'aggregation');
+  \end{lstlisting}
+
+  \begin{itemize}
+  \item The tags of an equation are the fields of a structure: \verb+m.tags.Y_m+ holds
+    \verb+name+ \verb+'Y_m'+, \verb+type+ \verb+'production'+ and \verb+sector+ \verb+'m'+.
+  \item The next frames use them to find equations, to extract a block, and to remove
+    one.
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Tag equations -- find equations --}
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\scriptsize]
+>> m.listeqbytag('type', 'production')
+   % Y_m Y_s
+>> m.listeqbytag('sector', 'm')
+   % Y_m K_m
+>> m.listeqbytag('sector', 'm', 'type', 'production')
+   % Y_m
+>> m.listeqbytag('type', 'acc.*')
+   % K_m K_s
+>> m.listeqbytag('type', 'production|accumulation')
+   % Y_m Y_s K_m K_s
+  \end{lstlisting}
+
+  \begin{itemize}\small
+  \item Several criteria must all hold: the third call keeps only the production
+    equation of sector \verb+m+.
+  \item A value is a regular expression matched against the whole tag value:
+    \verb+'acc.*'+ matches \verb+accumulation+, and \verb+|+ reads as ``or''.
+  \item No match is an error, not an empty list.
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Tag equations -- select a block --}
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\scriptsize]
+>> p = m.select('sector', 's');
+>> p = m{bytag('sector', 's')};     % the same
+  \end{lstlisting}
+
+  \begin{itemize}
+  \item \verb+select+ returns a model made of the equations that match and of the
+    symbols they use. Here \verb+p+ holds the equations of \verb+Y_s+ and \verb+K_s+,
+    the parameters \verb+A_s+, \verb+alpha+ and \verb+delta+, and the exogenous
+    variables \verb+L_s+ and \verb+I_s+.\newline
+  \item A variable whose equation is left out becomes exogenous in the selection:
+    \verb+m{bytag('type', 'production')}+ keeps the equations of \verb+Y_m+ and
+    \verb+Y_s+, with \verb+K_m+ and \verb+K_s+ exogenous.
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Tag equations -- remove a block, write the model --}
+
+  Removing a block is a selection passed to \verb+rm+:
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\scriptsize]
+>> eqs = m.listeqbytag('sector', 'm');
+>> m.rm(eqs{:});                     % equations left: Y_s K_s C
+  \end{lstlisting}
+
+  \small As on the frame on removal, \verb+Y_m+, still used by \verb+C+, becomes
+  exogenous, while \verb+K_m+ and \verb+A_m+, used only by the removed equations, go.
+
+  \medskip
+  \normalsize Tags are written to the \verb+.mod+ file, where Dynare accepts any tag,
+  and read back with it:
+
+  \begin{lstlisting}[language=Dynare,basicstyle=\scriptsize\ttfamily,numbers=none]
+[name = 'Y_m', sector = 'm', type = 'production']
+Y_m = A_m*K_m(-1)^alpha*L_m^(1-alpha);
+
+[name = 'C', type = 'aggregation']
+C = Y_m + Y_s - I_m - I_s;
+  \end{lstlisting}
+
+  \small So \verb+modBuilder('sectors.mod')+ gives a model on which the same selections
+  work, and tags written by hand in a \verb+.mod+ file serve the same purpose.
+
+\end{frame}
+
+
 \begin{frame}[c,fragile]
   \frametitle{Type symbols}
 
