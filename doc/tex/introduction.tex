@@ -956,49 +956,12 @@ style=Matlab-editor
 
 
 \begin{frame}[c,fragile]
-  \frametitle{Steady state -- 1 --}
-
-  \begin{itemize}
-
-  \item The \verb+evaluate+ method evaluates a static equation and
-    returns a structure with the value of the left hand side (field
-    \verb+lhs+), the value of the right hand side (field \verb+rhs+)
-    and the residual of the static equation defined as
-    \verb+resid=lhs-rhs+.\newline
-
-    \medskip
-
-  \item The \verb+solve+ method solves the static version of an
-    equation for a symbol. This symbol can be an endogenous variable,
-    an exogenous variable or a parameter.\newline
-
-  \end{itemize}
-
-\end{frame}
-
-
-\begin{frame}[c,fragile]
-  \frametitle{Steady state -- 2 --}
+  \frametitle{Steady state -- the model --}
 
   \scalebox{.6}{
   \lstinputlisting[
   firstline=1,
-  lastline =24,
-  basicstyle=\tiny,
-  frame=none,
-  numbers=left,
-  style=Matlab-editor
-  ]{../models/rbc13.m}}
-
-\end{frame}
-
-\begin{frame}[c,fragile]
-  \frametitle{Steady state -- 3 --}
-
-  \scalebox{1}{
-  \lstinputlisting[
-  firstline=28,
-  lastline =37,
+  lastline =23,
   basicstyle=\tiny,
   frame=none,
   numbers=left,
@@ -1013,7 +976,9 @@ style=Matlab-editor
 %==============================================================================
 
 \begin{frame}[c,fragile]
-  \frametitle{Steady state -- declare the solution --}
+  \frametitle{Steady state -- declare it --}
+
+  When the steady state has a closed form, declare it:
 
   \begin{itemize}
 
@@ -1033,12 +998,121 @@ style=Matlab-editor
 
   \end{itemize}
 
-  \begin{lstlisting}[style=MatlabConsole]
+\end{frame}
 
-    >> model.steady('a', '0');
-    >> model.steady('k', 'alpha*y/(1/beta-1+delta)');
-    >> model.write('rbc', steady_state_model=true);
+
+\begin{frame}[fragile]
+  \frametitle{Steady state -- declare it, the whole block --}
+
+  For the model above, capital, output and consumption per hour follow from the
+  Euler equation and the resource constraint, and hours from labour supply:
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\scriptsize]
+model.steady('a', '0');
+model.steady('b', '0');
+model.steady_aux('kh', '(alpha/(1/beta-1+delta))^(1/(1-alpha))');
+model.steady_aux('yh', 'kh^alpha');
+model.steady_aux('ch', 'yh - delta*kh');
+model.steady('h', '((1-alpha)*yh/(theta*ch))^(1/(1+psi))');
+model.steady('k', 'kh*h');
+model.steady('y', 'yh*h');
+model.steady('c', 'ch*h');
+model.write('rbc', steady_state_model=true, steady=true);
   \end{lstlisting}
+
+  \begin{itemize}\small
+  \item \verb+checksteady+ orders them \verb+a b kh yh ch h k y c+; the ratios stay
+    local to the \verb+steady_state_model+ block.
+  \item Dynare runs the written file with no numerical solve:
+    $h^\star = 0.2918$, $k^\star = 11.08$, $y^\star = 1.081$, $c^\star = 0.8036$.
+  \end{itemize}
+
+\end{frame}
+
+
+%==============================================================================
+% Steady state: computing the solution numerically
+%==============================================================================
+
+\begin{frame}[c,fragile]
+  \frametitle{Steady state -- compute it numerically --}
+
+  When no closed form is at hand, two routes:
+
+  \begin{itemize}
+
+  \item Let Dynare solve the whole static system: give initial guesses, and
+    \verb+write+ emits an \verb+initval+ block and the \verb+steady+ command (next
+    frame).\newline
+
+  \item Or solve within \verb+modBuilder+, one equation at a time:
+    \begin{itemize}
+    \item[--] \verb+evaluate+ evaluates a static equation at the current values, and
+      returns the left-hand side (\verb+lhs+), the right-hand side (\verb+rhs+) and
+      the residual \verb+resid=lhs-rhs+;
+    \item[--] \verb+solve+ solves the static version of an equation for one symbol,
+      an endogenous variable, an exogenous variable or a parameter.
+    \end{itemize}
+
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Steady state -- let Dynare solve it --}
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\scriptsize]
+% initial guesses, one per endogenous variable
+model.endogenous('a', 0);
+model.endogenous('b', 0);
+model.endogenous('h', 1/3);
+model.endogenous('k', 10);
+model.endogenous('y', 1);
+model.endogenous('c', 0.8);
+model.write('rbc', initval=true, steady=true);
+  \end{lstlisting}
+
+  \small writes, after the model block (blank lines dropped):
+
+  \begin{lstlisting}[language=Dynare,basicstyle=\scriptsize\ttfamily,numbers=none]
+initval;
+  a = 0.000000;
+  b = 0.000000;
+  y = 1.000000;
+  c = 0.800000;
+  h = 0.333333;
+  k = 10.000000;
+end; // initval block
+steady;
+  \end{lstlisting}
+
+  Dynare's \verb+steady+ solves the whole static system from these guesses, and here
+  finds the point declared on the previous frames, to within $4\cdot 10^{-7}$.
+  \verb+steady_options+ passes options to its solver, e.g.\ \verb+{'maxit', 100}+.
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Steady state -- equation by equation --}
+
+  \scalebox{1}{
+  \lstinputlisting[
+  firstline=27,
+  lastline =36,
+  basicstyle=\tiny,
+  frame=none,
+  numbers=left,
+  style=Matlab-editor
+  ]{../models/rbc13.m}}
+
+  \begin{itemize}\small
+  \item Each \verb+solve+ handles one static equation for one symbol; the order of
+    the calls does the rest, as by hand.
+  \item The last call calibrates: with hours fixed at $1/3$, the equation of
+    \verb+h+ is solved for \verb+psi+.
+  \end{itemize}
 
 \end{frame}
 
@@ -1108,7 +1182,8 @@ style=Matlab-editor
     before the recognisers run.\newline
 
   \item \verb+calibrate+ swaps a role: hours are fixed at $1/3$, $\theta$
-    becomes an unknown.
+    becomes an unknown, and gets a closed form where \verb+solve('h', 'psi', 0)+
+    searched numerically.
 
   \end{itemize}
 

@@ -17,7 +17,6 @@ model.parameter('beta', 0.99);
 model.parameter('delta', 0.025);
 model.parameter('psi', 0);
 model.parameter('theta', 2.95);
-model.parameter('phi', 0.1);
 
 % Set default values for the exogenous variables
 model.exogenous('e', 0);
