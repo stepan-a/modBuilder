@@ -5423,7 +5423,8 @@ classdef modBuilder < handle
         %
         % INPUTS:
         % - o          [modBuilder]
-        % - eqname     [char]            1×n array, name of an equation (or endogenous variable associated to an equation)
+        % - eqname     [char|bytag]      1×n array, name of an equation (or endogenous variable associated to an equation),
+        %                                or a bytag selector: every equation it selects is removed (see rm)
         % - ...
         %
         % OUTPUTS:
@@ -5445,6 +5446,9 @@ classdef modBuilder < handle
         % % Remove the consumption equation
         % m.remove('c');  % Also removes h if it doesn't appear elsewhere
         %
+        % % Remove every equation tagged sector=manufacturing
+        % m.remove(bytag('sector', 'manufacturing'));
+        %
         % % Implicit loops - remove multiple equations
         % m2 = modBuilder();
         % m2.add('Y_$1', 'Y_$1 = A_$1*K_$1', {1, 2, 3});
@@ -5462,10 +5466,21 @@ classdef modBuilder < handle
         % m3.remove('Y_$1_$2', {'FR'}, {1, 2});  % Removes Y_FR_1 and Y_FR_2
             arguments
                 o
-                eqname (1,:) char {mustBeNonempty}
+                eqname {mustBeNonempty}
             end
             arguments (Repeating)
                 varargin
+            end
+
+            if isa(eqname, 'bytag')
+                if ~isempty(varargin)
+                    error('modBuilder:remove:badSelector', 'A bytag selector takes no index values.')
+                end
+                o.rm(eqname);
+                return
+            end
+            if ~(ischar(eqname) && isrow(eqname))
+                error('modBuilder:remove:badType', 'First input argument must be a row char array (equation name) or a bytag selector.')
             end
 
             % Auto-update symbol tables if needed
@@ -5552,7 +5567,7 @@ classdef modBuilder < handle
         %
         % INPUTS:
         % - o          [modBuilder]
-        % - eqname1    [char]            name of an equation (endogenous variable)
+        % - eqname1    [char|bytag]      name of an equation (endogenous variable), or a bytag selector
         % - eqname2    [char]            name of another equation (optional)
         % - ...        [char]            additional equation names (optional)
         % - idx1       [numeric/char]    first index values for implicit loops (if equation names contain $)
@@ -5568,6 +5583,11 @@ classdef modBuilder < handle
         %   the last arguments should be index values that will be expanded
         % - When using implicit loops with multiple equations, all equation names must
         %   contain the same index placeholders
+        % - A bytag selector removes every equation it selects, and may sit next to plain
+        %   equation names. The selections are resolved and the names checked before
+        %   anything is removed, so a selector that matches nothing, or an unknown name,
+        %   leaves the model untouched. A selector with no criteria would select every
+        %   equation and is refused; selectors do not combine with index values.
         %
         % EXAMPLES:
         % m = modBuilder();
@@ -5582,6 +5602,10 @@ classdef modBuilder < handle
         %
         % % Remove multiple indexed equations
         % m.rm('eq$1', 'var$1', 1:2);  % Removes eq1, var1, eq2, var2
+        %
+        % % Remove by tag, alone or next to names
+        % m.rm(bytag('sector', 'manufacturing'));
+        % m.rm('C', bytag('type', 'acc.*'));
             arguments
                 o
             end
@@ -5591,6 +5615,34 @@ classdef modBuilder < handle
 
             if isempty(varargin)
                 error('modBuilder:rm:missingArg', 'rm method requires at least one equation name.')
+            end
+            selectors = cellfun(@(x) isa(x, 'bytag'), varargin);
+            if any(selectors)
+                % Resolve every selection and check every name first, so that a failure
+                % leaves the model as it was.
+                names = {};
+                for i = 1:numel(varargin)
+                    if selectors(i)
+                        criteria = varargin{i}.toargs();
+                        if isempty(criteria)
+                            error('modBuilder:rm:emptySelector', 'A bytag selector with no criteria would select every equation; name at least one tag.')
+                        end
+                        names = [names, o.listeqbytag(criteria{:})]; %#ok<AGROW>
+                    elseif ischar(varargin{i}) && isrow(varargin{i}) && isempty(modBuilder.placeholders(varargin{i}))
+                        names{end+1} = varargin{i}; %#ok<AGROW>
+                    else
+                        error('modBuilder:rm:badType', 'Next to a bytag selector, the other arguments must be equation names without index placeholders.')
+                    end
+                end
+                names = unique(names, 'stable');
+                unknown = setdiff(names, o.equations(:, modBuilder.EQ_COL_NAME), 'stable');
+                if ~isempty(unknown)
+                    error('modBuilder:remove:unknownSymbol', 'Unknown equation "%s".', unknown{1})
+                end
+                for i = 1:numel(names)
+                    o.remove(names{i});
+                end
+                return
             end
             eqnames = varargin(1); % First equation to be removed.
             if not(ischar(eqnames{1}) && isrow(eqnames{1}))

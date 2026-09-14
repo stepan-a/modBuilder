@@ -313,13 +313,19 @@ m.change('c', 'c = 0.8*w*h');  % Replace consumption equation
 
 #### `remove(eqname)` / `rm(eqname1, ...)`
 
-Remove one or more equations.
+Remove one or more equations. A `bytag` selector removes every equation it
+selects, alone or next to equation names. The selections are resolved and the
+names checked before anything is removed, so a selector that matches nothing, or
+an unknown name, leaves the model untouched; a selector with no criteria is
+refused.
 
 **Examples:**
 
 ```matlab
 m.remove('old_equation');
-m.rm('eq1', 'eq2', 'eq3');  % Remove multiple equations
+m.rm('eq1', 'eq2', 'eq3');                % Remove multiple equations
+m.rm(bytag('sector', 'manufacturing'));   % Remove every equation tagged sector=manufacturing
+m.rm('C', bytag('type', 'acc.*'));        % Names and selectors together
 ```
 
 #### `rename(oldsymbol, newsymbol)`

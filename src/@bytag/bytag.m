@@ -1,13 +1,15 @@
 classdef bytag
-% Tag selector for use with modBuilder{} indexing.
+% Tag selector, for modBuilder's curly-brace indexing and for rm and remove.
 %
-% Creates a selector object that can be passed to modBuilder's
-% curly brace indexing to extract a submodel based on tag values.
+% Creates a selector object that picks equations by their tag values: passed to
+% modBuilder's curly-brace indexing it extracts a submodel, passed to rm or remove it
+% removes the equations it selects.
 %
 % EXAMPLES:
 % m{bytag('sector', 'manufacturing')}
 % m{bytag('sector', 'manuf.*')}
 % m{bytag('sector', 'manufacturing', 'type', 'production')}
+% m.rm(bytag('sector', 'manufacturing'))
 
     properties (SetAccess = immutable)
         criteria = struct()   % struct with tagname -> tagvalue (regex) pairs

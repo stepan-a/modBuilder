@@ -177,6 +177,7 @@ listoftests = [
   'rm/t03.m',
   'rm/t04.m',
   'rm/t05.m',
+  'rm/t06.m',
   'flip/t01.m',
   'flip/t02.m',
   'flip/t03.m',
