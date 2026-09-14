@@ -323,8 +323,8 @@ end;
   becomes
 
   \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\footnotesize]
-Countries = {'US', 'EA'};
-m.add('y_$1', 'y_$1 = alpha + e_$1', {'US', 'EA'});
+Countries = macroarray('US', 'EA');
+m.add('y_$1', 'y_$1 = alpha + e_$1', Countries);
 if OpenEconomy
     m.add('nx', 'nx = y_US - y_EA');
 end
@@ -342,18 +342,54 @@ end
     \texttt{@\#for} over tuples and with a \texttt{when} guard; \texttt{@\#include};
     comprehensions, casts, set operations and ranges; \texttt{@\#echo} and
     \texttt{@\#error}; continuation lines. Dynare's own macro-processor self-test
-    loads end to end.\newline
-  \item \texttt{Defines=struct(...)} plays the role of Dynare's \texttt{-D}.\newline
+    loads end to end.
   \item A loop becomes one implicit-loop call when a \texttt{\$N} template reproduces
     every iteration, and a MATLAB \texttt{for} loop otherwise. The template is guessed
     and then verified against the iterations, so a wrong guess is discarded rather than
-    emitted.\newline
+    emitted. The loop runs over the local its set became, \texttt{Countries} above, so
+    editing that local changes the model; a \texttt{when} guard becomes a
+    \texttt{filter}.
   \item A \texttt{@\#if} becomes a MATLAB \texttt{if}/\texttt{elseif}/\texttt{else}
     carrying every branch. A branch that is not selected produces no text, so the file is
     read again with the conditional forced onto it; the model itself always comes from
     the unforced read. Changing the flag in the script then gives the model the
     \texttt{.mod} file would have given with that setting.
   \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Instantiate a model from a \texttt{.mod} file -- macros, \texttt{-D} --}
+
+  A flag with a default, that Dynare's \texttt{-DOpen=true} overrides:
+
+  \begin{lstlisting}[language=Dynare,basicstyle=\scriptsize\ttfamily]
+@#ifndef Open
+@#define Open = false
+@#endif
+...
+@#if Open
+c = y - e;
+@#else
+c = y;
+@#endif
+  \end{lstlisting}
+
+  \texttt{Defines=} is \texttt{-D}. The flag is a local of the script, at the value the
+  read used, and the \texttt{if} keeps both branches:
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\scriptsize]
+>> model = modBuilder('open.mod', Defines=struct('Open', true));
+
+Open = true;
+...
+if Open
+    m.add('c', 'c = y - e');
+else
+    m.add('c', 'c = y');
+end
+  \end{lstlisting}
 
 \end{frame}
 
