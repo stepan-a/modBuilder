@@ -18,9 +18,11 @@ function names = name_equations(eqs, endonames, tagname, filename)
 %   matching, as in modBuilder.matchequations, the matcher of the Dynare-based
 %   constructor. That one answers a steady-state question, which variable an equation
 %   pins down, and admits an edge only when the variable survives the static residual
-%   without factoring out of it: a residual that is a multiple of the variable may fix
-%   it at zero, as 0.1*junk does, or leave its level free, as an Euler equation does
-%   once c(t)/c(t+1) is one, and the matcher cannot tell which. The question here is
+%   without factoring out of it: a residual that is a multiple of the variable vanishes
+%   through its other factor when that factor can, as c^(-sigma)*(1 - beta*R) does,
+%   pinning R and leaving c free; 0.1*junk has no such factor and fixes junk at zero,
+%   but the matcher looks at the power of the variable, not at the cofactor, and reads
+%   both the Euler way. The question here is
 %   which variable an equation is FOR, which has an answer for junk = 0.9*junk(+1),
 %   0 = lambda, a bare x or Y/Y(-1) = g as well. So every variable of the dynamic
 %   equation is admitted, at a cost that prefers, in order, a variable the static
