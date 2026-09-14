@@ -486,8 +486,9 @@ endogenous variable. Add a "name" tag to these:
 \begin{frame}[fragile]
   \frametitle{Instantiate a model from a \texttt{.mod} file -- pairing, the choice --}
 
-  Each possible pair is given a price: one or two by the case, a discount for the
-  left-hand side, a small surcharge when many equations want the same variable. Leaving an
+  Each possible pair is given a price: 1 when the static equation pins the variable, 2
+  when it leaves it free, less a discount for the left-hand side, plus a small surcharge
+  when many equations want the same variable. Leaving an
   equation without a variable is priced above any pair. The cheapest complete assignment
   is then computed exactly; it is the problem of assigning $n$ workers to $n$ jobs at the
   least total cost, and MATLAB solves it (\texttt{matchpairs}). Good pairs are used
