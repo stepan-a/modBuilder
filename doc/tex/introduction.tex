@@ -546,11 +546,50 @@ endogenous variable. Add a "name" tag to these:
 
   \item[$\Rightarrow$] Each new equation adds a new endogenous variable to the model.\newline
 
+  \item[$\Rightarrow$] Removing the equation of \verb+y+ therefore says what becomes of
+    \verb+y+ (next frame).\newline
+
   \item All the other symbols (\verb+rho+, \verb+z+, and \verb+e+), unless previously defined, are classified as unresolved.\newline
 
   \item These symbols need to be typed before completing the model. This can be done by adding an equation for an endogenous variable (\verb+z+) or explictly declaring a symbol as a parameter (\verb+rho+) or an exogenous variable (\verb+e+).
 
   \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Remove an equation}
+
+  An equation is the equation \emph{of} a variable, so removing it decides the fate of
+  that variable, and of the symbols only that equation used:
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\footnotesize]
+m.add('y', 'y = a*k(-1) + e');
+m.add('k', 'k = (1-delta)*k(-1) + i');
+m.add('i', 'i = s*y');
+m.add('h', 'h = theta*y');
+  \end{lstlisting}
+
+  \begin{center}\footnotesize
+  \begin{tabular}{@{}lll@{}}
+    \hline
+    call & what happens & endogenous \,/\, exogenous \\
+    \hline
+    \verb+m.remove('i')+ & \verb+i+ is still used by the equation of \verb+k+: & \verb+y k h+ \,/\, \verb+e i+ \\
+                         & it becomes exogenous, \verb+s+ goes & \\
+    \verb+m.remove('h')+ & \verb+h+ is used nowhere else: & \verb+y k i+ \,/\, \verb+e+ \\
+                         & it goes, and \verb+theta+ with it & \\
+    \verb+m.rmflip('i', 'k')+ & \verb+i+ stays endogenous, keyed to & \verb+y i h+ \,/\, \verb+e k+ \\
+                         & the former equation of \verb+k+ & \\
+    \hline
+  \end{tabular}
+  \end{center}
+
+  \medskip
+  \small Which variable an equation belongs to is therefore not a label: it is what
+  \verb+remove+, \verb+rmflip+ and \verb+exogenise+ act on, and why a \verb+.mod+ file is
+  read with its \verb+name+ tags, or paired as described earlier.
 
 \end{frame}
 
