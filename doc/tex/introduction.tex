@@ -703,11 +703,10 @@ m.tag('C', 'type', 'aggregation');
 \begin{frame}[fragile]
   \frametitle{Tag equations -- remove a block, write the model --}
 
-  Removing a block is a selection passed to \verb+rm+:
+  \verb+rm+ and \verb+remove+ take the same selector:
 
   \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\scriptsize]
->> eqs = m.listeqbytag('sector', 'm');
->> m.rm(eqs{:});                     % equations left: Y_s K_s C
+>> m.rm(bytag('sector', 'm'));       % equations left: Y_s K_s C
   \end{lstlisting}
 
   \small As on the frame on removal, \verb+Y_m+, still used by \verb+C+, becomes
