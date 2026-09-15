@@ -786,6 +786,7 @@ Numerically solve a single equation for one symbol using Newton's method with au
 
 **Remarks:**
 - If the Newton iteration fails (singular or non-finite Jacobian, failed line search, maximum iterations reached), the method raises a contextual error; a non-converged iterate is never silently written into the calibration.
+- The static equation is simplified before values are substituted, so a symbol that cancels from it (as `c` from `c/c(+1)` in an Euler equation) needs no value. Symbols still present without a value are listed in an error, and solving for a symbol that cancels from the equation is refused.
 
 **Example:**
 

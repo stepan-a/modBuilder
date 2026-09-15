@@ -9552,9 +9552,16 @@ classdef modBuilder < handle
         % - o            [modBuilder]   updated object with calibrated symbol value
         %
         % REMARKS:
-        % - Converts equation to static form (removes time subscripts)
+        % - Works on the static version of the equation (time subscripts removed),
+        %   simplified before anything is substituted: a symbol that cancels from it, as c
+        %   does from c/c(+1) in an Euler equation, needs no value.
         % - Uses Newton's method via solvers.newton
-        % - All other symbols must have known values
+        % - Every other symbol left in the simplified equation must have a finite value;
+        %   those that do not are listed in a modBuilder:solve:missingValue error. A sname
+        %   that cancels from the simplified equation raises modBuilder:solve:symbolCancels,
+        %   since the equation does not determine it.
+        % - Values are substituted in parentheses, so that a negative value keeps its sign
+        %   under a power, and STEADY_STATE(v) is read as v.
         % - Updates the calibration value of sname in o.params, o.varexo, or o.var
         % - The default tol is 1e-10, tighter than the test threshold typical
         %   downstream uses (1e-8). It can be loosened explicitly if needed.
@@ -9583,37 +9590,45 @@ classdef modBuilder < handle
             end
 
             %
-            % Get static version of the equation
+            % Static residual of the equation, simplified before anything is substituted:
+            % a symbol that cancels from it needs no value.
             %
             eqID = strcmp(eqname, o.equations(:,modBuilder.EQ_COL_NAME));
-            equation = modBuilder.staticise_equation_string(o.equations{eqID, modBuilder.EQ_COL_EXPR});
-
-            %
-            % Build a single replacement table: every known symbol → its numeric value,
-            % the unknown sname → 'x'. One regex pass over the equation, not one per symbol.
-            %
-            knownsymbols = setdiff([o.T.equations.(eqname), eqname], sname);
-            replacements = struct();
-            for i = 1:length(knownsymbols)
-                replacements.(knownsymbols{i}) = num2str(o.get_value(knownsymbols{i}), 15);
-            end
-            replacements.(sname) = 'x';
-            equation = modBuilder.substitute_symbols(equation, replacements);
-
-            %
-            % Set anonymous function
-            %
-            LHSRHS = strsplit(equation, '=');
-
+            LHSRHS = strsplit(o.equations{eqID, modBuilder.EQ_COL_EXPR}, '=');
             if isscalar(LHSRHS)
-                equation = sprintf('@(x) %s', LHSRHS{1});
+                residual = LHSRHS{1};
             elseif length(LHSRHS)==2
-                equation = sprintf('@(x) %s-(%s)', LHSRHS{1}, LHSRHS{2});
+                residual = sprintf('(%s) - (%s)', LHSRHS{1}, LHSRHS{2});
             else
                 error('modBuilder:solve:multipleEquals', 'An equation cannot have more than one equal (=) symbol.')
             end
-
-            f = str2func(equation);
+            tree = ast(residual).staticise().simplify();
+            symbols = tree.symbol_names();
+            if ~ismember(sname, symbols)
+                error('modBuilder:solve:symbolCancels', 'Symbol "%s" cancels from the static version of equation "%s", which therefore does not determine it.', sname, eqname)
+            end
+            %
+            % Build a single replacement table: every other symbol → its value, in
+            % parentheses so that a negative value keeps its sign under a power, the unknown
+            % sname → 'x', and STEADY_STATE(v) → (v). One regex pass over the residual.
+            %
+            knownsymbols = setdiff(symbols, sname);
+            replacements = struct();
+            missing = {};
+            for i = 1:length(knownsymbols)
+                v = o.get_value(knownsymbols{i});
+                if isempty(v) || ~isnumeric(v) || ~isfinite(v)
+                    missing{end+1} = knownsymbols{i}; %#ok<AGROW>
+                else
+                    replacements.(knownsymbols{i}) = sprintf('(%s)', num2str(v, 15));
+                end
+            end
+            if ~isempty(missing)
+                error('modBuilder:solve:missingValue', 'Equation "%s" needs a value for %s before it can be solved for "%s".', eqname, strjoin(missing, ', '), sname)
+            end
+            replacements.(sname) = 'x';
+            replacements.STEADY_STATE = '';
+            f = str2func(['@(x) ' modBuilder.substitute_symbols(tree.string(), replacements)]);
 
             %
             % Set initial guess for the unknown symbol (tol and maxit have

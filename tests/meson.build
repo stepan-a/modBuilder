@@ -148,6 +148,7 @@ listoftests = [
   'solvers/t29.m',
   'solvers/t30.m',
   'solvers/t31.m',
+  'solvers/t32.m',
   'subsref/rbc1.m',
   'subsref/t01.m',
   'subsref/t02.m',
