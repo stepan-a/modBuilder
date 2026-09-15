@@ -1143,10 +1143,10 @@ model.solve_system({'a', 'b', 'y', 'c', 'k', 'h'}, ...
   \begin{itemize}\small
   \item \verb+solve_system+ solves $n$ static equations for $n$ symbols jointly, by
     Newton's method from their current values; the symbols can mix endogenous
-    variables, exogenous variables and parameters, here \verb+psi+, which starts
-    from its calibrated value.
-  \item The block of \verb+a+ and \verb+b+, which one equation at a time could not
-    untangle, is solved with the rest: $a = b = 0$.
+    variables, exogenous variables and parameters, here \verb+psi+.
+  \item Any subset of the equations will do, the other symbols held at their
+    values: \verb+solve_system({'a', 'b'}, {'a', 'b'})+ solves the block that one
+    equation at a time could not untangle, $a = b = 0$.
   \item Same point as the equation-by-equation route, $\psi = 0.1213$ and
     $k = 12.66$, within the default tolerance $10^{-6}$ (option \verb+tol+).
   \item \verb+Method+ chooses how the Jacobian is obtained: automatic
