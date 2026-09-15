@@ -1309,8 +1309,9 @@ Steady-state plan: 5 block(s)
   \item as one power, $a x^d + b = 0$, so $x = (-b/a)^{1/d}$: $k$ from
     $\alpha k^{\alpha-1} h^{1-\alpha} = 1/\beta - 1 + \delta$;
   \item as two powers, $c_p x^p + c_q x^q = 0$, so $x = (-c_q/c_p)^{1/(p-q)}$;
-  \item inside \verb+exp+ or \verb+log+: the function is inverted first, so
-    $\log Z = \rho \log Z + e$ gives $Z = \exp\left(e/(1-\rho)\right)$.
+  \item inside \verb+exp+, \verb+log+ or \verb+sqrt+: the function is inverted
+    first, \verb+sqrt+ by squaring, so $\log Z = \rho \log Z + e$ gives
+    $Z = \exp\left(e/(1-\rho)\right)$.
   \end{itemize}
 
   \small When $x$ sits in a denominator, the equation is first multiplied through by
@@ -1343,6 +1344,7 @@ Steady-state plan: 5 block(s)
     two powers & \verb!a*x^p - b*x^q! & \verb!x = (a / b) ^ ((q - p) ^ -1)! \\
     inside exp & \verb!exp(x) - y! & \verb!x = log(y)! \\
     inside log & \verb!log(x) - a! & \verb!x = exp(a)! \\
+    inside sqrt & \verb!a*sqrt(x) - b! & \verb!x = (b / a) ^ 2! \\
     own lag & \verb!y - rho*y(-1) - e! & \verb!y = e / (1 - rho)! \\
     AR in logs & \verb!log(Z) - rho*log(Z) - e! & \verb!Z = exp(e / (1 - rho))! \\
     denominator & \verb!a/(x + 1) - b! & \verb!x = (a - b) / b! \\
@@ -1354,8 +1356,7 @@ Steady-state plan: 5 block(s)
   \medskip
   \small The AR process in logs is shown in its static form: the plan makes every
   equation static before rearranging it, so that \verb+log(Z(-1))+ reads as
-  \verb+log(Z)+. \verb+sqrt+ is not inverted: written as a power,
-  \verb+a*x^(1/2) - b+ gives \verb+x = (b / a) ^ 2+.
+  \verb+log(Z)+.
 
 \end{frame}
 

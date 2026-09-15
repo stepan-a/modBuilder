@@ -377,9 +377,11 @@ function o = staticise(o)
   in order:
 
   \begin{enumerate}
-  \item \textbf{invertible call} --- \code{exp}/\code{log} wrapping $x$, recurse
-    on the inverted equation. Several copies of the \emph{same} call are summed,
-    so $\log Z - \rho\log Z(-1) - e$ closes to $Z = \exp(e/(1-\rho))$;
+  \item \textbf{invertible call} --- \code{exp}, \code{log} or \code{sqrt} (by
+    squaring) wrapping $x$, recurse on the inverted equation. Several copies of the
+    \emph{same} call are summed, so the static $\log Z - \rho\log Z - e$ closes to
+    $Z = \exp(e/(1-\rho))$ --- not the raw $\log Z - \rho\log Z(-1) - e$, whose
+    two calls differ;
   \item \textbf{linear} \; $a x + b = 0$;
   \item \textbf{monomial} \; $a x^d + b = 0$;
   \item \textbf{binomial power} \; $c_p x^p + c_q x^q = 0 \Rightarrow
@@ -392,7 +394,8 @@ function o = staticise(o)
 
   \smallskip
   \textbf{Steady-state semantics}: $x$ and its leads/lags are one unknown and are
-  aggregated; other variables keep their lead/lag structure.
+  aggregated --- a bare $x(-1)$ at once, one inside a call once the residual is
+  made static; other variables keep their lead/lag structure.
 \end{frame}
 
 \begin{frame}\frametitle{\texttt{isolate}: the diagnostics it returns}
