@@ -1176,9 +1176,11 @@ model.solve_system({'a', 'b', 'y', 'c', 'k', 'h'}, ...
       mentions; variables whose equations need one another, in a loop, form a
       \textbf{block} solved together, and the blocks are taken in an order where
       each uses only what the previous ones gave;
-    \item[--] solve each block by algebra: a single equation is rearranged to give
-      its variable; a small block is reduced by substituting one equation into the
-      others, and solved exactly when it is linear in its unknowns.
+    \item[--] solve each block by algebra: a single equation is rearranged for its
+      variable; a small block is reduced by substituting its equations into one
+      another. A linear block always yields, unless its determinant is zero; a
+      nonlinear one does when the rearrangements succeed (listed later), and
+      otherwise resists.
     \end{itemize}
 
   \item What comes out is a \textbf{cascade of closed forms}, in evaluation
@@ -1285,13 +1287,75 @@ Steady-state plan: 5 block(s)
   \small Blocks 3 to 5 are single equations, each rearranged for its variable.
 
   \medskip
-  A linear block is solved exactly. The \verb+a+, \verb+b+ process of the earlier
-  model gives
+  A linear block always yields a closed form, unless its determinant is zero. The
+  \verb+a+, \verb+b+ process of the earlier model gives
   \[
     b = \frac{\tau e + (1-\rho)\, u}{(1-\rho)^2 - \tau^2}, \qquad a = \frac{e + \tau b}{1-\rho},
   \]
   whose denominator is the determinant of the block: the plan reports a unit root
   when it is zero at the calibration.
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Steady state plan -- the rearrangements --}
+
+  A single equation is rearranged for its unknown $x$ when, once simplified, $x$
+  enters it in one of four ways, its leads and lags counting as $x$:
+  \begin{itemize}\small
+  \item linearly, $a x + b = 0$, so $x = -b/a$: $i = \delta k$ from
+    $k = (1-\delta)k + i$;
+  \item as one power, $a x^d + b = 0$, so $x = (-b/a)^{1/d}$: $k$ from
+    $\alpha k^{\alpha-1} h^{1-\alpha} = 1/\beta - 1 + \delta$;
+  \item as two powers, $c_p x^p + c_q x^q = 0$, so $x = (-c_q/c_p)^{1/(p-q)}$;
+  \item inside \verb+exp+ or \verb+log+: the function is inverted first, so
+    $\log Z = \rho \log Z + e$ gives $Z = \exp\left(e/(1-\rho)\right)$.
+  \end{itemize}
+
+  \small When $x$ sits in a denominator, the equation is first multiplied through by
+  it. Anything else, $\log y + y^3 = x$ for instance, has no closed form: the block
+  resists, and is left to a numerical solve (later frame).
+
+  \medskip
+  A block of several equations is reduced one unknown at a time, each step using
+  the same rearrangements. A linear block is solved outright, by triangulation and
+  back-substitution, which fails only when its determinant is zero.
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Steady state plan -- the rearrangements, toy examples --}
+
+  The rearrangement is \verb+ast(residual).isolate(x)+, the equation being written
+  as \verb+residual = 0+. On toy residuals it returns:
+
+  \medskip
+  \begin{center}\footnotesize
+  \begin{tabular}{lll}
+    \hline
+    case & residual & closed form returned \\
+    \hline
+    linear & \verb!2*x - 6! & \verb!x = 3! \\
+           & \verb!a*x + b! & \verb!x = -(b / a)! \\
+    one power & \verb!a*x^d - b! & \verb!x = (b / a) ^ (d ^ -1)! \\
+    two powers & \verb!a*x^p - b*x^q! & \verb!x = (a / b) ^ ((q - p) ^ -1)! \\
+    inside exp & \verb!exp(x) - y! & \verb!x = log(y)! \\
+    inside log & \verb!log(x) - a! & \verb!x = exp(a)! \\
+    own lag & \verb!y - rho*y(-1) - e! & \verb!y = e / (1 - rho)! \\
+    AR in logs & \verb!log(Z) - rho*log(Z) - e! & \verb!Z = exp(e / (1 - rho))! \\
+    denominator & \verb!a/(x + 1) - b! & \verb!x = (a - b) / b! \\
+    none & \verb!log(y) + y^3 - x! & \verb![]!, no closed form \\
+    \hline
+  \end{tabular}
+  \end{center}
+
+  \medskip
+  \small The AR process in logs is shown in its static form: the plan makes every
+  equation static before rearranging it, so that \verb+log(Z(-1))+ reads as
+  \verb+log(Z)+. \verb+sqrt+ is not inverted: written as a power,
+  \verb+a*x^(1/2) - b+ gives \verb+x = (b / a) ^ 2+.
 
 \end{frame}
 
