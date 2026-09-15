@@ -1045,13 +1045,15 @@ model.write('rbc', steady_state_model=true, steady=true);
     \verb+write+ emits an \verb+initval+ block and the \verb+steady+ command (next
     frame).\newline
 
-  \item Or solve within \verb+modBuilder+, one equation at a time:
+  \item Or solve within \verb+modBuilder+:
     \begin{itemize}
     \item[--] \verb+evaluate+ evaluates a static equation at the current values, and
       returns the left-hand side (\verb+lhs+), the right-hand side (\verb+rhs+) and
       the residual \verb+resid=lhs-rhs+;
     \item[--] \verb+solve+ solves the static version of an equation for one symbol,
-      an endogenous variable, an exogenous variable or a parameter.
+      an endogenous variable, an exogenous variable or a parameter;
+    \item[--] \verb+solve_system+ solves several equations for as many symbols at
+      once.
     \end{itemize}
 
   \end{itemize}
@@ -1112,10 +1114,43 @@ steady;
     first; the order of the calls does the rest, as by hand.
   \item The equation of \verb+k+ needs \verb+a+ and \verb+b+, which enter it through
     \verb|exp(a)*exp(b)|, and their own two equations each need the other: one
-    equation at a time cannot untangle them, so their level, zero, is given.
+    equation at a time cannot untangle them, so their level, zero, is given
+    (\verb+solve_system+ can, next frame).
     \verb+c+ needs no value: it cancels from the static equation of \verb+k+.
   \item The last call calibrates: with hours fixed at $1/3$, the equation of
     \verb+h+ is solved for \verb+psi+.
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Steady state -- a system at once --}
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\scriptsize]
+% rough starting values; h holds its target, 1/3
+model.endogenous('a', 0.1);
+model.endogenous('b', -0.1);
+model.endogenous('h', 1/3);
+model.endogenous('y', 1);
+model.endogenous('c', 0.8);
+model.endogenous('k', 10);
+
+model.solve_system({'a', 'b', 'y', 'c', 'k', 'h'}, ...
+                   {'a', 'b', 'y', 'c', 'k', 'psi'});
+  \end{lstlisting}
+
+  \begin{itemize}\small
+  \item \verb+solve_system+ solves $n$ static equations for $n$ symbols jointly, by
+    Newton's method from their current values; the symbols can mix endogenous
+    variables, exogenous variables and parameters, here \verb+psi+, which starts
+    from its calibrated value.
+  \item The block of \verb+a+ and \verb+b+, which one equation at a time could not
+    untangle, is solved with the rest: $a = b = 0$.
+  \item Same point as the equation-by-equation route, $\psi = 0.1213$ and
+    $k = 12.66$, within the default tolerance $10^{-6}$ (option \verb+tol+).
+  \item \verb+Method+ chooses how the Jacobian is obtained: automatic
+    differentiation by default, or analytical partials, or finite differences.
   \end{itemize}
 
 \end{frame}
