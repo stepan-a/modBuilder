@@ -1228,17 +1228,18 @@ classdef ast
         end % function
 
         function tf = is_invertible_call_in(o, x)
-        % Test whether the tree has the form Σ coef_i · f(P(x)) + rest with f ∈ {exp, log},
+        % Test whether the tree has the form Σ coef_i · f(P(x)) + rest with f ∈ {exp, log, sqrt},
         % the same subtree f(P) in every x-bearing term, and x not appearing elsewhere.
         %
         % REMARKS:
         % - The allowlist is intentionally small; multi-branch transcendentals (sin, cos)
-        %   are excluded because their inverses are set-valued.
+        %   are excluded because their inverses are set-valued. sqrt is inverted by
+        %   squaring, which takes the other side to be non-negative, as a square root is.
         % - Several occurrences of the same call are accepted, their coefficients summed:
         %   the additive log form of an autoregressive process leaves the static residual
         %   log(Z) - rho*log(Z), where u = log(Z) is pinned even though no recogniser
         %   collects the symbolic coefficients into (1-rho)·u.
-        % - Used by ast.isolate to unwrap exp/log wrappers around the unknown before
+        % - Used by ast.isolate to unwrap exp/log/sqrt wrappers around the unknown before
         %   delegating to the linear or monomial recogniser on the inverted equation.
             [tf, ~, ~, ~, ~] = ast.split_call_terms(o.canonicalise().simplify(), x);
         end % function
@@ -1320,6 +1321,8 @@ classdef ast
                         inv_target = ast('call', 'log', {target});
                     case 'log'
                         inv_target = ast('call', 'exp', {target});
+                    case 'sqrt'
+                        inv_target = ast('binop', '^', {target, ast('num', 2, {})});
                     otherwise
                         rhs = []; return
                 end
@@ -3891,11 +3894,11 @@ classdef ast
         end % function
 
         function [ok, fname, P, coef] = extract_call_factor(t, x)
-        % Identify a term as coef · f(P(x)) with f ∈ {exp, log} and x appearing only
+        % Identify a term as coef · f(P(x)) with f ∈ {exp, log, sqrt} and x appearing only
         % inside f. Returns ok = false otherwise.
             switch t.type
                 case 'call'
-                    if (strcmp(t.value, 'exp') || strcmp(t.value, 'log')) && numel(t.children) == 1 && ...
+                    if ismember(t.value, {'exp', 'log', 'sqrt'}) && numel(t.children) == 1 && ...
                        ast.count_occurrences(t.children{1}, x) > 0
                         ok = true; fname = t.value; P = t.children{1}; coef = ast('num', 1, {});
                     else
@@ -3928,7 +3931,7 @@ classdef ast
                         end
                     end
                     if isempty(x_factor) || ~strcmp(x_factor.type, 'call') || ...
-                       ~(strcmp(x_factor.value, 'exp') || strcmp(x_factor.value, 'log')) || ...
+                       ~ismember(x_factor.value, {'exp', 'log', 'sqrt'}) || ...
                        numel(x_factor.children) ~= 1
                         ok = false; fname = ''; P = []; coef = []; return
                     end
@@ -4047,7 +4050,7 @@ classdef ast
         end % function
 
         function [ok, fname, P, coef, rest, unit_root] = split_call_terms(o, x)
-        % Decompose a canonicalised tree into Σ coef_i · f(P) + rest with f ∈ {exp, log}:
+        % Decompose a canonicalised tree into Σ coef_i · f(P) + rest with f ∈ {exp, log, sqrt}:
         % every x-bearing additive term must be coef_i · f(P) for the same subtree f(P)
         % (structural match), so u = f(P) is an atomic unknown with coefficient Σ coef_i.
         % Returns ok = false when a term resists, the calls differ, or the summed

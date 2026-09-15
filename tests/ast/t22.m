@@ -1,4 +1,4 @@
-% ast.is_invertible_call_in / split_invertible_call: exp / log unwrap.
+% ast.is_invertible_call_in / split_invertible_call: exp / log / sqrt unwrap.
 
 % Positive cases
 assert( ast('exp(a)*K - y').is_invertible_call_in('a'),                'coef · exp(a) + rest is invertible');
@@ -77,5 +77,13 @@ vals = struct('alpha', 0.3, 'phi', 1.5, 'sigma', 2, 'w', 4);
 xv = rhs.eval(vals);
 E = vals.alpha/(vals.alpha+vals.phi) + vals.sigma;
 assert(abs(2*xv^E + 3*xv^E - vals.w*xv) < 1e-9, 'the recovered root must solve the disguised binomial');
+
+% sqrt is inverted by squaring, as exp and log are by each other.
+assert( ast('a*sqrt(x) - b').is_invertible_call_in('x'),              'coef · sqrt(x) + rest is invertible');
+rhs = ast('a*sqrt(x) - b').isolate('x');
+assert(~isempty(rhs) && abs(rhs.eval(struct('a', 2, 'b', 3)) - 2.25) < 1e-12, 'a*sqrt(x) = b should give x = (b/a)^2');
+rhs = ast('sqrt(x + 1) - b').isolate('x');
+assert(~isempty(rhs) && abs(rhs.eval(struct('b', 3)) - 8) < 1e-12,    'sqrt(x + 1) = b should give x = b^2 - 1');
+assert(~ast('sqrt(x) + x - 2').is_invertible_call_in('x'),            'x inside sqrt AND outside — NOT invertible');
 
 fprintf('t22.m: invertible-call recogniser + isolate OK\n');

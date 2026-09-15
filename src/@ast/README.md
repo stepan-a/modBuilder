@@ -356,13 +356,15 @@ residual `LHS - RHS`. Returns an AST `rhs` such that `x = rhs`, or `[]`
 when no recogniser applies. It canonicalises and simplifies first, then
 tries four recognisers in order:
 
-1. an **invertible-call** recogniser — `exp` / `log` wrapping the
-   unknown, recursing on the inverted equation. Several occurrences of
-   the *same* call subtree are accepted, their coefficients summed, so
-   the additive log form of an AR process
-   (`log(Z) - rho*log(Z(-1)) - e`, whose static residual keeps the two
-   symbolically-weighted `log(Z)` terms apart) closes to
-   `Z = exp(e/(1-rho))`;
+1. an **invertible-call** recogniser — `exp`, `log` or `sqrt` wrapping
+   the unknown, recursing on the inverted equation (`sqrt` is inverted
+   by squaring, which takes the other side to be non-negative). Several
+   occurrences of the *same* call subtree are accepted, their
+   coefficients summed, so the static residual of an AR process in logs,
+   `log(Z) - rho*log(Z) - e`, closes to `Z = exp(e/(1-rho))`. On the raw
+   residual, `log(Z) - rho*log(Z(-1)) - e`, the two calls differ and the
+   recogniser declines; `steady_plan` always makes the residual static
+   first;
 2. a **linear** recogniser (`a·x + b = 0`);
 3. a **monomial** recogniser (`a·x^d + b = 0`);
 4. a last-resort **binomial-power** recogniser
@@ -388,13 +390,16 @@ forms. The second output `info` carries diagnostics:
 
 Semantics are **steady-state**: `x` and its leads/lags are treated as the
 same unknown, so the solve aggregates them (this is what `steady_plan`
-wants — a closed-form steady-state value). Other variables keep their
-lead/lag structure in the result.
+wants — a closed-form steady-state value). This holds for a bare lead or
+lag, `y(-1)`; inside a call, `log(Z(-1))`, only once the residual is made
+static, since calls are matched as whole subtrees. Other variables keep
+their lead/lag structure in the result.
 
 ```matlab
 ast('-mult_1 + 1/c').isolate('mult_1')      % c ^ -1                 (mult_1 = 1/c)
 ast('y - rho*y(-1) - e').isolate('y')        % e / (1 - rho)          (y and y(-1) aggregated)
 ast('mult_1 - beta*c(+1)/c').isolate('mult_1')   % beta * c(1) / c    (other lags preserved)
+ast('a*sqrt(x) - b').isolate('x')            % (b / a) ^ 2            (sqrt inverted by squaring)
 ast('log(y) + y^3 - x').isolate('y')         % []                     (no closed form)
 ```
 
