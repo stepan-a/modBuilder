@@ -25,8 +25,10 @@ assert(isequal(out.anchors, {'y'}), 'y must be kept: its quadratic is not closab
 assert(isequal(out.dropped, {'p'}), 'p must be dropped: the freed equation derives it');
 assert(out.residual == 0 && isempty(out.open), 'the reduced set must close the model');
 
-% The plan under the reduced set derives p with the correct value. (p's declared
-% value may stay in the steady table: it is compound, so PropagateKnown ignores it.)
+% suggest_anchors removed p's declaration and kept y's; the plan under the reduced
+% set derives p with the correct value.
+declared = m.steady_state(:, 1)';
+assert(~any(strcmp(declared, 'p')) && any(strcmp(declared, 'y')), 'p''s declaration should be removed and y''s kept');
 b = m.steady_plan(Match=true, Anchors=out.anchors, PropagateKnown=true);
 vals = struct('lam',2,'del',0.5,'dee',0.6,'s',1,'c',6,'y',2);
 for k = 1:numel(b)

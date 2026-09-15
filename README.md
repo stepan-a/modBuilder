@@ -912,15 +912,15 @@ b = m.steady_plan(Match=true, PropagateKnown=true);
 % the plan now derives theta = ... rather than treating it as given
 ```
 
-#### `suggest_anchors([Candidates, Keep, PropagateKnown])`
+#### `suggest_anchors([Candidates, Keep, PropagateKnown, Apply])`
 
 Reduce a pool of candidate steady-state anchors to an irreducible subset, by greedy leave-one-out testing swept to a fixed point: a candidate is dropped when the plan closes just as well without its anchor status *and* its declared value. Candidates default to the endogenous variables with a value declared through `steady()`, excluding auto-detected exogenous processes — the method never invents a value, it only reports which of the declared knowns the structural plan actually needs.
 
-**Returns** a struct with fields `anchors` (the irreducible subset), `dropped` (candidates found deducible), `residual` and `open` (number and names of variables left open under the returned set; empty on full closure).
+**Returns** a struct with fields `anchors` (the irreducible subset), `dropped` (candidates found deducible), `residual` and `open` (number and names of variables left open under the returned set; empty on full closure). The declared values of the dropped candidates are removed from the model, so that the next plan does not inline them through `PropagateKnown`; pass `Apply=false` to only report.
 
 #### `suggest_calibrations([blocks][, Match, Anchors, PropagateKnown, MaxBlockSize])`
 
-The counterpart of `suggest_anchors` for the other route out of a stalled plan: when the recognisers leave a residual block open, scan the `(endogenous, parameter)` role swaps that would shrink it. For each still-open variable, each parameter appearing in its equation is virtually applied (`copy` + `calibrate`, then `steady_plan` re-runs) and the resulting total residual recorded. Pass the **same** planning options that produced `blocks` (each trial re-plans under them), or omit `blocks` to plan with the options given.
+The counterpart of `suggest_anchors` for the other route out of a stalled plan: when the recognisers leave a residual block open, scan the `(endogenous, parameter)` role swaps that would shrink it. For each still-open variable, each parameter appearing in its equation is virtually applied (`copy` + `calibrate`, then `steady_plan` re-runs) and the resulting total residual recorded. When that finds nothing, the scan widens to every variable of the stalled block, each with the parameters of its own equation: which variable the elimination leaves open is incidental, and the natural swap often pins another member of the block. Pass the **same** planning options that produced `blocks` (each trial re-plans under them), or omit `blocks` to plan with the options given.
 
 **Returns** a struct array, one entry per swap that strictly reduces the residual, sorted with the full closures (`residual = 0`) first:
 - `endo` — the endogenous variable to pin;

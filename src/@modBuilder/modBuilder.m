@@ -8767,13 +8767,18 @@ classdef modBuilder < handle
         %                                first).
         %
         % REMARKS:
-        % - For each residual variable, scan parameters that appear in its anchor
-        %   equation. Each (endo, param) pair is virtually applied (m.copy +
-        %   m.calibrate, then steady_plan re-runs) and the new total residual is
-        %   recorded.
-        % - Cost: one steady_plan re-run per candidate. Bounded by
-        %   #residual_vars × max_params_per_residual_eq, which is small in practice
-        %   for DSGE blocks.
+        % - For each residual variable, scan the parameters of its own equation. Each
+        %   (endo, param) pair is virtually applied (m.copy + m.calibrate, then
+        %   steady_plan re-runs) and the new total residual is recorded.
+        % - When that finds nothing, the scan widens to every variable of each stalled
+        %   block, still with the parameters of its own equation. Which variable an
+        %   elimination leaves open is incidental: a fixed cost of production leaves
+        %   investment open, whose equation has no parameter, while pinning hours and
+        %   freeing theta closes the plan.
+        % - Cost: one steady_plan re-run per candidate, #residual_vars ×
+        %   params_per_equation for the first scan; the widened scan, run only when the
+        %   first finds nothing, costs one re-run per (block variable, parameter of its
+        %   equation).
         % - Without economic intuition, some suggestions may be algebraically sound but
         %   meaningless (calibrating output to identify the discount factor). The user
         %   reads the menu critically; the framework only exposes the algebraic options.
@@ -8801,49 +8806,60 @@ classdef modBuilder < handle
             end
 
             seen = dictionary(string.empty, logical.empty);
-            for k = 1:numel(blocks)
-                b = blocks(k);
-                % Any non-anchor block can carry a residual worth a swap: now that the
-                % elimination probes every (equation, unknown) pair, an unresolved
-                % variable often survives as an open SINGLETON (a transcendental FOC)
-                % rather than inside a simultaneous block. Anchor levels are
-                % user-supplied by convention, not swap targets.
-                if strcmp(b.kind, 'anchor'), continue, end
-                resolved = {b.closed_form.var};
-                residual = setdiff(b.vars, resolved);
-                if isempty(residual), continue, end
-
-                for r = 1:numel(residual)
-                    endo = residual{r};
-                    if ~isfield(o.T.equations, endo), continue, end
-                    eq_symbols = o.T.equations.(endo);
-                    for p_idx = 1:numel(eq_symbols)
-                        p = eq_symbols{p_idx};
-                        if ~o.isparameter(p), continue, end
-                        key = sprintf('%s|%s', endo, p);
-                        if isKey(seen, key), continue, end
-                        seen(key) = true;
-
-                        m_copy = o.copy();
-                        target = o.get_value(endo);
-                        if isnan(target), target = 0; end
-                        try
-                            m_copy.calibrate(endo, target, p);
-                            new_blocks = m_copy.steady_plan(opts{:});
-                        catch err
-                            modBuilder.rethrow_unless(err, {'ast:', 'modBuilder:'});
-                            continue
-                        end
-                        new_total = modBuilder.total_residual_count(new_blocks);
-                        if new_total < old_total
-                            suggestions(end+1).endo = endo; %#ok<AGROW>
-                            suggestions(end).param = p;
-                            suggestions(end).residual = new_total;
+            % Two passes. The first pins each variable the plan left open, with the
+            % parameters of its own equation. When it finds nothing, the second tries
+            % every variable of each stalled block, still with the parameters of its
+            % own equation, the pairs already tried being skipped.
+            for widen = [false, true]
+                if widen && ~isempty(suggestions)
+                    break
+                end
+                for k = 1:numel(blocks)
+                    b = blocks(k);
+                    % Any non-anchor block can carry a residual worth a swap: now that the
+                    % elimination probes every (equation, unknown) pair, an unresolved
+                    % variable often survives as an open SINGLETON (a transcendental FOC)
+                    % rather than inside a simultaneous block. Anchor blocks are not swap
+                    % targets: their level is set by their process or by the user.
+                    if strcmp(b.kind, 'anchor'), continue, end
+                    resolved = {b.closed_form.var};
+                    residual = setdiff(b.vars, resolved);
+                    if isempty(residual), continue, end
+                    if widen
+                        pool = b.vars;
+                    else
+                        pool = residual;
+                    end
+                    for r = 1:numel(pool)
+                        endo = pool{r};
+                        if ~isfield(o.T.equations, endo), continue, end
+                        eq_symbols = o.T.equations.(endo);
+                        for p_idx = 1:numel(eq_symbols)
+                            p = eq_symbols{p_idx};
+                            if ~o.isparameter(p), continue, end
+                            key = sprintf('%s|%s', endo, p);
+                            if isKey(seen, key), continue, end
+                            seen(key) = true;
+                            m_copy = o.copy();
+                            target = o.get_value(endo);
+                            if isnan(target), target = 0; end
+                            try
+                                m_copy.calibrate(endo, target, p);
+                                new_blocks = m_copy.steady_plan(opts{:});
+                            catch err
+                                modBuilder.rethrow_unless(err, {'ast:', 'modBuilder:'});
+                                continue
+                            end
+                            new_total = modBuilder.total_residual_count(new_blocks);
+                            if new_total < old_total
+                                suggestions(end+1).endo = endo; %#ok<AGROW>
+                                suggestions(end).param = p;
+                                suggestions(end).residual = new_total;
+                            end
                         end
                     end
                 end
             end
-
             if ~isempty(suggestions)
                 [~, order] = sort([suggestions.residual]);
                 suggestions = suggestions(order);
@@ -8866,12 +8882,18 @@ classdef modBuilder < handle
         %                                      actually needs.
         % - options.Keep            [cell]     anchors always kept, never tested (default {}).
         % - options.PropagateKnown  [logical]  passed to steady_plan (default true).
+        % - options.Apply           [logical]  remove the dropped candidates' declared values
+        %                                      from the model (default true). Left declared,
+        %                                      PropagateKnown would inline them in the next
+        %                                      plan, which would then close for the wrong
+        %                                      reason. False only reports.
         %
         % OUTPUTS:
         % - out  [struct] with fields:
         %     .anchors   [cell]  the irreducible anchor subset (Keep members included)
         %     .dropped   [cell]  candidates found deducible: the plan closes as well
-        %                        without them (anchor status AND declared value removed)
+        %                        without them. Their declared values are removed from
+        %                        the model, unless options.Apply is false.
         %     .residual  [int]   number of open variables under the returned set
         %     .open      [cell]  their names (empty on full closure)
         %
@@ -8905,6 +8927,7 @@ classdef modBuilder < handle
                 options.Candidates (1,:) cell = {}
                 options.Keep (1,:) cell = {}
                 options.PropagateKnown (1,1) logical = true
+                options.Apply (1,1) logical = true
             end
             o.refresh_tables();
             candidates = options.Candidates;
@@ -8965,6 +8988,14 @@ classdef modBuilder < handle
             kept = candidates(~ismember(candidates, dropped));
             [nres, open] = modBuilder.anchor_residual(o, [options.Keep, kept], dropped, options.PropagateKnown);
 
+            if options.Apply && ~isempty(dropped)
+                % Undeclare what was found deducible: left declared, a dropped value
+                % would be inlined by PropagateKnown in the next plan, which would then
+                % close for the wrong reason. A multi-output call row is left alone.
+                names = o.steady_state(:, modBuilder.SS_COL_NAME);
+                gone = cellfun(@(nm) ischar(nm) && ismember(nm, dropped), names);
+                o.steady_state(gone, :) = [];
+            end
             out = struct();
             out.anchors = [options.Keep, kept];
             out.dropped = dropped;
@@ -8975,7 +9006,11 @@ classdef modBuilder < handle
                 modBuilder.dprintf('suggest_anchors: %d of %d candidates needed, residual %d (baseline %d)', ...
                     numel(kept), numel(candidates), nres, baseline);
                 modBuilder.dprintf('  anchors : %s', strjoin(out.anchors, ', '));
-                modBuilder.dprintf('  dropped : %s', strjoin(out.dropped, ', '));
+                if options.Apply && ~isempty(out.dropped)
+                    modBuilder.dprintf('  dropped : %s (declarations removed)', strjoin(out.dropped, ', '));
+                else
+                    modBuilder.dprintf('  dropped : %s', strjoin(out.dropped, ', '));
+                end
                 if nres > 0
                     modBuilder.dprintf('  open    : %s', strjoin(out.open, ', '));
                 end
