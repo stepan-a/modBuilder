@@ -1440,6 +1440,63 @@ end;
 \end{frame}
 
 
+\begin{frame}[fragile]
+  \frametitle{Steady state plan -- when the plan stalls --}
+
+  A fixed cost of production breaks the proportionality of output and consumption
+  to hours:
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\scriptsize]
+rbc14                                   % the small RBC model
+model.change('y', 'y = exp(a)*k(-1)^alpha*h^(1-alpha) - phi');
+model.change('c', ...
+    '1/beta = c/c(+1)*(alpha*(y(+1)+phi)/k + 1 - delta)');
+model.change('h', 'theta*c*h^psi = (1-alpha)*(y+phi)/h');
+model.parameter('phi', 0.1);
+b = model.steady_plan(Match=true, PropagateKnown=true);
+  \end{lstlisting}
+
+  \begin{itemize}\small
+  \item The plan stalls: \verb+h+, \verb+k+, \verb+i+, \verb+y+ and \verb+c+ form
+    one block, four of them are expressed through \verb+i+, and \verb+i+ is left to
+    a numerical solve. The equation left for it combines several powers of \verb+i+
+    with the fixed cost, and none of the four rearrangements applies.
+  \item Two ways out that stay symbolic: swap a role, pinning a variable and
+    freeing a parameter (\verb+suggest_calibrations+); or declare a value the
+    modeller already knows, and let \verb+suggest_anchors+ say which ones the plan
+    needs.
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Steady state plan -- suggest\_anchors --}
+
+  Suppose the modeller knows some steady-state values, here from a numerical solve:
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\scriptsize]
+model.steady('h', '0.5586029261');
+model.steady('k', '21.2209081886');
+model.steady('y', '1.9690980908');
+out = model.suggest_anchors();      % anchors y, dropped h and k
+  \end{lstlisting}
+
+  \begin{itemize}\small
+  \item \verb+suggest_anchors+ tries dropping each declared value in turn, and keeps
+    only those the plan cannot do without: here output alone.
+  \item Declared alone and passed as the anchor, \verb+y+ closes the plan:
+    \verb+steady_plan(Match=true, Anchors={'y'}, PropagateKnown=true)+ gives
+    \verb+i+, \verb+h+, \verb+c+ and \verb+k+ in closed form.
+  \item An anchor frees one equation, which becomes a consistency condition the
+    declared value must meet; it does here, the value coming from a numerical
+    solve.
+  \item \verb+suggest_anchors+ only reports: the dropped values stay declared.
+  \end{itemize}
+
+\end{frame}
+
+
 \begin{frame}[c,fragile]
   \frametitle{Steady state plan -- homogeneous blocks --}
 
