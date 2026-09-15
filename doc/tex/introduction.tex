@@ -1100,7 +1100,7 @@ steady;
   \scalebox{1}{
   \lstinputlisting[
   firstline=27,
-  lastline =36,
+  lastline =35,
   basicstyle=\tiny,
   frame=none,
   numbers=left,
@@ -1108,8 +1108,12 @@ steady;
   ]{../models/rbc13.m}}
 
   \begin{itemize}\small
-  \item Each \verb+solve+ handles one static equation for one symbol; the order of
-    the calls does the rest, as by hand.
+  \item Each \verb+solve+ handles one static equation for one symbol, simplified
+    first; the order of the calls does the rest, as by hand.
+  \item The equation of \verb+k+ needs \verb+a+ and \verb+b+, which enter it through
+    \verb|exp(a)*exp(b)|, and their own two equations each need the other: one
+    equation at a time cannot untangle them, so their level, zero, is given.
+    \verb+c+ needs no value: it cancels from the static equation of \verb+k+.
   \item The last call calibrates: with hours fixed at $1/3$, the equation of
     \verb+h+ is solved for \verb+psi+.
   \end{itemize}
