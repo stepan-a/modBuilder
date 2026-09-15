@@ -1172,10 +1172,13 @@ model.solve_system({'a', 'b', 'y', 'c', 'k', 'h'}, ...
     \begin{itemize}
     \item[--] pair each equation with the variable it pins, by bipartite
       matching on the \textbf{static} residuals (option \verb+Match+);
-    \item[--] decompose the dependency graph into strongly connected components,
-      in topological order;
-    \item[--] close each block symbolically: isolation for a single equation,
-      elimination or Cramer for a small simultaneous block.
+    \item[--] order the variables: an equation depends on the variables it
+      mentions; variables whose equations need one another, in a loop, form a
+      \textbf{block} solved together, and the blocks are taken in an order where
+      each uses only what the previous ones gave;
+    \item[--] solve each block by algebra: a single equation is rearranged to give
+      its variable; a small block is reduced by substituting one equation into the
+      others, and solved exactly when it is linear in its unknowns.
     \end{itemize}
 
   \item What comes out is a \textbf{cascade of closed forms}, in evaluation
@@ -1261,6 +1264,34 @@ Steady-state plan: 5 block(s)
 
   $\Rightarrow$ The calibration of $\theta$ consistent with $h^{\star}=1/3$ is
   derived, not searched for.
+
+\end{frame}
+
+
+\begin{frame}[fragile]
+  \frametitle{Steady state plan -- reading the plan --}
+
+  The five blocks of the previous frame's plan, in the order they are solved:
+  \begin{enumerate}\small
+  \item \verb+a+, from its own process, \verb|a = rho*a(-1) + e|: $a = 0$.
+  \item \verb+y+ and \verb+k+ together. Once $c/c(+1)$ is one, the Euler equation
+    reads $\alpha y/k = 1/\beta - 1 + \delta$, and the production function also
+    links $y$ and $k$: each equation needs the other. Substituting the production
+    function into the Euler equation leaves one equation in $k$; $y$ follows.
+  \item \verb+i+ from capital accumulation, $i = \delta k$.
+  \item \verb+c+ from the resource constraint, $c = y - i$.
+  \item $\theta$ from labour supply, hours being fixed at $1/3$.
+  \end{enumerate}
+  \small Blocks 3 to 5 are single equations, each rearranged for its variable.
+
+  \medskip
+  A linear block is solved exactly. The \verb+a+, \verb+b+ process of the earlier
+  model gives
+  \[
+    b = \frac{\tau e + (1-\rho)\, u}{(1-\rho)^2 - \tau^2}, \qquad a = \frac{e + \tau b}{1-\rho},
+  \]
+  whose denominator is the determinant of the block: the plan reports a unit root
+  when it is zero at the calibration.
 
 \end{frame}
 
