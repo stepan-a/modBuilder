@@ -1471,27 +1471,60 @@ b = model.steady_plan(Match=true, PropagateKnown=true);
 
 
 \begin{frame}[fragile]
+  \frametitle{Steady state plan -- suggest\_calibrations --}
+
+  First way out: swap a role, pinning a variable and freeing a parameter. On a
+  stalled plan, \verb+print_steady_plan+ calls \verb+suggest_calibrations+ and prints
+  the menu:
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\scriptsize]
+>> model.print_steady_plan(b, Match=true, PropagateKnown=true);
+...
+    residual (still open): i
+    -- numerical solver required for the residual --
+Suggested calibration swaps:
+  m.calibrate('h', <target>, 'phi')   [closes fully]
+  m.calibrate('h', <target>, 'theta')   [closes fully]
+  m.calibrate('c', <target>, 'phi')   [closes fully]
+  \end{lstlisting}
+
+  \begin{itemize}\small
+  \item Each swap is tried on a copy of the model; only those that shrink what is
+    left open are listed, the ones that close the plan first.
+  \item The variable left open, \verb+i+, has no parameter in its equation, the
+    resource constraint: the scan then widens to every variable of the block.
+  \item The menu is algebraic, not economic. Pinning hours and freeing $\theta$ is
+    the textbook calibration: \verb+model.calibrate('h', 1/3, 'theta')+ closes the
+    plan.
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[fragile]
   \frametitle{Steady state plan -- suggest\_anchors --}
 
-  Suppose the modeller knows some steady-state values, here from a numerical solve:
+  Second way out: declare values the modeller already knows, here from a numerical
+  solve, and let the plan say which it needs:
 
   \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\scriptsize]
 model.steady('h', '0.5586029261');
 model.steady('k', '21.2209081886');
 model.steady('y', '1.9690980908');
 out = model.suggest_anchors();      % anchors y, dropped h and k
+b = model.steady_plan(Match=true, Anchors=out.anchors, ...
+                      PropagateKnown=true);
   \end{lstlisting}
 
   \begin{itemize}\small
-  \item \verb+suggest_anchors+ tries dropping each declared value in turn, and keeps
-    only those the plan cannot do without: here output alone.
-  \item Declared alone and passed as the anchor, \verb+y+ closes the plan:
-    \verb+steady_plan(Match=true, Anchors={'y'}, PropagateKnown=true)+ gives
-    \verb+i+, \verb+h+, \verb+c+ and \verb+k+ in closed form.
+  \item \verb+suggest_anchors+ tries dropping each declared value in turn, keeps only
+    those the plan cannot do without, here output alone, and removes the
+    declarations of the others (\verb+Apply=false+ only reports).
+  \item With \verb+y+ as the only anchor, the plan gives \verb+i+, \verb+h+,
+    \verb+c+ and \verb+k+ in closed form.
   \item An anchor frees one equation, which becomes a consistency condition the
     declared value must meet; it does here, the value coming from a numerical
     solve.
-  \item \verb+suggest_anchors+ only reports: the dropped values stay declared.
   \end{itemize}
 
 \end{frame}
