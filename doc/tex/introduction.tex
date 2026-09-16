@@ -265,8 +265,10 @@ model =
          date: 04-Oct-2025 09:25:42
    \end{lstlisting}
 
-  \begin{itemize}
+  \begin{itemize}\small
   \item No Dynare run, no JSON file: the \texttt{.mod} file is read directly.
+  \item The other route stays available when Dynare has already run the file:
+    \verb+modBuilder(M_, oo_, 'model.json')+ builds the model from what the session holds.
   \end{itemize}
 
 \end{frame}
@@ -589,7 +591,8 @@ m.add('h', 'h = theta*y');
   \medskip
   \small Which variable an equation belongs to is therefore not a label: it is what
   \verb+remove+, \verb+rmflip+ and \verb+exogenise+ act on, and why a \verb+.mod+ file is
-  read with its \verb+name+ tags, or paired as described earlier.
+  read with its \verb+name+ tags, or paired as described earlier. To re-pair without
+  removing anything, \verb+reassign+ cycles the association of several equations at once.
 
 \end{frame}
 
@@ -840,6 +843,76 @@ C = Y_m + Y_s - I_m - I_s;
 \end{frame}
 
 
+%==============================================================================
+% Inspecting, composing and comparing models
+%==============================================================================
+
+\begin{frame}[c,fragile]
+  \frametitle{Inspect a model}
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\scriptsize]
+>> model.summary()
+
+Model Summary
+=============
+Created: 16-Sep-2026 08:03:34
+
+Parameters: 7 (7 calibrated, 0 uncalibrated)
+Endogenous: 6
+Exogenous: 2
+Equations: 6
+
+>> [type, id] = model.typeof('k')
+type =
+    'endogenous'
+id =
+     6
+  \end{lstlisting}
+
+  \begin{itemize}\small
+  \item \verb+table('parameters')+ returns the same content as a matlab table, with the
+    long names and the \TeX{} names; \verb+equationmap+ prints which equation each variable
+    is keyed to, \verb+size+ counts, \verb+getallsymbols+ lists.
+  \item \verb+isparameter+, \verb+isexogenous+, \verb+isendogenous+ and \verb+issymbol+
+    answer the same question as \verb+typeof+ with a logical. Reading a symbol is
+    \verb+model.alpha+, writing one is \verb+model.beta = 0.95+.
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Compose and compare models}
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\tiny]
+>> sub = model{'y', 'c'}                          % same as model.extract('y', 'c')
+sub =
+  modBuilder: 2 endogenous, 4 exogenous, 2 parameters (2 calibrated), 2 equations
+
+>> m2 = model.copy(); model == m2
+ans =
+  logical
+   1
+
+>> m2.beta = 0.98; model == m2
+ans =
+  logical
+   0
+  \end{lstlisting}
+
+  \begin{itemize}\small
+  \item \verb+extract+ takes equations by name, \verb+select+ by tag -- the two submodel
+    constructors behind \verb+m{...}+ and \verb+m{bytag(...)}+.
+  \item \verb+copy+ is not decoration: \verb+modBuilder+ is a handle class, so \verb+m2 = m+
+    aliases the same model -- every trial in \verb+suggest_calibrations+ runs on a copy.
+  \item \verb+==+ compares structure and calibration, ignoring long names and \TeX{} names:
+    a refactor can be checked against a reference model.
+  \item \verb+merge+ builds one model out of two, as the next frames do with two agents.
+  \end{itemize}
+
+\end{frame}
+
+
 \begin{frame}[c,fragile]
   \frametitle{Use matlab to write an equation -- I --}
 
@@ -1025,6 +1098,8 @@ model.write('rbc', steady_state_model=true, steady=true);
     local to the \verb+steady_state_model+ block.
   \item Dynare runs the written file with no numerical solve:
     $h^\star = 0.2918$, $k^\star = 11.08$, $y^\star = 1.081$, $c^\star = 0.8036$.
+  \item Two more \verb+write+ options: \verb+check=true+ adds Dynare's \verb+check+ after
+    \verb+steady+, and \verb+precision=+ sets how many digits the written calibration carries.
   \end{itemize}
 
 \end{frame}
@@ -1618,12 +1693,173 @@ b = model.steady_plan(Match=true, Anchors=out.anchors, ...
     labour-market clearing for the wage recursions.\newline
 
   \item Reported in the plan as \verb+backout+, with the gauge and the equation
-    that pinned it.
+    that pinned it.\newline
+
+  \item \verb+scaling_symmetries+ finds these scale freedoms on its own, by homogeneity
+    of the static system; the steady-state note covers it.
 
   \end{itemize}
 
 \end{frame}
 
+
+%==============================================================================
+% Symbolic derivatives and optimal policy
+%==============================================================================
+
+\begin{frame}[c,fragile]
+  \frametitle{Symbolic derivatives}
+
+  \verb+partial+ differentiates the residual of one equation; here the equation keyed to
+  \verb+c+, the capital accumulation, where \verb+k+ enters at two dates:
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\scriptsize]
+>> model.partial('c', 'k')            % static: all dates of k
+ans =
+  ast: delta
+>> model.partial('c', 'k', Lag=0)     % the contemporaneous block
+ans =
+  ast: 1
+>> model.partial('c', 'k', Lag=-1)    % the one-lag block
+ans =
+  ast: -1 + delta
+  \end{lstlisting}
+
+  \begin{itemize}\small
+  \item Omitting \verb+Lag+ makes the equation static first, so the leads and lags of the
+    variable aggregate -- the convention of \verb+isolate+ and of the AD Jacobian. Here
+    $\delta = 1 + (\delta - 1)$.
+  \item \verb+symbolic_jacobian(eqnames, varnames)+ returns the matrix of these partials as
+    a cell of \verb+ast+ trees, sparse: \verb+isempty(J{i,j})+ is the test for a structural
+    zero.
+  \item Built on \verb+ast.diff_ast+ (see the AST note). This is the derivative of an
+    equation, not the linearisation of the model -- that is \verb+tex_linearise+, later.
+  \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Optimal policy -- the household --}
+
+  The household chooses $c$, $h$ and $k$ under its budget, taking prices as given:
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\scriptsize]
+hh = modBuilder();
+hh.add('W', 'W = log(c) - theta*h^(1+psi)/(1+psi) + beta*W(+1)');
+hh.add('k', 'w*h + (r + 1 - delta)*k(-1) = c + k');
+hh.exogenous('w', 1); hh.exogenous('r', 0.03);
+foc = hh.lagrangian_foc('W', {'k'}, {'c', 'h', 'k'});
+hh.augment(foc);              % declares mult_1, adds the FOCs
+  \end{lstlisting}
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\scriptsize]
+>> char(foc.foc)
+    '-mult_1 + c ^ -1 = 0'
+    '-(theta * h ^ psi) + mult_1 * w = 0'
+    '-mult_1 + beta * mult_1(1) * (1 + r(1) - delta) = 0'
+  \end{lstlisting}
+
+  \small Marginal utility, labour supply, Euler. The derivation is written over
+  \textbf{two periods}, as a Bellman problem, not as an infinite-sum Lagrangian: nothing
+  assumes time-additivity, and that is why the multiplier carries a lead. \verb+augment+
+  declares \verb+mult_1+ and keys the three equations, leaving a square block of five.
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Optimal policy -- the firm --}
+
+  The firm maximises profit over its two inputs. There is no constraint to name, and the
+  empty list is accepted:
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\scriptsize]
+ff = modBuilder();
+ff.add('Pi', 'Pi = A*kd^alpha*hd^(1-alpha) - w*hd - r*kd');
+ff.exogenous('w', 1); ff.exogenous('r', 0.03);
+ffoc = ff.lagrangian_foc('Pi', {}, {'kd', 'hd'});   % no constraint
+ff.augment(ffoc);
+  \end{lstlisting}
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\scriptsize]
+>> char(ffoc.foc)
+    '-r + A * alpha * hd ^ (1 - alpha) * kd ^ (-1 + alpha) = 0'
+    '-w + A * (1 - alpha) * hd ^ (-alpha) * kd ^ alpha = 0'
+  \end{lstlisting}
+
+  \small The two factor demands: each marginal product equals its factor price. Nothing so
+  far ties the firm's $kd$ and $hd$ to the household's $k$ and $h$ -- that is what the
+  equilibrium does.
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Optimal policy -- the equilibrium --}
+
+  Four calls turn two problems into one model:
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\scriptsize]
+ff.flip('kd','r'); ff.flip('hd','w');   % each demand pins its price
+ff.subs('kd','k(-1)'); ff.subs('hd','h');  % the markets clear
+m = hh.merge(ff);       % 8 equations, 8 endogenous, 0 exogenous
+m.eliminate('mult_1');  % substitute the multiplier out
+  \end{lstlisting}
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\tiny]
+>> m.equationmap()
+    Endogenous                              Equation
+    __________    ____________________________________________________________
+        W         W = log(c) - theta*h^(1+psi)/(1+psi) + beta*W(+1)
+        k         w*h + (r + 1 - delta)*k(-1) = c + k
+        c         -c ^ (-1) + beta * c(1) ^ (-1) * (1 + r(1) - delta) = 0
+        h         -(theta * h ^ psi) + c ^ (-1) * w = 0
+        Pi        Pi = A * k(-1) ^ alpha * h ^ (1 - alpha) - w * h - r * k(-1)
+        r         -r + A * alpha * h ^ (1 - alpha) * k(-1) ^ (-1 + alpha) = 0
+        w         -w + A * (1 - alpha) * h ^ (-alpha) * k(-1) ^ alpha = 0
+  \end{lstlisting}
+
+  \small The textbook decentralised model, derived rather than typed. No resource
+  constraint was added: it follows from the budget and zero profits. \verb+merge+ returns a
+  new model, refuses two models sharing an endogenous variable, and converts \verb+h+ and
+  \verb+k+ -- exogenous to the firm -- into the household's endogenous variables.
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Optimal policy -- Ramsey --}
+
+  \verb+ramsey_foc+ is the other route: every equation but the value equation is a
+  constraint, and the planner sets the instrument.
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\scriptsize]
+nk.add('pi', 'pi = beta*pi(+1) + kappa*y');          % NKPC
+nk.add('y',  'y = y(+1) - sigma*(i - pi(+1))');      % IS
+nk.add('W',  'W = -(pi^2+lambda*y^2)/2 + beta*W(+1)');  % welfare
+nk.exogenous('i', 0);                                % instrument
+nk.augment(nk.ramsey_foc('W', {'i'}));
+  \end{lstlisting}
+
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\tiny]
+>> nk.equationmap()
+    Endogenous                                  Equation
+    __________    ____________________________________________________________________
+      pi          pi = beta*pi(+1) + kappa*y
+      y           y = y(+1) - sigma*(i - pi(+1))
+      W           W = -(pi^2 + lambda*y^2)/2 + beta*W(+1)
+      mult_1      mult_1 - pi + (-(beta * mult_1(-1)) - mult_2(-1) * sigma) / beta = 0
+      mult_2      mult_2 - kappa * mult_1 - lambda * y - mult_2(-1) / beta = 0
+      i           mult_2 * sigma = 0
+  \end{lstlisting}
+
+  \small Six equations, no exogenous variable left: the instrument was promoted, and its
+  own FOC pins $mult_2 = 0$. The FOCs are model equations like any other -- write them,
+  render them with \verb+tex_model+, plan their steady state. Derive on a copy,
+  \verb+m.copy().ramsey_foc(...)+, to leave the nonlinear model untouched.
+
+\end{frame}
 
 %==============================================================================
 % LaTeX output
