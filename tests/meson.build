@@ -393,11 +393,14 @@ listoffailingtests = [
 ]
 
 # Heavy tests that exceed the default 60 s budget even on an idle machine
-# (steady-plan/t21.m runs suggest_calibrations, ~90 s); a larger per-test
-# timeout lets a bare `meson test` pass without a global timeout multiplier.
+# (steady-plan/t21.m runs suggest_calibrations, ~90 s), or get close enough to
+# it (steady-plan/t42.m, ~30 s) to be killed on a loaded runner; a larger
+# per-test timeout lets a bare `meson test` pass without a global timeout
+# multiplier.
 listofslowtests = [
   'steady-plan/t21.m',
   'steady-plan/t40.m',
+  'steady-plan/t42.m',
 ]
 
 # Generate testlist.txt in the source tree so that AllTests.m (MATLAB

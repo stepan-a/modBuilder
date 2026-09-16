@@ -41,9 +41,9 @@ fixtures = {
     '../precision/precision_default.true.mod',          0
     '../precision/precision_high.true.mod',            15
     '../precision/precision_initval.true.mod',         10
-    '../../examples/two-country/twocountry.mod',        0
-    '../../examples/two-country/twocountry_phase.mod',  0
-    '../../examples/sw/sw.mod',                         0
+    'twocountry.true.mod',                              0
+    'twocountry_phase.true.mod',                        0
+    'sw.true.mod',                                      0
 };
 
 % Auto-matching is expected on the fixtures whose tags were stripped on purpose.

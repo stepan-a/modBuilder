@@ -2,7 +2,7 @@
 
 addpath ../utils
 
-source = '../../examples/two-country/twocountry.mod';
+source = 'twocountry.true.mod';
 
 % Keeping the script is what Script= is for.
 [m, scriptpath] = modfile.load(source, Script='t11_generated.m');
