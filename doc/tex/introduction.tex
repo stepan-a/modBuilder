@@ -1319,6 +1319,14 @@ Steady-state plan: 5 block(s)
   resists, and is left to a numerical solve (later frame).
 
   \medskip
+  Each case returns \textbf{one} closed form, never a set of roots: nothing branches, and no
+  root is tested afterwards. Where several solutions exist the branch is fixed by convention:
+  $(-b/a)^{1/d}$ is the principal root, so $x^2 = 4$ gives $2$ and not $-2$; the two-power case
+  drops the $x = 0$ that $x^q$ factors out; \verb+sqrt+, inverted by squaring, may return a root
+  of the squared equation only. An assumption, then, not a verified selection: the residuals are
+  the check.
+
+  \medskip
   A block of several equations is reduced one unknown at a time, each step using
   the same rearrangements. A linear block is solved outright, by triangulation and
   back-substitution, which fails only when its determinant is zero.
@@ -1436,6 +1444,69 @@ end;
     (\verb+newton+) or the solvers shipped with Dynare (\verb+dynare+).
 
   \end{itemize}
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Steady state plan -- the complex step --}
+
+  Take an analytic $f$, a real point $x$, and step in the \textbf{imaginary}
+  direction:
+  \[
+    f(x+\imath h) = f(x) + \imath h f'(x) - \frac{h^2}{2}f''(x)
+    - \imath\frac{h^3}{6}f'''(x) + \dots
+  \]
+  The imaginary part holds the derivative alone, the even-order terms being real:
+  \[
+    \boxed{\;f'(x) = \frac{\Im\left(f(x+\imath h)\right)}{h} + O(h^2)\;}
+  \]
+
+  \medskip
+  \small Nothing is \textbf{subtracted}. A finite difference $(f(x+h)-f(x))/h$
+  differences two nearby numbers, so the digits they share are lost and $h$ cannot go
+  below the floor where that cancellation overwhelms the $O(h)$ truncation -- around
+  $\sqrt{\varepsilon}\simeq 10^{-8}$, leaving eight digits at best. Here there is no
+  cancellation, so $h$ can be taken far below that floor: at $h=10^{-20}$ the
+  truncation term is $O(10^{-40})$ and the derivative comes out exact to machine
+  precision. On the residual of the next frame the complex step matches the symbolic
+  derivative to $2$ ulps, where the best forward difference gives $2\cdot 10^{-8}$.
+
+\end{frame}
+
+
+\begin{frame}[c,fragile]
+  \frametitle{Steady state plan -- the complex step, in the helper --}
+
+  One residual evaluation per column, no derivative written to the file, and no
+  dependency on modBuilder at run time -- here the stalled block of the running
+  example, whose single unknown is \verb+i+:
+
+  \medskip
+  \begin{lstlisting}[style=MatlabConsole,basicstyle=\ttfamily\tiny]
+function [r, J] = block_system(x, alpha, delta, beta, theta, phi, psi)
+r = block_residual(x, alpha, delta, beta, theta, phi, psi);
+if nargout > 1
+    h = 1e-20;
+    J = zeros(1, 1);
+    for j = 1:1
+        xp = x;
+        xp(j) = xp(j) + 1i*h;
+        J(:, j) = imag(block_residual(xp, alpha, delta, beta, theta, phi, psi))/h;
+    end
+end
+end
+  \end{lstlisting}
+
+  \small The step needs $f$ analytic \textbf{and} its \textsc{matlab} implementation
+  to carry the imaginary part. It fails on \verb+abs+, which returns the modulus and
+  silently destroys it, on \verb+sign+, \verb+min+, \verb+max+, not
+  complex-differentiable, and on \verb+normcdf+, \verb+normpdf+, \verb+erf+,
+  \verb+erfc+, \verb+cbrt+, whose implementations reject a complex argument. Powers,
+  \verb+exp+, \verb+log+ and the trigonometric families are safe. \verb+Jacobian=auto+
+  tests the block and falls back to the symbolic Jacobian; asking for
+  \verb+complex-step+ on a block that fails the test is an error, not a silent
+  downgrade.
 
 \end{frame}
 
